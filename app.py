@@ -301,7 +301,10 @@ def extract_waveform_peaks(source, count=1800):
         args + ['-vn', '-ac', '1', '-ar', '2000', '-f', 's16le', '-'],
         capture_output=True, timeout=120, creationflags=flags)
     if proc.returncode != 0:
-        raise RuntimeError('Waveform FFmpeg failed: ' + proc.stderr.decode('utf-8', errors='replace')[-500:])
+        detail = proc.stderr.decode('utf-8', errors='replace').strip()
+        if not detail:
+            detail = f'exit code {proc.returncode}; input: {str(source)[:220]}'
+        raise RuntimeError('Waveform FFmpeg failed: ' + detail[-650:])
     pcm = array('h')
     pcm.frombytes(proc.stdout[:len(proc.stdout)//2*2])
     if not pcm:
@@ -2172,9 +2175,9 @@ class Window(QMainWindow):
         self.project_file = None
         self.folder = Path(folder)
         self.source_audio = None
-        self.load_waveform(self.stems)
         self.beat_times = []
         self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
+        self.load_waveform(self.stems)
         self.chord_data = []
         self.chord_times = []
         self.display_chords = []
