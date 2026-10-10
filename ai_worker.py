@@ -166,12 +166,16 @@ def bass_notes(path, accuracy="balanced"):
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
     onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env,
                         sr=sr, hop_length=hop, backtrack=False, units='frames')
+    # Ignore brief pitch flicker, but retain onset-marked repeated plucks.
+    min_gap = {'fast': .13, 'balanced': .10, 'detailed': .075}.get(accuracy, .10)
+    stable_frames = max(2, round({'fast': .09, 'balanced': .075,
+                                  'detailed': .055}.get(accuracy, .075) * sr / hop))
     boundaries = {0}
     for i in range(1, len(idx)):
         if pitch_classes[i] != pitch_classes[i-1]:
-            boundaries.add(i)
-    # Require onset evidence and avoid closely-spaced spectral false positives.
-    min_gap = {'fast': .13, 'balanced': .10, 'detailed': .075}.get(accuracy, .10)
+            end = min(len(idx), i + stable_frames)
+            if end-i == stable_frames and np.all(pitch_classes[i:end] == pitch_classes[i]):
+                boundaries.add(i)
     for frame in onset_frames:
         frame = int(frame)
         if 0 < frame < len(idx) and gate[frame] and onset_env[min(frame, len(onset_env)-1)] > np.median(onset_env):
