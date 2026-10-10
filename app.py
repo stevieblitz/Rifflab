@@ -2703,9 +2703,22 @@ class Window(QMainWindow):
         # Lookahead changes ONLY the large current-chord label, not playback,
         # the beat grid, loop markers, or the underlying chord timestamps.
         preview_time = actual_time + self.chord_lookahead.value() / 1000.0
-        idx = max(0, bisect.bisect_right(self.display_times, preview_time) - 1)
-        current = self.transpose_chord(self.display_chords[idx][1])
-        self.chord.setText(current)
+        # Match the note sampled by the visible beat grid, not passing notes.
+        if self.grid_cells and self.display_times:
+            times = [cell[0] for cell in self.grid_cells]
+            cell = bisect.bisect_right(times, preview_time) - 1
+            if cell < 0:
+                self.chord.setText('—')
+                return
+            cell_time = times[min(cell, len(times) - 1)]
+            note_index = bisect.bisect_right(self.display_times, cell_time) - 1
+            current = (self.transpose_chord(self.display_chords[note_index][1])
+                       if note_index >= 0 else '—')
+            self.chord.setText(current)
+            return
+        idx = bisect.bisect_right(self.display_times, preview_time) - 1
+        self.chord.setText(self.transpose_chord(self.display_chords[idx][1])
+                           if idx >= 0 else '—')
 
     def apply_grid_zoom(self, zoom):
         """Scale chord labels together with their cells and spacing."""
