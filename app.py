@@ -18,8 +18,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush
 
-from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings
+from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF
 import qtawesome as qta
+from PySide6.QtSvg import QSvgRenderer
 from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -502,6 +503,16 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('RiffLab Alpha 1.3.0 — Music Practice')
+        self.brand_asset = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets' / 'rifflab-logo.svg'
+        if self.brand_asset.is_file():
+            icon_renderer = QSvgRenderer(str(self.brand_asset))
+            icon_renderer.setViewBox(QRectF(0, 0, 160, 380.69))
+            icon_pixmap = QPixmap(128, 128)
+            icon_pixmap.fill(Qt.transparent)
+            icon_painter = QPainter(icon_pixmap)
+            icon_renderer.render(icon_painter, QRectF(37, 5, 54, 118))
+            icon_painter.end()
+            self.setWindowIcon(QIcon(icon_pixmap))
         self.resize(1080, 690)
         self.layout_settings = QSettings('RiffLab', 'RiffLab')
         self.setMinimumSize(640, 430)
@@ -1101,6 +1112,21 @@ class Window(QMainWindow):
         panel = QVBoxLayout(stem_panel)
         panel.setContentsMargins(6, 4, 6, 4)
         panel.setSpacing(9)
+        if self.brand_asset.is_file():
+            self.brand_logo = QLabel()
+            self.brand_logo.setObjectName('riffLabBrand')
+            self.brand_logo.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.brand_logo.setFixedHeight(55)
+            self.brand_logo.setMinimumWidth(150)
+            self.brand_logo.setStyleSheet('background: transparent; border: none; padding: 0;')
+            logo_renderer = QSvgRenderer(str(self.brand_asset))
+            logo_pixmap = QPixmap(240, 68)
+            logo_pixmap.fill(Qt.transparent)
+            logo_painter = QPainter(logo_pixmap)
+            logo_renderer.render(logo_painter, QRectF(0, 0, 240, 67))
+            logo_painter.end()
+            self.brand_logo.setPixmap(logo_pixmap.scaledToWidth(170, Qt.SmoothTransformation))
+            panel.addWidget(self.brand_logo)
         mixer_header = QHBoxLayout()
         mixer_header.setContentsMargins(0, 0, 0, 0)
         mixer_title = QLabel('STEM MIXER')
