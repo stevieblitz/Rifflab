@@ -609,6 +609,7 @@ class Window(QMainWindow):
             ('I', lambda: self._shortcut_marker('a')),
             ('O', lambda: self._shortcut_marker('b')),
             ('Ctrl+S', self.save_project), ('Ctrl+O', self.open_project),
+            ('Ctrl+V', self.paste_youtube_link),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.setContext(Qt.WindowShortcut)
@@ -737,6 +738,7 @@ class Window(QMainWindow):
         url_row.addWidget(self.url, 1)
         self.load_url = QPushButton('Download & Split')
         self.load_url.clicked.connect(self.download_url)
+        self.url.returnPressed.connect(self.download_url)
         url_row.addWidget(self.load_url)
         import_layout.addLayout(url_row)
         local_row = QHBoxLayout()
@@ -1947,12 +1949,30 @@ class Window(QMainWindow):
         if path:
             self.load_local(Path(path))
 
+    def paste_youtube_link(self):
+        """Paste a YouTube link from anywhere in RiffLab and open import."""
+        clipboard_text = QApplication.clipboard().text().strip()
+        if not valid_youtube_url(clipboard_text):
+            return
+        self.tabs.setCurrentIndex(2)
+        self.url.setText(clipboard_text)
+        self.url.setFocus()
+
     def download_url(self):
         url = self.url.text().strip()
         if not valid_youtube_url(url):
             self.on_error('Please paste a valid HTTPS YouTube URL.')
             return
         if self.processing:
+            return
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Question)
+        confirm.setWindowTitle('Download audio?')
+        confirm.setText('Download and split audio from this YouTube link?')
+        confirm.setInformativeText(url)
+        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm.setDefaultButton(QMessageBox.Yes)
+        if confirm.exec() != QMessageBox.Yes:
             return
         self.set_busy(True)
         threading.Thread(target=self._download, args=(url,), daemon=True).start()
