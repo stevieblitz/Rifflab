@@ -276,45 +276,69 @@ class WaveformTimeline(QWidget):
 
 
 def extract_waveform_peaks(source, count=1800):
-    """Decode a waveform from original audio or all four stems off the UI thread."""
+    """Read waveform directly from audio files; no FFmpeg process needed for stems."""
+    import numpy as np
+    import soundfile as sf
+
+    paths = ([str(source[name]) for name in STEMS]
+             if isinstance(source, dict) else [str(source)])
+    missing = [path for path in paths if not Path(path).is_file()]
+    if missing:
+        raise FileNotFoundError('Waveform input missing: ' + ', '.join(missing[:2]))
+
+    try:
+        with __import__('contextlib').ExitStack() as stack:
+            streams = [stack.enter_context(sf.SoundFile(path)) for path in paths]
+            rates = {stream.samplerate for stream in streams}
+            if len(rates) != 1:
+                raise ValueError('Stem sample rates do not match')
+            total_frames = max(stream.frames for stream in streams)
+            if total_frames <= 0:
+                raise ValueError('Audio contains no samples')
+            bins = np.zeros(count, dtype=np.float32)
+            chunk_size = 16384
+            position = 0
+            while position < total_frames:
+                length = min(chunk_size, total_frames - position)
+                mixed = np.zeros(length, dtype=np.float32)
+                for stream in streams:
+                    samples = stream.read(length, dtype='float32', always_2d=True)
+                    if len(samples):
+                        mixed[:len(samples)] += samples.mean(axis=1)
+                # Place each sample in its timeline bin; retain the maximum amplitude.
+                indices = np.minimum(count - 1,
+                                     ((np.arange(length, dtype=np.int64) + position)
+                                      * count // total_frames))
+                np.maximum.at(bins, indices, np.abs(mixed))
+                position += length
+            return np.clip(bins, 0.0, 1.0).tolist()
+    except (RuntimeError, OSError) as exc:
+        # Some compressed formats are not supported by libsndfile; use FFmpeg.
+        if isinstance(source, dict):
+            raise RuntimeError(f'Cannot read stem WAV files: {exc}') from exc
+
     exe = shutil.which('ffmpeg')
     if not exe:
         bundled = Path(sys.executable).resolve().parent / 'bin' / 'ffmpeg.exe'
         if bundled.is_file():
             exe = str(bundled)
     if not exe:
-        raise RuntimeError('Waveform: FFmpeg not found (expected bin/ffmpeg.exe)')
+        raise RuntimeError('Audio decoder unavailable: FFmpeg missing')
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    if isinstance(source, dict):
-        paths = [str(source[name]) for name in STEMS]
-        if not all(Path(path).is_file() for path in paths):
-            return []
-        args = [exe, '-v', 'error']
-        for path in paths:
-            args.extend(['-i', path])
-        args.extend(['-filter_complex', 'amix=inputs=4:duration=longest:normalize=0'])
-    else:
-        if not Path(source).is_file():
-            return []
-        args = [exe, '-v', 'error', '-i', str(source)]
     proc = subprocess.run(
-        args + ['-vn', '-ac', '1', '-ar', '2000', '-f', 's16le', '-'],
+        [exe, '-v', 'error', '-i', paths[0], '-vn', '-ac', '1',
+         '-ar', '2000', '-f', 's16le', '-'],
         capture_output=True, timeout=120, creationflags=flags)
-    if proc.returncode != 0:
+    if proc.returncode:
         detail = proc.stderr.decode('utf-8', errors='replace').strip()
-        if not detail:
-            detail = f'exit code {proc.returncode}; input: {str(source)[:220]}'
-        raise RuntimeError('Waveform FFmpeg failed: ' + detail[-650:])
-    pcm = array('h')
-    pcm.frombytes(proc.stdout[:len(proc.stdout)//2*2])
-    if not pcm:
-        return []
-    step = max(1, len(pcm)//count)
-    peaks = []
-    for start in range(0, len(pcm), step):
-        chunk = pcm[start:start+step]
-        peaks.append(min(1.0, max(abs(v) for v in chunk) / 32768.0))
-    return peaks[:count+1]
+        raise RuntimeError(f'FFmpeg exited {proc.returncode}: {detail[-350:] or paths[0]}')
+    pcm = np.frombuffer(proc.stdout[:len(proc.stdout)//2*2], dtype='<i2')
+    if not len(pcm):
+        raise RuntimeError('FFmpeg returned empty audio')
+    bins = np.zeros(count, dtype=np.float32)
+    indices = np.minimum(count - 1, np.arange(len(pcm), dtype=np.int64) * count // len(pcm))
+    np.maximum.at(bins, indices, np.abs(pcm.astype(np.float32)) / 32768.0)
+    return np.clip(bins, 0.0, 1.0).tolist()
 
 
 class MinimalSplitterHandle(QSplitterHandle):
