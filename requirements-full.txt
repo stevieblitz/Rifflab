@@ -1,0 +1,9 @@
+PySide6>=6.7,<7
+yt-dlp[default]>=2025.1
+numpy>=1.26,<3
+scipy>=1.12
+librosa>=0.10.2
+soundfile>=0.12
+demucs>=4.0.1
+pyinstaller>=6.10,<7
+sounddevice>=0.5
