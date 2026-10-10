@@ -279,7 +279,11 @@ def extract_waveform_peaks(source, count=1800):
     """Decode a waveform from original audio or all four stems off the UI thread."""
     exe = shutil.which('ffmpeg')
     if not exe:
-        return []
+        bundled = Path(sys.executable).resolve().parent / 'bin' / 'ffmpeg.exe'
+        if bundled.is_file():
+            exe = str(bundled)
+    if not exe:
+        raise RuntimeError('Waveform: FFmpeg not found (expected bin/ffmpeg.exe)')
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     if isinstance(source, dict):
         paths = [str(source[name]) for name in STEMS]
@@ -297,7 +301,7 @@ def extract_waveform_peaks(source, count=1800):
         args + ['-vn', '-ac', '1', '-ar', '2000', '-f', 's16le', '-'],
         capture_output=True, timeout=120, creationflags=flags)
     if proc.returncode != 0:
-        return []
+        raise RuntimeError('Waveform FFmpeg failed: ' + proc.stderr.decode('utf-8', errors='replace')[-500:])
     pcm = array('h')
     pcm.frombytes(proc.stdout[:len(proc.stdout)//2*2])
     if not pcm:
@@ -2713,13 +2717,16 @@ class Window(QMainWindow):
             try:
                 peaks = extract_waveform_peaks(source)
                 self.signals.waveform_ready.emit(key, peaks)
-            except Exception:
+            except Exception as exc:
+                self.signals.error.emit(f'Waveform: {exc}')
                 self.signals.waveform_ready.emit(key, [])
         threading.Thread(target=task, daemon=True).start()
 
     def on_waveform_ready(self, path, peaks):
         if path == self._waveform_source:
             self.waveform.set_waveform(peaks)
+            if not peaks:
+                self.status_message('Waveform unavailable — check FFmpeg and audio file')
 
     def seek_waveform(self, ms):
         if self._duration <= 0:
