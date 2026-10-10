@@ -1239,8 +1239,14 @@ class Window(QMainWindow):
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
         footer.addWidget(self.status, 1)
-        self.maker_credit = QLabel('by Stevie Blitz')
+        self.maker_credit = QLabel(
+            'by <a href="https://github.com/stevieblitz/Rifflab" '
+            'style="color:#7bd6ff;text-decoration:none;">Stevie Blitz</a>, powered by AI'
+        )
         self.maker_credit.setObjectName('makerCredit')
+        self.maker_credit.setTextFormat(Qt.RichText)
+        self.maker_credit.setOpenExternalLinks(True)
+        self.maker_credit.setToolTip('RiffLab on GitHub')
         self.maker_credit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         footer.addWidget(self.maker_credit, 0)
         self.tuner_quick_button = QPushButton()
