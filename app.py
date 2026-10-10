@@ -1239,7 +1239,7 @@ class Window(QMainWindow):
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
         footer.addWidget(self.status, 1)
-        self.maker_credit = QLabel('by Teun Verhoeven')
+        self.maker_credit = QLabel('by Stevie Blitz')
         self.maker_credit.setObjectName('makerCredit')
         self.maker_credit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         footer.addWidget(self.maker_credit, 0)
