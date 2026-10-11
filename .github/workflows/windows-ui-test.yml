@@ -60,10 +60,12 @@ jobs:
           New-Item -ItemType Directory -Force vendor/bin | Out-Null
           Copy-Item $ffmpeg.FullName vendor/bin/ffmpeg.exe
           Copy-Item $ffprobePath vendor/bin/ffprobe.exe
-          & vendor/bin/ffmpeg.exe -version | Select-Object -First 1
-          if ($LASTEXITCODE -ne 0) { throw 'Actual FFmpeg binary failed' }
-          & vendor/bin/ffprobe.exe -version | Select-Object -First 1
-          if ($LASTEXITCODE -ne 0) { throw 'Actual FFprobe binary failed' }
+          foreach ($tool in @('ffmpeg.exe', 'ffprobe.exe')) {
+            $output = & (Join-Path 'vendor/bin' $tool) -version
+            $code = $LASTEXITCODE
+            if ($code -ne 0) { throw "Actual $tool failed with exit code $code" }
+            $output | Select-Object -First 1
+          }
 
       - name: Install UI and build tools
         run: python -m pip install -r requirements-preview.txt "pyinstaller>=6.10,<7"
@@ -128,6 +130,20 @@ jobs:
             if ($exitCode -ne 0) { throw "Bundled tool cannot run: $path (exit code $exitCode)" }
             $versionOutput | Select-Object -First 1
           }
+          # Verify the same directory passed to yt-dlp is functional.
+          $ffmpegLocation = (Resolve-Path "$root/bin").Path
+          @'
+          import os
+          from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+          location = os.environ['RIFFLAB_FFMPEG_LOCATION']
+          p = FFmpegPostProcessor(None)
+          p._ffmpeg_location.set(location) if hasattr(p._ffmpeg_location, 'set') else None
+          assert os.path.isfile(os.path.join(location, 'ffmpeg.exe'))
+          assert os.path.isfile(os.path.join(location, 'ffprobe.exe'))
+          '@ | Set-Content verify_ffmpeg.py
+          $env:RIFFLAB_FFMPEG_LOCATION = $ffmpegLocation
+          python verify_ffmpeg.py
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg location smoke test failed' }
           'Run RiffLab.exe. Keep all files in this folder together.' | Set-Content "$root/START-HERE.txt"
           Compress-Archive -Path "$root/*" -DestinationPath RiffLab-UI-Test-Flat-Chords.zip -Force
 
