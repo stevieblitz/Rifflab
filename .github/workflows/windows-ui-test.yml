@@ -74,7 +74,11 @@ jobs:
       - name: Build UI executable
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name RiffLab --add-data "assets/rifflab-logo.svg;assets" --collect-all qtawesome --collect-all yt_dlp app.py
+          $brandArg = @()
+          if (Test-Path 'assets/rifflab-brand.png') {
+            $brandArg = @('--add-data', 'assets/rifflab-brand.png;assets')
+          }
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name RiffLab --add-data "assets/rifflab-logo.svg;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Install AI requirements
