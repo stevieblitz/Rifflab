@@ -2922,27 +2922,23 @@ class Window(QMainWindow):
         root = chord.replace('♯', '#').replace('♭', 'b')
         root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
         palette = {
-            'C': '#218a99', 'C#': '#267c9e', 'D': '#a34869',
-            'D#': '#98527f', 'E': '#276da5', 'F': '#6b629e',
-            'F#': '#665b9e', 'G': '#68549e', 'G#': '#815390',
-            'A': '#347f79', 'A#': '#956b55', 'B': '#966c48',
+            'C': '#008db9', 'C#': '#1568c5', 'D': '#bc3d62',
+            'D#': '#a33b8b', 'E': '#0877b8', 'F': '#624bc2',
+            'F#': '#5845a9', 'G': '#673bb1', 'G#': '#8734ad',
+            'A': '#098f83', 'A#': '#b65b27', 'B': '#a96a20',
         }
-        base = QColor(palette.get(root, '#24394b') if chord != '—' else '#172634')
+        base = QColor(palette.get(root, '#264057') if chord != '—' else '#172634')
         if active:
-            # Brighter, more saturated version of the same note color.
-            background = base.lighter(155).name()
+            # Strong saturation and brightness for the current beat.
+            background = base.lighter(160).name()
             foreground = '#ffffff'
         else:
-            # Desaturate and soften the entire inactive timeline.
-            h, saturation, value, alpha = base.getHsv()
-            muted = QColor.fromHsv(h if h >= 0 else 0,
-                                   round(max(0, saturation) * 0.48),
-                                   min(255, round(value * 1.13)), alpha)
-            background = muted.name()
-            foreground = '#c6d3df'
+            # Dark, restrained but saturated; no washed-out pastel palette.
+            background = base.darker(135).name()
+            foreground = '#e0ecf5'
         beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
         ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
-        border = '#e6f8ff' if active else ('#506575' if beginning else background)
+        border = '#ffffff' if active else ('#35546a' if beginning else background)
         return (
             f'background:{background};'
             f'border:0px;'
@@ -3097,38 +3093,9 @@ class Window(QMainWindow):
         return {beat: info for beat, info in matches.items() if counts[info[0]] >= 2}
 
     def infer_song_sections(self, beat_count):
-        """Group four-bar phrases by recurring harmony, without claiming to
-        identify verses/choruses from chords alone. Manual labels win."""
+        """Display only user-confirmed sections; do not invent verse/chorus."""
         rows = (beat_count + 15) // 16
-        if not rows:
-            return []
-        phrases = []
-        for row in range(rows):
-            notes = []
-            for beat in range(row * 16, min(beat_count, (row + 1) * 16)):
-                t = (self.beat_times[beat] if beat < len(self.beat_times)
-                     else beat * 60.0 / max(1, self.grid_bpm.value()))
-                idx = bisect.bisect_right(self.display_times, t) - 1
-                notes.append(self.display_chords[idx][1] if idx >= 0 else '—')
-            # A phrase is a four-bar harmonic fingerprint. It is not a
-            # semantic classifier; different sections can share harmony.
-            phrases.append(tuple(notes))
-        counts = Counter(p for p in phrases if any(n != '—' for n in p))
-        letters = {}
-        labels = []
-        for row, phrase in enumerate(phrases):
-            if row in self.section_overrides:
-                label = self.section_overrides[row]
-            elif row == 0:
-                label = 'Intro · ?'
-            elif counts[phrase] > 1:
-                if phrase not in letters:
-                    letters[phrase] = chr(65 + len(letters) % 26)
-                label = f'Part {letters[phrase]} · ?'
-            else:
-                label = 'Part · ?'
-            labels.append(label)
-        return labels
+        return [self.section_overrides.get(row, '') for row in range(rows)]
 
     def edit_section_label(self, row):
         choices = ['Intro', 'Verse', 'Chorus', 'Pre-Chorus', 'Bridge',
@@ -3164,12 +3131,23 @@ class Window(QMainWindow):
             pattern_labels[start] = (f'{letter}{occurrences[letter]}', confidence, group_idx)
         self.pattern_matches = pattern_labels
         section_labels = self.infer_song_sections(beats)
-        section_colors = ('#6799b5', '#78aaa2', '#a58eae', '#ba947c')
+        section_colors = ('#139ed0', '#1886b9', '#087da9', '#2074a2')
+        # Section markers remain editable, but do not spam guessed Part A/B
+        # on every row. Show bar ranges until the user names a section.
+        current_section = 0
         for section_row, section_label in enumerate(section_labels):
-            section = QPushButton(section_label)
-            section.setToolTip('Estimated section (?). Click to rename it manually.')
-            section.setFixedWidth(85)
-            section.setStyleSheet(f'background:#20303c;color:{section_colors[section_row % len(section_colors)]};border:0;border-left:4px solid {section_colors[section_row % len(section_colors)]};font-size:10px;text-align:left;padding:3px;')
+            if section_label:
+                current_section = (current_section + 1) % len(section_colors)
+            accent = section_colors[current_section]
+            label = section_label or f'{section_row * 4 + 1}–{section_row * 4 + 4}'
+            section = QPushButton(label)
+            section.setToolTip('Click to name this section (Intro, Verse, Chorus, etc.)')
+            section.setFixedWidth(90)
+            section.setStyleSheet(
+                f'background:#152633;color:{"#f2faff" if section_label else "#728c9e"};'
+                f'border:0;border-left:{"4px" if section_label else "2px"} solid {accent};'
+                f'font-size:11px;font-weight:{"700" if section_label else "400"};'
+                'text-align:left;padding:3px 6px;')
             section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
             self.chord_grid.addWidget(section, section_row, 0)
         for beat_index in range(beats):
