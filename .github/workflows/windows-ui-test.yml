@@ -78,14 +78,15 @@ jobs:
           if (Test-Path 'assets/rifflab-brand.png') {
             $brandArg = @('--add-data', 'assets/rifflab-brand.png;assets')
           }
-          # Windows Explorer/taskbar uses the flask .exe icon, while the Qt
-          # titlebar uses the separate RL icon bundled as a data asset.
+          # Confirmed mapping: the square RL + Erlenmeyer mark is BOTH the
+          # Explorer .exe icon and the Qt titlebar icon. Do not use the flask-only asset.
           python -m pip install Pillow
           @'
           from PIL import Image
-          source = Image.open('assets/rifflab-app-icon.png').convert('RGBA')
+          source = Image.open('assets/rifflab-window-icon.png').convert('RGBA')
           source.save('assets/rifflab-app.ico', format='ICO',
-                      sizes=[(16,16), (24,24), (32,32), (48,48), (64,64)])
+                      sizes=[(16,16), (24,24), (32,32), (48,48),
+                             (64,64), (128,128), (256,256)])
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
           python -m PyInstaller --noconfirm --clean --windowed --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp app.py
