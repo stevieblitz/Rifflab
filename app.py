@@ -454,6 +454,8 @@ def command(args):
 def ffmpeg_path():
     """Return a directory containing BOTH ffmpeg and ffprobe for yt-dlp."""
     exe_dir = Path(sys.executable).resolve().parent
+    # Frozen PyInstaller apps may resolve __file__ inside _internal.
+    # Prefer the portable application's bundled tools beside RiffLab.exe.
     search_dirs = [exe_dir / 'bin', exe_dir, Path(__file__).resolve().parent / 'bin']
     ffmpeg_exe = shutil.which('ffmpeg')
     ffprobe_exe = shutil.which('ffprobe')
@@ -1994,6 +1996,12 @@ class Window(QMainWindow):
                 'js_runtimes': {'deno': {}},
                 'remote_components': ['ejs:github'],
             }
+            # yt-dlp/FFmpeg subprocesses must see the bundled tools on PATH,
+            # even when the app was launched from Explorer without a shell.
+            bundled_ffmpeg = ffmpeg_path()
+            if bundled_ffmpeg:
+                opts['ffmpeg_location'] = bundled_ffmpeg
+                os.environ['PATH'] = bundled_ffmpeg + os.pathsep + os.environ.get('PATH', '')
             with YoutubeDL(opts) as downloader:
                 info = downloader.extract_info(url, download=True)
                 video_id = re.sub(r'[^A-Za-z0-9_-]', '_', info['id'])
