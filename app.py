@@ -2903,7 +2903,11 @@ class Window(QMainWindow):
             f'border-bottom-left-radius:{4 if beginning else 0}px;'
             f'border-top-right-radius:{4 if ending else 0}px;'
             f'border-bottom-right-radius:{4 if ending else 0}px;'
-            'text-align:left;color:#f2f7fb;padding:2px 5px;'
+            f'font-size:{max(9, round(12 * self.grid_zoom.value() / 100))}px;'
+            f'font-weight:{"700" if self.grid_buttons[index].text().strip() else "400"};'
+            f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
+            f'{max(3, round(5 * self.grid_zoom.value() / 100))}px;'
+            'text-align:left;color:#f2f7fb;'
         )
 
     def apply_grid_zoom(self, zoom):
@@ -2919,7 +2923,7 @@ class Window(QMainWindow):
             button.setFont(font)
             button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
         self.chord_grid.setHorizontalSpacing(0)
-        self.chord_grid.setVerticalSpacing(max(3, round(5 * scale)))
+        self.chord_grid.setVerticalSpacing(3)  # Keep rows tight; zoom changes cells, not gaps.
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
