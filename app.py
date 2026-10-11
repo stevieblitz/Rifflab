@@ -499,6 +499,7 @@ def mix_to_file(stem_paths, levels, transpose, output):
 
 class Signals(QObject):
     status = Signal(str)
+    stage = Signal(str)
     separated = Signal(str)
     chords = Signal(object)
     mixed = Signal(str, int, bool)
@@ -530,6 +531,7 @@ class Window(QMainWindow):
         self.setMinimumSize(640, 430)
         self.signals = Signals()
         self.signals.status.connect(self.status_message)
+        self.signals.stage.connect(self.set_stage)
         self.signals.separated.connect(self.on_separated)
         self.signals.chords.connect(self.on_chords)
         self.signals.mixed.connect(self.on_mixed)
@@ -553,6 +555,7 @@ class Window(QMainWindow):
         self.display_chords = []
         self.display_times = []
         self.processing = False
+        self.import_stage = ''
         self.mixing = False
         self.pending_mix = False
         self.mix_counter = 0
@@ -631,6 +634,8 @@ class Window(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
+        self.progress.setFormat('Ready')
+        self.progress.setTextVisible(True)
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
         outer.addWidget(self.tabs, 1)
@@ -1759,6 +1764,9 @@ class Window(QMainWindow):
         return values
 
     def save_project(self):
+        if self.processing:
+            self.status_message('Wait for import and analysis to finish before saving.')
+            return
         if not self.stems and not self.source_audio:
             self.status_message('Open a song before saving a project.')
             return
@@ -1949,21 +1957,41 @@ class Window(QMainWindow):
             self.player.setPosition(pos)
         # Projects restore paused; the user decides when to resume.
 
+    def set_stage(self, stage):
+        """Main-thread update: no fabricated percentages for Demucs/AI."""
+        self.import_stage = stage
+        self.progress.setFormat(stage)
+        if self.processing:
+            self.progress.setRange(0, 0)
+        self.status_message(stage)
+
     def set_busy(self, busy):
         self.processing = busy
-        self.load_url.setEnabled(not busy)
-        self.load_file.setEnabled(not busy)
-        self.progress.setRange(0, 0 if busy else 1)
-        if not busy:
+        for widget in (self.load_url, self.load_file, self.project_save,
+                       self.project_load, self.recent_projects, self.split_local,
+                       self.analyze_local, self.reanalyze_button):
+            widget.setEnabled(not busy)
+        if busy:
+            self.progress.setRange(0, 0)
+            self.progress.setFormat('Preparing import…')
+        else:
+            self.progress.setRange(0, 1)
             self.progress.setValue(1)
+            self.progress.setFormat('Ready')
+            self.split_local.setEnabled(self.source_audio is not None)
+            self.analyze_local.setEnabled(self.source_audio is not None)
+            self.reanalyze_button.setEnabled(True)
 
     def on_error(self, message):
+        self.analysis_running = False
         self.set_busy(False)
         self.mixing = False
         self.status_message('Error — see details and rifflab-errors.log')
         QMessageBox.warning(self, 'RiffLab', message)
 
     def open_file(self):
+        if self.processing:
+            return
         path, _ = QFileDialog.getOpenFileName(self, 'Open Audio', '', 'Audio (*.mp3 *.wav *.flac *.m4a *.ogg)')
         if path:
             self.load_local(Path(path))
@@ -1998,7 +2026,7 @@ class Window(QMainWindow):
 
     def _download(self, url):
         try:
-            self.signals.status.emit('Downloading audio…')
+            self.signals.stage.emit('1/3 · Downloading audio…')
             output = ROOT / 'downloads'
             output.mkdir(exist_ok=True)
             # Print the actual destination, never guess by modification time.
@@ -2037,7 +2065,7 @@ class Window(QMainWindow):
             wav = output / f'{video_id}.wav'
             if not wav.is_file():
                 raise RuntimeError('Download finished but no WAV file was found.')
-            self.signals.status.emit('Download complete. Separating stems…')
+            self.signals.stage.emit('2/3 · Separating stems…')
             self._split(wav)
         except Exception as exc:
             self.signals.error.emit(f'{exc}\n\nTechnical details saved in the RiffLab log.')
@@ -2052,7 +2080,9 @@ class Window(QMainWindow):
         self.update_now_playing()
 
     def load_local(self, path):
-        """Local files play immediately; AI analysis is optional and runs separately."""
+        """Play immediately and automatically analyze a newly imported audio file."""
+        if self.processing:
+            return
         self.stop_live()
         self.source_audio = Path(path)
         self.load_waveform(path)
@@ -2090,6 +2120,10 @@ class Window(QMainWindow):
         self.export.setEnabled(False)
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
+        self.set_busy(True)
+        self.set_stage('1/1 · Analyzing imported audio…')
+        self.analysis_running = True
+        threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
 
     def reanalyze_current(self):
         if self.analysis_running:
@@ -2147,6 +2181,9 @@ class Window(QMainWindow):
 
     def on_analysis_done(self):
         self.analysis_running = False
+        if self.processing:
+            self.set_busy(False)
+            self.status_message('Import complete — notes and stems ready.')
         self.analyze_local.setEnabled(self.source_audio is not None)
         self.reanalyze_button.setEnabled(True)
 
@@ -2263,7 +2300,7 @@ class Window(QMainWindow):
             self._log_exception()
 
     def _split(self, path):
-        self.signals.status.emit('Separating 4 stems with Demucs — first run can be slow…')
+        self.signals.stage.emit('2/3 · Separating 4 stems (Demucs)…')
         output = ROOT / 'separated'
         output.mkdir(exist_ok=True)
         worker_command('split', str(path), str(output))
@@ -2291,7 +2328,7 @@ class Window(QMainWindow):
         self.export.setEnabled(True)
         for slider in self.volumes.values():
             slider.setEnabled(True)
-        self.set_busy(False)
+        self.set_stage('3/3 · Analyzing notes and beats…')
         self.split_local.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.clear_loop()
@@ -2343,6 +2380,7 @@ class Window(QMainWindow):
 
     def _analyze(self):
         try:
+            self.signals.stage.emit('3/3 · Analyzing notes and beats…')
             self._analyze_mode()
             # Drums are used for beat detection, not for chord recognition.
             beats_cache = self.folder / 'beats_drums_v2.json'
@@ -2351,8 +2389,10 @@ class Window(QMainWindow):
                 beats_cache.write_text(json.dumps(beats), encoding='utf-8')
             self.signals.beats.emit(beats)
         except Exception as exc:
-            self.signals.status.emit(f'Chord analysis failed: {exc}')
+            self.signals.error.emit(f'Chord analysis failed: {exc}')
             self._log_exception()
+        finally:
+            self.signals.analysis_done.emit()
 
     def auto_index_analyzed_song(self):
         """Add analyzed songs as saved projects, without opening a save dialog."""
