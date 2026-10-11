@@ -2653,7 +2653,9 @@ class Window(QMainWindow):
                 end = raw[i + 1][0] if i + 1 < len(raw) else float('inf')
                 if output and end - t < seconds:
                     continue
-                if not output or chord != output[-1][1]:
+                # In Bass Mode a repeated note is a new pluck, not a
+                # redundant chord change. Preserve its timing in the grid.
+                if bass_mode or not output or chord != output[-1][1]:
                     output.append((t, chord))
         self.display_chords = output
         self.display_times = [t for t, _ in output]
