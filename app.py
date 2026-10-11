@@ -951,15 +951,12 @@ class Window(QMainWindow):
         if self.new_brand_asset.is_file():
             logo = QPixmap(str(self.new_brand_asset))
             self.header_brand.setPixmap(logo.scaled(168, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        elif self.brand_asset.is_file():
-            renderer = QSvgRenderer(str(self.brand_asset))
-            fallback = QPixmap(168, 68)
-            fallback.fill(Qt.transparent)
-            painter = QPainter(fallback)
-            renderer.render(painter, QRectF(0, 0, 168, 68))
-            painter.end()
-            self.header_brand.setPixmap(fallback)
-        project_row.addWidget(self.header_brand)
+        else:
+            # Never silently substitute a different logo when packaging fails.
+            self.header_brand.setText('RiffLab')
+            self.header_brand.setStyleSheet(
+                'background:transparent;border:0;color:#13a2d7;'
+                'font-size:22px;font-weight:800;')
         waveform_row.addWidget(self.header_brand)
         self.chord = QLabel('—')
         self.chord.setAlignment(Qt.AlignCenter)
