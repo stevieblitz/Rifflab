@@ -1,12 +1,9 @@
 name: Build RiffLab UI Test for Windows
 
+# One Windows build per branch. New commits cancel obsolete queued/running
+# builds; avoid duplicate push + pull_request builds for the same revision.
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main, experiment/real-ui-screenshot]
-    paths:
-      - 'app.py'
-      - '.github/workflows/windows-ui-test.yml'
   push:
     branches: [main, experiment/real-ui-screenshot]
     paths:
@@ -14,7 +11,11 @@ on:
       - 'ai_worker.py'
       - 'realtime_audio.py'
       - 'requirements-*.txt'
-      - '.github/workflows/windows-build.yml'
+      - '.github/workflows/windows-ui-test.yml'
+
+concurrency:
+  group: rifflab-windows-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
