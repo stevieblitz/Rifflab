@@ -133,13 +133,17 @@ jobs:
           # Verify the same directory passed to yt-dlp is functional.
           $ffmpegLocation = (Resolve-Path "$root/bin").Path
           @'
-          import os
-          from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+          import os, subprocess
+          from yt_dlp import YoutubeDL
           location = os.environ['RIFFLAB_FFMPEG_LOCATION']
-          p = FFmpegPostProcessor(None)
-          p._ffmpeg_location.set(location) if hasattr(p._ffmpeg_location, 'set') else None
-          assert os.path.isfile(os.path.join(location, 'ffmpeg.exe'))
-          assert os.path.isfile(os.path.join(location, 'ffprobe.exe'))
+          for tool in ('ffmpeg.exe', 'ffprobe.exe'):
+              executable = os.path.join(location, tool)
+              assert os.path.isfile(executable), executable
+              subprocess.run([executable, '-version'], check=True, capture_output=True)
+          with YoutubeDL({'ffmpeg_location': location, 'quiet': True}) as ydl:
+              pp = __import__('yt_dlp.postprocessor.ffmpeg', fromlist=['FFmpegExtractAudioPP']).FFmpegExtractAudioPP(ydl)
+              assert pp.available, 'yt-dlp cannot locate FFmpeg'
+              assert pp.probe_available, 'yt-dlp cannot locate FFprobe'
           '@ | Set-Content verify_ffmpeg.py
           $env:RIFFLAB_FFMPEG_LOCATION = $ffmpegLocation
           python verify_ffmpeg.py
