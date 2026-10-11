@@ -466,15 +466,18 @@ def ffmpeg_path():
     search_dirs = [exe_dir / 'bin', exe_dir, Path(__file__).resolve().parent / 'bin']
     ffmpeg_exe = shutil.which('ffmpeg')
     ffprobe_exe = shutil.which('ffprobe')
+    # A PATH-installed Chocolatey shim may be broken. Always prefer our
+    # tested portable binaries before trying anything installed globally.
     if ffmpeg_exe:
-        search_dirs.insert(0, Path(ffmpeg_exe).resolve().parent)
+        search_dirs.append(Path(ffmpeg_exe).resolve().parent)
     if ffprobe_exe:
-        search_dirs.insert(0, Path(ffprobe_exe).resolve().parent)
+        search_dirs.append(Path(ffprobe_exe).resolve().parent)
     for folder in search_dirs:
         if (folder / 'ffmpeg.exe').is_file() and (folder / 'ffprobe.exe').is_file():
             return str(folder)
     if ffmpeg_exe and ffprobe_exe:
-        # yt-dlp can locate each executable independently via PATH.
+        # Separate PATH directories are supported by yt-dlp; do not point
+        # ffmpeg_location at one incomplete directory.
         return None
     raise RuntimeError('FFmpeg en FFprobe ontbreken. Controleer met: Get-Command ffmpeg, ffprobe')
 
