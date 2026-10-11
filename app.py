@@ -925,6 +925,13 @@ class Window(QMainWindow):
         self.reanalyze_button.setToolTip('Run fresh chord and beat analysis without splitting stems again')
         self.reanalyze_button.clicked.connect(self.reanalyze_current)
         options.addWidget(self.reanalyze_button)
+        options.addWidget(QLabel('NoteGuard'))
+        self.noteguard = QComboBox()
+        self.noteguard.addItems(['Original', 'Conservative', 'Balanced', 'Strict'])
+        self.noteguard.setCurrentIndex(1)
+        self.noteguard.setToolTip('Second-pass note verification. Original keeps all events; Conservative protects fast riffs.')
+        self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
+        options.addWidget(self.noteguard)
         options.addWidget(QLabel('Chord stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # 0 = no filtering; 20 = 2 seconds
@@ -2569,6 +2576,49 @@ class Window(QMainWindow):
                + self.transpose.value()) % 12
         return NOTES[idx] + suffix
 
+    @staticmethod
+    def verify_note_events(events, level, bass_mode):
+        """Remove isolated low-duration pitch glitches without inventing notes.
+
+        Keep the original events untouched for instant A/B comparison.
+        Preserve repeated same-note attacks and fast notes corroborated by
+        neighbouring events; never quantize the performance to a beat grid.
+        """
+        if level <= 0 or len(events) < 3:
+            return list(events)
+        minimum = (0, 0.085, 0.14, 0.22)[min(level, 3)]
+        # Full chords need longer evidence than individual bass attacks.
+        if not bass_mode:
+            minimum *= 1.5
+        result = [events[0]]
+        for i in range(1, len(events) - 1):
+            t, note = events[i]
+            prev_t, prev_note = events[i - 1]
+            next_t, next_note = events[i + 1]
+            duration = next_t - t
+            # An isolated A-B-A excursion is the clearest sign of a glitch.
+            isolated = prev_note == next_note and note != prev_note
+            # Short runs in fast passages can be intentional, especially bass.
+            fast_context = (t - prev_t < 0.24 and next_t - t < 0.24)
+            threshold = minimum * (0.65 if fast_context else 1.0)
+            if isolated and duration < threshold:
+                continue
+            # Strict mode can suppress a very short isolated change even
+            # without an A-B-A pattern, but protects dense bass riffs.
+            if level == 3 and not fast_context and duration < minimum * 0.45 and note != prev_note:
+                continue
+            result.append((t, note))
+        result.append(events[-1])
+        # Collapse identical adjacent pitch labels; retain separate bass
+        # attacks because repeated plucks are musically meaningful.
+        if not bass_mode:
+            compact = []
+            for t, note in result:
+                if not compact or compact[-1][1] != note:
+                    compact.append((t, note))
+            return compact
+        return result
+
     def rebuild_chords(self, _value=None):
         seconds = self.sensitivity.value() * 0.1
         self.sensitivity_label.setText(f'{seconds:.1f} s')
@@ -2580,6 +2630,7 @@ class Window(QMainWindow):
         raw = [(float(t), re.match(r'^[A-G](?:#|b)?', str(c)).group(0)
                 if bass_mode and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
                for t, c in self.chord_data]
+        raw = self.verify_note_events(raw, self.noteguard.currentIndex(), bass_mode)
         # Events already mark detected harmonic changes; reject only fleeting events.
         # Preserve the old dense-frame majority method for unsplit legacy analysis.
         dense = len(raw) > 3 and (raw[-1][0] - raw[0][0]) / len(raw) < 0.25
