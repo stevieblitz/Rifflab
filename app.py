@@ -946,7 +946,10 @@ class Window(QMainWindow):
         self.header_brand.setStyleSheet('background:transparent;border:0;')
         if self.new_brand_asset.is_file():
             logo = QPixmap(str(self.new_brand_asset))
-            self.header_brand.setPixmap(logo.scaled(168, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            # Preserve aspect ratio and avoid enlarging a small raster source.
+            target = logo.size().scaled(QSize(168, 68), Qt.KeepAspectRatio)
+            self.header_brand.setPixmap(logo.scaled(
+                target, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             # Never silently substitute a different logo when packaging fails.
             self.header_brand.setText('RiffLab')
@@ -1082,6 +1085,24 @@ class Window(QMainWindow):
         self.chord_grid.setVerticalSpacing(3)
         self.chord_grid.setSpacing(3)
         self.chord_scroll.setWidget(self.grid_host)
+        self.chord_loading = QWidget(self.chord_scroll.viewport())
+        self.chord_loading.setObjectName('chordLoading')
+        self.chord_loading.setStyleSheet(
+            'QWidget#chordLoading {background-color:rgba(9,19,30,225);}')
+        loading_layout = QVBoxLayout(self.chord_loading)
+        loading_layout.setAlignment(Qt.AlignCenter)
+        self.chord_loading_label = QLabel('Analyzing notes…')
+        self.chord_loading_label.setAlignment(Qt.AlignCenter)
+        self.chord_loading_label.setStyleSheet(
+            'color:#eaf6ff;font-size:17px;font-weight:700;background:transparent;')
+        loading_layout.addWidget(self.chord_loading_label)
+        self.chord_loading_bar = QProgressBar()
+        self.chord_loading_bar.setFixedWidth(260)
+        self.chord_loading_bar.setRange(0, 0)
+        self.chord_loading_bar.setTextVisible(False)
+        loading_layout.addWidget(self.chord_loading_bar, alignment=Qt.AlignHCenter)
+        self.chord_loading.hide()
+        self.chord_scroll.viewport().installEventFilter(self)
         # Only the grid area is horizontally split with the compact stem mixer.
         self.play_splitter = MinimalSplitter(Qt.Horizontal)
         self.play_splitter.setObjectName('playSplitter')
@@ -1999,9 +2020,28 @@ class Window(QMainWindow):
             self.player.setPosition(pos)
         # Projects restore paused; the user decides when to resume.
 
+    def set_chord_loading(self, loading, message='Analyzing notes and chords…'):
+        if not hasattr(self, 'chord_loading'):
+            return
+        self.chord_loading.setGeometry(self.chord_scroll.viewport().rect())
+        self.chord_loading_label.setText(message)
+        self.chord_loading.setVisible(bool(loading))
+        if loading:
+            self.chord_loading.raise_()
+
+    def eventFilter(self, obj, event):
+        if (hasattr(self, 'chord_scroll') and
+                obj is self.chord_scroll.viewport() and
+                event.type() == event.Type.Resize):
+            if hasattr(self, 'chord_loading'):
+                self.chord_loading.setGeometry(obj.rect())
+        return super().eventFilter(obj, event)
+
     def set_stage(self, stage):
         """Main-thread update: no fabricated percentages for Demucs/AI."""
         self.import_stage = stage
+        if 'analy' in stage.lower() or 'notes' in stage.lower():
+            self.set_chord_loading(True, stage)
         self.progress.setFormat(stage)
         if self.processing:
             self.progress.setRange(0, 0)
@@ -2009,6 +2049,8 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         self.processing = busy
+        if not busy and not self.analysis_running:
+            self.set_chord_loading(False)
         for widget in (self.load_url, self.load_file, self.project_save,
                        self.project_load, self.recent_projects, self.split_local,
                        self.analyze_local, self.reanalyze_button):
@@ -2026,6 +2068,7 @@ class Window(QMainWindow):
 
     def on_error(self, message):
         self.analysis_running = False
+        self.set_chord_loading(False)
         self.set_busy(False)
         self.mixing = False
         self.status_message('Error — see details and rifflab-errors.log')
@@ -2175,6 +2218,7 @@ class Window(QMainWindow):
             self.status_message('Open a song before re-analyzing.')
             return
         self.analysis_running = True
+        self.set_chord_loading(True, 'Re-analyzing notes…')
         self.reanalyze_button.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.status_message('Re-analyzing audio with ' + self.accuracy.currentText() + ' accuracy…')
@@ -2199,6 +2243,7 @@ class Window(QMainWindow):
         if self.source_audio is None or self.analysis_running:
             return
         self.analysis_running = True
+        self.set_chord_loading(True)
         self.analyze_local.setEnabled(False)
         self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
         threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
@@ -2224,6 +2269,7 @@ class Window(QMainWindow):
 
     def on_analysis_done(self):
         self.analysis_running = False
+        self.set_chord_loading(False)
         if self.processing:
             self.set_busy(False)
             self.status_message('Import complete — notes and stems ready.')
@@ -2373,6 +2419,7 @@ class Window(QMainWindow):
         for slider in self.volumes.values():
             slider.setEnabled(True)
         self.set_stage('3/3 · Analyzing notes and beats…')
+        self.set_chord_loading(True, 'Analyzing stems, notes and beats…')
         self.split_local.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.clear_loop()
@@ -2398,9 +2445,11 @@ class Window(QMainWindow):
         self.rebuild_chords()
         if not self.stems or not self.folder:
             if self.source_audio and self.source_audio.is_file():
+                self.set_chord_loading(True)
                 threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
             return
         # Change the display without separating stems again.
+        self.set_chord_loading(True, 'Analyzing selected mode…')
         self.status_message('Switching analysis mode…')
         threading.Thread(target=self._analyze_mode, daemon=True).start()
 
@@ -2486,6 +2535,7 @@ class Window(QMainWindow):
             self.status_message(f'Could not add song to Library: {exc}')
 
     def on_chords(self, chords):
+        self.set_chord_loading(False)
         self.chord_data = chords
         self.chord_times = [float(item[0]) for item in chords]
         self.rebuild_chords()
