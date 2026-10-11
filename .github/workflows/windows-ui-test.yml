@@ -80,8 +80,35 @@ jobs:
       - name: Build AI worker executable
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLabAI --collect-all demucs --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all soundfile --collect-all numba ai_worker.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLabAI --collect-all demucs --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all soundfile --collect-all numba --collect-all scipy --collect-all sklearn --collect-all soxr ai_worker.py
           if ($LASTEXITCODE -ne 0) { throw 'AI worker build failed' }
+
+      - name: Smoke-test packaged AI analysis
+        shell: pwsh
+        run: |
+          @'
+          import math, wave, struct
+          with wave.open('test-analysis.wav', 'wb') as f:
+              f.setnchannels(1)
+              f.setsampwidth(2)
+              f.setframerate(11025)
+              for i in range(22050):
+                  f.writeframesraw(struct.pack('<h', int(5000 * math.sin(2 * math.pi * 220 * i / 11025))))
+          '@ | python -
+          $worker = 'dist/RiffLabAI/RiffLabAI.exe'
+          $result = & $worker beats test-analysis.wav 2>&1
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) { throw "Packaged AI beats analysis failed: $result" }
+          $resultText = ($result | Out-String).Trim()
+          try { $parsed = $resultText | ConvertFrom-Json -ErrorAction Stop }
+          catch { throw "Packaged AI returned invalid JSON: $resultText" }
+          if ($null -eq $parsed.beats) { throw "Packaged AI beats result missing: $resultText" }
+          $result = & $worker bass_notes test-analysis.wav balanced 2>&1
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) { throw "Packaged AI bass analysis failed: $result" }
+          $resultText = ($result | Out-String).Trim()
+          try { $null = $resultText | ConvertFrom-Json -ErrorAction Stop }
+          catch { throw "Packaged AI bass analysis invalid JSON: $resultText" }
 
       - name: Assemble portable app
         shell: pwsh
