@@ -48,11 +48,22 @@ jobs:
         shell: pwsh
         run: |
           choco install ffmpeg -y --no-progress
-          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
-          $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
+          # Chocolatey puts shim launchers on PATH; never package those shims.
+          # Resolve the actual binaries under the installed package directory.
+          $packageRoot = 'C:\\ProgramData\\chocolatey\\lib'
+          $ffmpeg = Get-ChildItem $packageRoot -Recurse -File -Filter ffmpeg.exe |
+            Where-Object { $_.FullName -match '[\\/]bin[\\/]ffmpeg.exe$' } |
+            Sort-Object FullName | Select-Object -First 1
+          if (!$ffmpeg) { throw 'Actual FFmpeg binary not found under Chocolatey packages' }
+          $ffprobePath = Join-Path $ffmpeg.Directory.FullName 'ffprobe.exe'
+          if (!(Test-Path $ffprobePath)) { throw "FFprobe missing next to $($ffmpeg.FullName)" }
           New-Item -ItemType Directory -Force vendor/bin | Out-Null
-          Copy-Item $ffmpeg vendor/bin/ffmpeg.exe
-          Copy-Item $ffprobe vendor/bin/ffprobe.exe
+          Copy-Item $ffmpeg.FullName vendor/bin/ffmpeg.exe
+          Copy-Item $ffprobePath vendor/bin/ffprobe.exe
+          & vendor/bin/ffmpeg.exe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Actual FFmpeg binary failed' }
+          & vendor/bin/ffprobe.exe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Actual FFprobe binary failed' }
 
       - name: Install UI and build tools
         run: python -m pip install -r requirements-preview.txt "pyinstaller>=6.10,<7"
