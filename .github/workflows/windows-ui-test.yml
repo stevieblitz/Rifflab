@@ -96,8 +96,10 @@ jobs:
           foreach ($tool in @('ffmpeg.exe','ffprobe.exe')) {
             $path = Join-Path "$root/bin" $tool
             if (!(Test-Path $path)) { throw "Missing bundled tool: $path" }
-            & $path -version | Select-Object -First 1
-            if ($LASTEXITCODE -ne 0) { throw "Bundled tool cannot run: $path" }
+            $versionOutput = & $path -version
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) { throw "Bundled tool cannot run: $path (exit code $exitCode)" }
+            $versionOutput | Select-Object -First 1
           }
           'Run RiffLab.exe. Keep all files in this folder together.' | Set-Content "$root/START-HERE.txt"
           Compress-Archive -Path "$root/*" -DestinationPath RiffLab-UI-Test-Flat-Chords.zip -Force
