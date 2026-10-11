@@ -489,7 +489,39 @@ def worker_command(*args):
     worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
     if not worker.is_file():
         raise RuntimeError(f'AI worker ontbreekt: {worker}. Bewaar de hele RiffLab map.')
-    return command([str(worker), *map(str, args)])
+    # PyInstaller 6 sets private bootloader environment variables for child
+    # processes. A DIFFERENT frozen executable must start in a fresh
+    # environment, otherwise it may inherit the UI's DLL/runtime paths and
+    # terminate with Windows 0xC0000005 before Python starts.
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    env = os.environ.copy()
+    env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
+    for name in ('PYTHONHOME', 'PYTHONPATH', 'QT_QPA_PLATFORM_PLUGIN_PATH',
+                 'QT_PLUGIN_PATH', 'QT_QPA_FONTDIR'):
+        env.pop(name, None)
+    if os.name == 'nt':
+        # The frozen UI may have called SetDllDirectoryW(_internal). Windows
+        # inherits that DLL search path into its children. Temporarily clear
+        # it while spawning the independently packaged worker.
+        import ctypes
+        kernel = ctypes.windll.kernel32
+        kernel.SetDllDirectoryW(None)
+    try:
+        proc = subprocess.Popen([str(worker), *map(str, args)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, creationflags=flags, env=env)
+    finally:
+        if os.name == 'nt':
+            kernel.SetDllDirectoryW(str(Path(sys._MEIPASS)))
+    stdout, stderr = proc.communicate()
+    if proc.returncode:
+        detail = (stderr or stdout or '').strip()
+        if not detail:
+            detail = (f'AI worker crashed with Windows exit code {proc.returncode} '
+                      f'(0x{proc.returncode & 0xffffffff:08X}). '
+                      'Check the packaged AI worker runtime/DLLs.')
+        raise RuntimeError(detail[-2500:])
+    return stdout
 
 
 def mix_to_file(stem_paths, levels, transpose, output):
