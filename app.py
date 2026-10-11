@@ -447,7 +447,14 @@ def command(args):
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     proc = subprocess.run(args, capture_output=True, text=True, creationflags=flags)
     if proc.returncode:
-        raise RuntimeError((proc.stderr or proc.stdout or 'Command failed')[-1600:])
+        detail = (proc.stderr or proc.stdout or '').strip()
+        if not detail:
+            detail = (
+                f'AI subprocess exited with code {proc.returncode} without output. '
+                f'Executable: {args[0]}. '
+                'Possible native DLL or PyInstaller startup failure.'
+            )
+        raise RuntimeError(detail[-2500:])
     return proc.stdout
 
 
