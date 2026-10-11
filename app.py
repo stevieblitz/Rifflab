@@ -551,15 +551,11 @@ class Window(QMainWindow):
         self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
         self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
         self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
-        if self.brand_asset.is_file():
-            icon_renderer = QSvgRenderer(str(self.brand_asset))
-            icon_renderer.setViewBox(QRectF(0, 0, 160, 380.69))
-            icon_pixmap = QPixmap(128, 128)
-            icon_pixmap.fill(Qt.transparent)
-            icon_painter = QPainter(icon_pixmap)
-            icon_renderer.render(icon_painter, QRectF(37, 5, 54, 118))
-            icon_painter.end()
-            self.setWindowIcon(QIcon(icon_pixmap))
+        # Windows titlebar icon is the supplied RL mark. The .exe / desktop
+        # icon is intentionally different: the standalone Erlenmeyer flask.
+        window_icon = self.assets_dir / 'rifflab-window-icon.png'
+        if window_icon.is_file():
+            self.setWindowIcon(QIcon(str(window_icon)))
         self.resize(1080, 690)
         self.layout_settings = QSettings('RiffLab', 'RiffLab')
         self.setMinimumSize(640, 430)
