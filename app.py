@@ -646,14 +646,13 @@ class Window(QMainWindow):
         self.recent_projects.setMinimumWidth(155)
         self.recent_projects.setToolTip('Quickly switch between saved songs')
         self.recent_projects.activated.connect(self.open_recent_project)
-        self.recent_projects.setFixedWidth(280)
+        self.recent_projects.setFixedWidth(200)
         project_row.addWidget(self.recent_projects)
         self.now_playing = ScrollingSongTitle()
         self.now_playing.setObjectName('nowPlayingTitle')
-        self.now_playing.setFixedWidth(440)
+        self.now_playing.setFixedWidth(260)
         self.now_playing.setMinimumHeight(40)
         project_row.addWidget(self.now_playing)
-        project_row.addStretch(1)
         self.update_now_playing()
         # This widget is installed in the left corner of the main tab bar below.
         self.refresh_recent_projects()
@@ -675,11 +674,11 @@ class Window(QMainWindow):
         self.progress.setValue(0)
         self.progress.setFormat('Ready')
         self.progress.setTextVisible(True)
-        # Keep project controls in their own row. The previous oversized
-        # QTabWidget corner widget compressed and clipped the right-hand tabs.
-        outer.addWidget(project_header)
+        # One compact header row shared with the right-aligned navigation tabs.
+        # Avoid an extra toolbar row and prevent expanding Save/Open buttons.
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
+        self.tabs.setCornerWidget(project_header, Qt.TopLeftCorner)
         outer.addWidget(self.tabs, 1)
         def tab_page(name):
             page = QWidget()
@@ -697,7 +696,7 @@ class Window(QMainWindow):
         self.tabs.setTabToolTip(0, 'Chord Grid / Play')
         self.tabs.setCurrentIndex(0)
         self.tabs.tabBar().setObjectName('mainTabBar')
-        # Tabs own their full width; project_header is no longer a corner widget.
+        # Project controls have fixed widths, leaving the right-hand tabs visible.
         self.tuner_dialog = QDialog(self)
         self.tuner_dialog.setWindowTitle('RiffLab · Chromatic Tuner')
         self.tuner_dialog.setMinimumWidth(430)
