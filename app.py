@@ -2766,25 +2766,49 @@ class Window(QMainWindow):
         self.chord.setText(self.transpose_chord(self.display_chords[idx][1])
                            if idx >= 0 else '—')
 
+    def _chord_segment_style(self, index, active=False):
+        """Flat, connected chord lanes; retain each beat's seek target."""
+        chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
+        root = chord.replace('♯', '#').replace('♭', 'b')
+        root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
+        palette = {
+            'C': '#218a99', 'C#': '#267c9e', 'D': '#a34869',
+            'D#': '#98527f', 'E': '#276da5', 'F': '#6b629e',
+            'F#': '#665b9e', 'G': '#68549e', 'G#': '#815390',
+            'A': '#347f79', 'A#': '#956b55', 'B': '#966c48',
+        }
+        background = palette.get(root, '#24394b') if chord != '—' else '#172634'
+        beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
+        ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
+        border = '#a9e7ff' if active else ('#49677e' if beginning else background)
+        return (
+            f'background:{background};'
+            f'border:0px;'
+            f'border-left:{"2px solid " + border if beginning or active else "0px"};'
+            f'border-top:{"2px solid #a9e7ff" if active else "0px"};'
+            f'border-bottom:{"2px solid #a9e7ff" if active else "0px"};'
+            f'border-right:{"2px solid #a9e7ff" if active else "0px"};'
+            f'border-top-left-radius:{4 if beginning else 0}px;'
+            f'border-bottom-left-radius:{4 if beginning else 0}px;'
+            f'border-top-right-radius:{4 if ending else 0}px;'
+            f'border-bottom-right-radius:{4 if ending else 0}px;'
+            'text-align:left;color:#f2f7fb;padding:2px 5px;'
+        )
+
     def apply_grid_zoom(self, zoom):
-        """Scale chord labels together with their cells and spacing."""
+        """Scale the flat chord timeline without altering beat interactions."""
         self.grid_zoom_label.setText(f'{zoom}%')
         scale = zoom / 100.0
-        for button in self.grid_buttons:
+        for i, button in enumerate(self.grid_buttons):
             button.setMinimumWidth(round(36 * scale))
             button.setFixedHeight(round(38 * scale))
             font = button.font()
             font.setPointSizeF(max(8.0, 11.0 * scale))
             font.setBold(bool(button.text().strip()))
             button.setFont(font)
-            padding_y = max(1, round(3 * scale))
-            padding_x = max(2, round(5 * scale))
-            button.setStyleSheet(
-                'background:#223242;border:1px solid #344658;'
-                f'border-radius:{max(3, round(4 * scale))}px;'
-                f'text-align:left;padding:{padding_y}px {padding_x}px;'
-            )
-        self.chord_grid.setSpacing(max(2, round(4 * scale)))
+            button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
+        self.chord_grid.setHorizontalSpacing(0)
+        self.chord_grid.setVerticalSpacing(max(3, round(5 * scale)))
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
@@ -2914,6 +2938,7 @@ class Window(QMainWindow):
                 item.widget().deleteLater()
         self.grid_buttons = []
         self.grid_cells = []
+        self.grid_chord_names = []
         bpm = self.grid_bpm.value()
         beat_length = 60.0 / bpm
         total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
@@ -2942,6 +2967,7 @@ class Window(QMainWindow):
                 pattern_name, confidence, group = pattern
                 label = (pattern_name + '  ' + label).strip()
             button = QPushButton(label)
+            self.grid_chord_names.append(chord)
             button.setMinimumHeight(30)
             border = '#344658'
             background = '#223242'
@@ -2975,12 +3001,7 @@ class Window(QMainWindow):
             if j < 0 or j >= len(self.grid_buttons):
                 continue
             active = j == idx
-            first = self.grid_cells[j][1] == 0
-            self.grid_buttons[j].setStyleSheet(
-                f'background:{"#2878ad" if active else "#223242"};'
-                f'border:1px solid {"#7bd6ff" if active else "#526778" if first else "#344658"};'
-                'border-radius:3px;text-align:left;padding:2px 4px;'
-            )
+            self.grid_buttons[j].setStyleSheet(self._chord_segment_style(j, active))
         row = idx // 16
         if self.follow.isChecked() and row != self.grid_row:
             self.grid_row = row
