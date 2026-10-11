@@ -2888,26 +2888,38 @@ class Window(QMainWindow):
             'F#': '#665b9e', 'G': '#68549e', 'G#': '#815390',
             'A': '#347f79', 'A#': '#956b55', 'B': '#966c48',
         }
-        background = palette.get(root, '#24394b') if chord != '—' else '#172634'
+        base = QColor(palette.get(root, '#24394b') if chord != '—' else '#172634')
+        if active:
+            # Brighter, more saturated version of the same note color.
+            background = base.lighter(155).name()
+            foreground = '#ffffff'
+        else:
+            # Desaturate and soften the entire inactive timeline.
+            h, saturation, value, alpha = base.getHsv()
+            muted = QColor.fromHsv(h if h >= 0 else 0,
+                                   round(max(0, saturation) * 0.48),
+                                   min(255, round(value * 1.13)), alpha)
+            background = muted.name()
+            foreground = '#c6d3df'
         beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
         ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
-        border = '#a9e7ff' if active else ('#49677e' if beginning else background)
+        border = '#e6f8ff' if active else ('#506575' if beginning else background)
         return (
             f'background:{background};'
             f'border:0px;'
             f'border-left:{"2px solid " + border if beginning or active else "0px"};'
-            f'border-top:{"2px solid #a9e7ff" if active else "0px"};'
-            f'border-bottom:{"2px solid #a9e7ff" if active else "0px"};'
-            f'border-right:{"2px solid #a9e7ff" if active else "0px"};'
+            f'border-top:{"2px solid #e6f8ff" if active else "0px"};'
+            f'border-bottom:{"2px solid #e6f8ff" if active else "0px"};'
+            f'border-right:{"2px solid #e6f8ff" if active else "0px"};'
             f'border-top-left-radius:{4 if beginning else 0}px;'
             f'border-bottom-left-radius:{4 if beginning else 0}px;'
             f'border-top-right-radius:{4 if ending else 0}px;'
             f'border-bottom-right-radius:{4 if ending else 0}px;'
             f'font-size:{max(9, round(12 * self.grid_zoom.value() / 100))}px;'
-            f'font-weight:{"700" if self.grid_buttons[index].text().strip() else "400"};'
+            f'font-weight:{"800" if active else ("650" if self.grid_buttons[index].text().strip() else "400")};'
             f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
             f'{max(3, round(5 * self.grid_zoom.value() / 100))}px;'
-            'text-align:left;color:#f2f7fb;'
+            f'text-align:left;color:{foreground};'
         )
 
     def apply_grid_zoom(self, zoom):
