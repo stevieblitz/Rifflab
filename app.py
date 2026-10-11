@@ -548,7 +548,9 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('RiffLab Alpha 1.3.0 — Music Practice')
-        self.brand_asset = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets' / 'rifflab-logo.svg'
+        self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
+        self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
+        self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
         if self.brand_asset.is_file():
             icon_renderer = QSvgRenderer(str(self.brand_asset))
             icon_renderer.setViewBox(QRectF(0, 0, 160, 380.69))
@@ -626,6 +628,24 @@ class Window(QMainWindow):
         project_row = QHBoxLayout(project_header)
         project_row.setContentsMargins(8, 0, 8, 0)
         project_row.setSpacing(8)
+        # Brand belongs in the upper-left header, not inside the stem mixer.
+        self.header_brand = QLabel()
+        self.header_brand.setObjectName('headerBrand')
+        self.header_brand.setFixedSize(152, 46)
+        self.header_brand.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.header_brand.setStyleSheet('background:transparent;border:0;')
+        if self.new_brand_asset.is_file():
+            logo = QPixmap(str(self.new_brand_asset))
+            self.header_brand.setPixmap(logo.scaled(150, 46, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        elif self.brand_asset.is_file():
+            renderer = QSvgRenderer(str(self.brand_asset))
+            fallback = QPixmap(150, 46)
+            fallback.fill(Qt.transparent)
+            painter = QPainter(fallback)
+            renderer.render(painter, QRectF(0, 0, 150, 46))
+            painter.end()
+            self.header_brand.setPixmap(fallback)
+        project_row.addWidget(self.header_brand)
         self.project_save = QPushButton('Save')
         self.project_save.setIcon(qta.icon('fa5s.save', color='#e5f4ff'))
         self.project_save.setToolTip('Save project (Ctrl+S)')
@@ -1173,21 +1193,6 @@ class Window(QMainWindow):
         panel = QVBoxLayout(stem_panel)
         panel.setContentsMargins(6, 4, 6, 4)
         panel.setSpacing(9)
-        if self.brand_asset.is_file():
-            self.brand_logo = QLabel()
-            self.brand_logo.setObjectName('riffLabBrand')
-            self.brand_logo.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.brand_logo.setFixedHeight(55)
-            self.brand_logo.setMinimumWidth(150)
-            self.brand_logo.setStyleSheet('background: transparent; border: none; padding: 0;')
-            logo_renderer = QSvgRenderer(str(self.brand_asset))
-            logo_pixmap = QPixmap(240, 68)
-            logo_pixmap.fill(Qt.transparent)
-            logo_painter = QPainter(logo_pixmap)
-            logo_renderer.render(logo_painter, QRectF(0, 0, 240, 67))
-            logo_painter.end()
-            self.brand_logo.setPixmap(logo_pixmap.scaledToWidth(170, Qt.SmoothTransformation))
-            panel.addWidget(self.brand_logo)
         mixer_header = QHBoxLayout()
         mixer_header.setContentsMargins(0, 0, 0, 0)
         mixer_title = QLabel('STEM MIXER')
