@@ -944,29 +944,23 @@ class Window(QMainWindow):
         self.header_brand.setFixedSize(170, 72)
         self.header_brand.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.header_brand.setStyleSheet('background:transparent;border:0;')
-        if self.brand_asset.is_file():
-            # Render the existing vector logo at device pixel ratio; never
-            # enlarge a small PNG and never stretch the source proportions.
-            renderer = QSvgRenderer(str(self.brand_asset))
-            if renderer.isValid():
-                logical = QSize(168, 68)
-                natural = renderer.defaultSize()
-                fitted = natural.scaled(logical, Qt.KeepAspectRatio)
-                scale = max(1.0, self.devicePixelRatioF())
-                pixmap = QPixmap(max(1, round(fitted.width() * scale)),
-                                 max(1, round(fitted.height() * scale)))
-                pixmap.fill(Qt.transparent)
-                pixmap.setDevicePixelRatio(scale)
-                painter = QPainter(pixmap)
-                renderer.render(painter)
-                painter.end()
-                self.header_brand.setPixmap(pixmap)
+        # The supplied full wordmark includes STEVIEBLITZ'S and Powered by AI.
+        # The old SVG is a different artwork and must not replace it.
+        if self.new_brand_asset.is_file():
+            logo = QPixmap(str(self.new_brand_asset))
+            if not logo.isNull():
+                ratio = max(1.0, self.devicePixelRatioF())
+                width = min(168, logo.width() / ratio)
+                height = min(68, logo.height() / ratio)
+                fitted = logo.size().scaled(
+                    QSize(max(1, round(width * ratio)),
+                          max(1, round(height * ratio))), Qt.KeepAspectRatio)
+                rendered = logo.scaled(
+                    fitted, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                rendered.setDevicePixelRatio(ratio)
+                self.header_brand.setPixmap(rendered)
             else:
                 self.header_brand.setText('RiffLab')
-        elif self.new_brand_asset.is_file():
-            logo = QPixmap(str(self.new_brand_asset))
-            self.header_brand.setPixmap(logo.scaled(
-                168, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             self.header_brand.setText('RiffLab')
             self.header_brand.setStyleSheet(
