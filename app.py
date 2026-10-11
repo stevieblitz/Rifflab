@@ -25,7 +25,7 @@ from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog
 )
 
 def loop_boundary_icon(which):
@@ -568,6 +568,7 @@ class Window(QMainWindow):
         self.grid_row = -1
         self.beat_times = []
         self.pattern_matches = {}
+        self.section_overrides = {}
         self.beat_offset = 0.0
         self.loop_enabled = False
         self.loop_a_ms = None
@@ -1025,6 +1026,8 @@ class Window(QMainWindow):
         self.grid_host = QWidget()
         self.chord_grid = QGridLayout(self.grid_host)
         self.chord_grid.setContentsMargins(4, 4, 4, 4)
+        self.chord_grid.setHorizontalSpacing(0)
+        self.chord_grid.setVerticalSpacing(3)
         self.chord_grid.setSpacing(3)
         self.chord_scroll.setWidget(self.grid_host)
         # Only the grid area is horizontally split with the compact stem mixer.
@@ -1812,6 +1815,7 @@ class Window(QMainWindow):
             'enabled': {name: self.checks[name].isChecked() for name in STEMS},
             'solo': {name: self.solos[name].isChecked() for name in STEMS},
             'chord_data': self.chord_data, 'beat_times': self.beat_times,
+            'section_overrides': self.section_overrides,
         }
         temp = path.with_suffix('.riff.tmp')
         try:
@@ -1894,6 +1898,7 @@ class Window(QMainWindow):
         self.switch_analysis_mode()
 
     def _restore_project_settings(self, data):
+        self.section_overrides = {int(k): str(v) for k, v in (data.get('section_overrides') or {}).items()}
         self.detected_bpm = max(1.0, float(data.get('detected_bpm', 130)))
         for name in STEMS:
             slider = self.volumes[name]
@@ -2098,6 +2103,7 @@ class Window(QMainWindow):
         self.display_chords = []
         self.display_times = []
         self.beat_times = []
+        self.section_overrides = {}
         self.player.stop()
         self.clear_loop()
         self.speed_generation += 1
@@ -2314,6 +2320,7 @@ class Window(QMainWindow):
         self.folder = Path(folder)
         self.source_audio = None
         self.beat_times = []
+        self.section_overrides = {}
         self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
         self.load_waveform(self.stems)
         self.chord_data = []
@@ -3057,6 +3064,52 @@ class Window(QMainWindow):
         counts = Counter(v[0] for v in matches.values())
         return {beat: info for beat, info in matches.items() if counts[info[0]] >= 2}
 
+    def infer_song_sections(self, beat_count):
+        """Group four-bar phrases by recurring harmony, without claiming to
+        identify verses/choruses from chords alone. Manual labels win."""
+        rows = (beat_count + 15) // 16
+        if not rows:
+            return []
+        phrases = []
+        for row in range(rows):
+            notes = []
+            for beat in range(row * 16, min(beat_count, (row + 1) * 16)):
+                t = (self.beat_times[beat] if beat < len(self.beat_times)
+                     else beat * 60.0 / max(1, self.grid_bpm.value()))
+                idx = bisect.bisect_right(self.display_times, t) - 1
+                notes.append(self.display_chords[idx][1] if idx >= 0 else '—')
+            # A phrase is a four-bar harmonic fingerprint. It is not a
+            # semantic classifier; different sections can share harmony.
+            phrases.append(tuple(notes))
+        counts = Counter(p for p in phrases if any(n != '—' for n in p))
+        letters = {}
+        labels = []
+        for row, phrase in enumerate(phrases):
+            if row in self.section_overrides:
+                label = self.section_overrides[row]
+            elif row == 0:
+                label = 'Intro · ?'
+            elif counts[phrase] > 1:
+                if phrase not in letters:
+                    letters[phrase] = chr(65 + len(letters) % 26)
+                label = f'Part {letters[phrase]} · ?'
+            else:
+                label = 'Part · ?'
+            labels.append(label)
+        return labels
+
+    def edit_section_label(self, row):
+        choices = ['Intro', 'Verse', 'Chorus', 'Pre-Chorus', 'Bridge',
+                   'Solo', 'Breakdown', 'Outro', 'Instrumental', 'Part A', 'Part B']
+        current = self.section_overrides.get(row, '')
+        label, ok = QInputDialog.getItem(self, 'Song section',
+                                          f'Section starting at bar {row * 4 + 1}:',
+                                          choices, max(0, choices.index(current)) if current in choices else 0,
+                                          True)
+        if ok and label.strip():
+            self.section_overrides[row] = label.strip()
+            self.render_grid()
+
     def render_grid(self, *_):
         """Four bars per row, four clickable beat cells per bar. Grid uses a fixed BPM estimate."""
         while self.chord_grid.count():
@@ -3078,6 +3131,15 @@ class Window(QMainWindow):
             occurrences[letter] += 1
             pattern_labels[start] = (f'{letter}{occurrences[letter]}', confidence, group_idx)
         self.pattern_matches = pattern_labels
+        section_labels = self.infer_song_sections(beats)
+        section_colors = ('#6799b5', '#78aaa2', '#a58eae', '#ba947c')
+        for section_row, section_label in enumerate(section_labels):
+            section = QPushButton(section_label)
+            section.setToolTip('Estimated section (?). Click to rename it manually.')
+            section.setFixedWidth(85)
+            section.setStyleSheet(f'background:#20303c;color:{section_colors[section_row % len(section_colors)]};border:0;border-left:4px solid {section_colors[section_row % len(section_colors)]};font-size:10px;text-align:left;padding:3px;')
+            section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
+            self.chord_grid.addWidget(section, section_row, 0)
         for beat_index in range(beats):
             t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
             bar = beat_index // 4
@@ -3106,10 +3168,11 @@ class Window(QMainWindow):
             hint = (f' • repeated riff {pattern[0]} • similarity {pattern[1]:.0%}' if pattern else '')
             button.setToolTip(f'Bar {bar+1} • beat {beat+1} • {t:.1f}s{hint}')
             button.clicked.connect(lambda checked=False, seconds=t: self.seek_and_play(int(seconds*1000)))
-            self.chord_grid.addWidget(button, row, col)
+            self.chord_grid.addWidget(button, row, col + 1)
             self.grid_buttons.append(button)
             self.grid_cells.append((t,beat))
-        for col in range(16):
+        self.chord_grid.setColumnStretch(0, 0)
+        for col in range(1, 17):
             self.chord_grid.setColumnStretch(col, 1)
         self.apply_grid_zoom(self.grid_zoom.value())
         self.grid_active = -1
