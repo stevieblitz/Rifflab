@@ -2123,7 +2123,7 @@ class Window(QMainWindow):
             self.signals.beats.emit(beats)
             self.signals.chords.emit(chords)
         except Exception as exc:
-            self.signals.error.emit(f'Analysis failed: {exc}\nInstall the AI dependencies if needed.')
+            self.signals.error.emit(f'Analysis failed: {exc}\nDetails: {ROOT / "rifflab-errors.log"}')
             self._log_exception()
         finally:
             self.signals.analysis_done.emit()
