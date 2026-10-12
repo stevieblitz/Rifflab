@@ -637,7 +637,7 @@ class Window(QMainWindow):
         self.project_load.clicked.connect(self.open_project)
         self.project_load.setFixedWidth(92)
         project_row.addWidget(self.project_load)
-        project_row.addWidget(QLabel('Recent'))
+        project_row.addWidget(QLabel('◷ Recent'))
         self.recent_projects = QComboBox()
         self.recent_projects.setMinimumWidth(155)
         self.recent_projects.setToolTip('Quickly switch between saved songs')
@@ -970,7 +970,7 @@ class Window(QMainWindow):
         self.chord = QLabel('—')
         self.chord.setAlignment(Qt.AlignCenter)
         self.chord.setFixedSize(100, 72)
-        self.chord.setStyleSheet('font-size:23px;font-weight:750;color:#eaf6ff;background:#203247;border:1px solid #34536d;border-radius:6px;padding:4px')
+        self._set_current_chord('—')
         waveform_row.addWidget(self.chord)
         self.waveform = WaveformTimeline(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
@@ -989,24 +989,25 @@ class Window(QMainWindow):
         self.analysis_mode.setToolTip('Bass Mode tracks bass roots; Chord Mode estimates full harmony')
         self.analysis_mode.currentIndexChanged.connect(self.switch_analysis_mode)
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
-        options.addWidget(QLabel('Accuracy'))
+        options.addWidget(QLabel('◈ Accuracy'))
         self.accuracy = QComboBox()
         self.accuracy.addItems(['Fast', 'Balanced', 'Detailed'])
         self.accuracy.setCurrentIndex(1)
         self.accuracy.setToolTip('Analysis quality. Select a level and click Re-analyze to apply it.')
         options.addWidget(self.accuracy)
         self.reanalyze_button = QPushButton('Re-analyze')
+        self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
         self.reanalyze_button.setToolTip('Run fresh chord and beat analysis without splitting stems again')
         self.reanalyze_button.clicked.connect(self.reanalyze_current)
         options.addWidget(self.reanalyze_button)
-        options.addWidget(QLabel('NoteGuard'))
+        options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
         self.noteguard.addItems(['Original', 'Conservative', 'Balanced', 'Strict'])
         self.noteguard.setCurrentIndex(1)
         self.noteguard.setToolTip('Second-pass note verification. Original keeps all events; Conservative protects fast riffs.')
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
         options.addWidget(self.noteguard)
-        options.addWidget(QLabel('Chord stability'))
+        options.addWidget(QLabel('≋ Stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # 0 = no filtering; 20 = 2 seconds
         self.sensitivity.setValue(2)
@@ -1016,14 +1017,14 @@ class Window(QMainWindow):
         options.addWidget(self.sensitivity)
         self.sensitivity_label = QLabel('0.2 s')
         options.addWidget(self.sensitivity_label)
-        options.addWidget(QLabel('Transpose (semitones)'))
+        options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
         self.transpose.setRange(-12, 12)
         self.transpose.setValue(0)
         self.transpose.setSuffix(' st')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
-        options.addWidget(QLabel('BPM'))
+        options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
         self.grid_bpm.setRange(40, 250)
         self.grid_bpm.setValue(130)
@@ -1038,11 +1039,11 @@ class Window(QMainWindow):
         self.reset_bpm_button.setAccessibleName('Reset BPM')
         self.reset_bpm_button.clicked.connect(self.reset_bpm)
         options.addWidget(self.reset_bpm_button)
-        self.follow = QCheckBox('Auto-scroll')
+        self.follow = QCheckBox('↧ Auto-scroll')
         self.follow.setChecked(True)
         options.addWidget(self.follow)
         options.addSpacing(12)
-        options.addWidget(QLabel('Lookahead'))
+        options.addWidget(QLabel('◷ Lookahead'))
         self.chord_lookahead = QSpinBox()
         self.chord_lookahead.setRange(0, 500)
         self.chord_lookahead.setSingleStep(25)
@@ -1068,7 +1069,9 @@ class Window(QMainWindow):
         grid_header.setSpacing(0)
         grid_header.addStretch(1)
         self.bass_mode_button = QPushButton('Bass')
+        self.bass_mode_button.setIcon(qta.icon('fa5s.music', color='#a9d9ef'))
         self.chord_mode_button = QPushButton('Chords')
+        self.chord_mode_button.setIcon(qta.icon('fa5s.th-large', color='#a9d9ef'))
         for button in (self.bass_mode_button, self.chord_mode_button):
             button.setCheckable(True)
             button.setProperty('gridModeButton', True)
@@ -1191,17 +1194,17 @@ class Window(QMainWindow):
         zoom_controls.setSpacing(6)
         # Put the actual slider at the far left; label follows it.
         self.grid_zoom = QSlider(Qt.Horizontal)
-        self.grid_zoom.setRange(70, 180)
-        self.grid_zoom.setSingleStep(10)
-        self.grid_zoom.setPageStep(10)
+        self.grid_zoom.setRange(65, 200)
+        self.grid_zoom.setSingleStep(1)
+        self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(100)
-        self.grid_zoom.setFixedWidth(90)
+        self.grid_zoom.setFixedWidth(160)
         self.grid_zoom.setToolTip('Scale chord cells and chord font size; audio speed stays unchanged')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         zoom_controls.addWidget(self.grid_zoom)
-        zoom_controls.addWidget(QLabel('Zoom'))
+        zoom_controls.addWidget(QLabel('⌕ Zoom'))
         self.grid_zoom_label = QLabel('100%')
-        self.grid_zoom_label.setFixedWidth(40)
+        self.grid_zoom_label.setFixedWidth(45)
         zoom_controls.addWidget(self.grid_zoom_label)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
@@ -2957,7 +2960,7 @@ class Window(QMainWindow):
 
     def update_chord_indicator(self, ms):
         if not self.display_chords:
-            self.chord.setText('—')
+            self._set_current_chord('—')
             self.next_chords.setText('NEXT: —')
             return
         actual_time = max(0.0, ms / 1000.0)
@@ -2969,52 +2972,64 @@ class Window(QMainWindow):
             times = [cell[0] for cell in self.grid_cells]
             cell = bisect.bisect_right(times, preview_time) - 1
             if cell < 0:
-                self.chord.setText('—')
+                self._set_current_chord('—')
                 return
             cell_time = times[min(cell, len(times) - 1)]
             note_index = bisect.bisect_right(self.display_times, cell_time) - 1
             current = (self.transpose_chord(self.display_chords[note_index][1])
                        if note_index >= 0 else '—')
-            self.chord.setText(current)
+            self._set_current_chord(current)
             return
         idx = bisect.bisect_right(self.display_times, preview_time) - 1
-        self.chord.setText(self.transpose_chord(self.display_chords[idx][1])
+        self._set_current_chord(self.transpose_chord(self.display_chords[idx][1])
                            if idx >= 0 else '—')
 
-    def _chord_segment_style(self, index, active=False):
-        """Flat, connected chord lanes; retain each beat's seek target."""
-        chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
-        root = chord.replace('♯', '#').replace('♭', 'b')
+    def _note_accent(self, chord):
+        """Consistent pitch colors for the grid and current-note display."""
+        root = str(chord).replace('♯', '#').replace('♭', 'b')
         root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
-        palette = {
-            'C': '#008db9', 'C#': '#1568c5', 'D': '#bc3d62',
-            'D#': '#a33b8b', 'E': '#0877b8', 'F': '#624bc2',
-            'F#': '#5845a9', 'G': '#673bb1', 'G#': '#8734ad',
-            'A': '#098f83', 'A#': '#b65b27', 'B': '#a96a20',
-        }
-        base = QColor(palette.get(root, '#264057') if chord != '—' else '#172634')
-        if active:
-            # Strong saturation and brightness for the current beat.
-            background = base.lighter(160).name()
-            foreground = '#ffffff'
-        else:
-            # Dark, restrained but saturated; no washed-out pastel palette.
-            background = base.darker(135).name()
-            foreground = '#e0ecf5'
+        return {
+            'C': '#268ed1', 'C#': '#4286df', 'D': '#ce6385',
+            'D#': '#bd68b6', 'E': '#368fc2', 'F': '#8a70d2',
+            'F#': '#7165c8', 'G': '#a76be4', 'G#': '#bb6ad2',
+            'A': '#30bba8', 'A#': '#dc9556', 'B': '#c89b4e',
+        }.get(root, '#56748b')
+
+    def _set_current_chord(self, name):
+        """Match the current-note glass and horizontal accent to the grid."""
+        self.chord.setText(name)
+        accent = self._note_accent(name)
+        # Translucent blue glass: crisp top accent, no glow or neon shadow.
+        self.chord.setStyleSheet(
+            'font-size:23px;font-weight:750;color:#f4faff;'
+            'background-color:rgba(33,64,86,105);'
+            'border:1px solid rgba(165,205,230,80);'
+            f'border-top:3px solid {accent};'
+            'border-radius:7px;padding:4px;'
+        )
+
+    def _chord_segment_style(self, index, active=False):
+        """Translucent blue-white glass with horizontal pitch-color accents."""
+        chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
+        accent = self._note_accent(chord)
         beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
         ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
-        border = '#ffffff' if active else ('#35546a' if beginning else background)
+        # Alpha is deliberately low: let the actual app background show through.
+        background = 'rgba(91,151,186,100)' if active else 'rgba(49,93,123,56)'
+        foreground = '#ffffff' if active else '#e9f5fd'
+        # Top edge carries pitch information. No vertical color strips or glow.
+        border_top = f'3px solid {accent}' if active else f'2px solid {accent}'
         return (
-            f'background:{background};'
-            f'border:0px;'
-            f'border-left:{"2px solid " + border if beginning or active else "0px"};'
-            f'border-top:{"2px solid #e6f8ff" if active else "0px"};'
-            f'border-bottom:{"2px solid #e6f8ff" if active else "0px"};'
-            f'border-right:{"2px solid #e6f8ff" if active else "0px"};'
-            f'border-top-left-radius:{4 if beginning else 0}px;'
-            f'border-bottom-left-radius:{4 if beginning else 0}px;'
-            f'border-top-right-radius:{4 if ending else 0}px;'
-            f'border-bottom-right-radius:{4 if ending else 0}px;'
+            f'background-color:{background};'
+            'border:0px;'
+            f'border-top:{border_top};'
+            f'border-bottom:1px solid {"rgba(221,241,255,120)" if active else "rgba(173,211,233,45)"};'
+            f'border-left:{"1px solid rgba(190,223,240,65)" if beginning else "0px"};'
+            f'border-right:{"1px solid rgba(190,223,240,65)" if ending else "0px"};'
+            f'border-top-left-radius:{5 if beginning else 0}px;'
+            f'border-bottom-left-radius:{5 if beginning else 0}px;'
+            f'border-top-right-radius:{5 if ending else 0}px;'
+            f'border-bottom-right-radius:{5 if ending else 0}px;'
             f'font-size:{max(9, round(12 * self.grid_zoom.value() / 100))}px;'
             f'font-weight:{"800" if active else ("650" if self.grid_buttons[index].text().strip() else "400")};'
             f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
