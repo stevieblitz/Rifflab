@@ -1097,6 +1097,7 @@ class Window(QMainWindow):
         self.chord_grid.setHorizontalSpacing(0)
         self.chord_grid.setVerticalSpacing(3)
         self.chord_grid.setSpacing(3)
+        self.chord_grid.setAlignment(Qt.AlignTop)
         self.chord_scroll.setWidget(self.grid_host)
         self.chord_loading = QWidget(self.chord_scroll.viewport())
         self.chord_loading.setObjectName('chordLoading')
@@ -1203,57 +1204,55 @@ class Window(QMainWindow):
         self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(100)
         self.grid_zoom.setFixedWidth(160)
-        self.grid_zoom.setToolTip('Scale chord cells and chord font size; audio speed stays unchanged')
+        self.grid_zoom.setToolTip('↔ Zoom: notenbreedte; scroll of sleep om aan te passen')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         self.grid_zoom.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom)
-        zoom_caption = QLabel('⌕ Zoom')
+        zoom_caption = QLabel('↔')
         zoom_caption.installEventFilter(self)
         zoom_controls.addWidget(zoom_caption)
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(45)
         self.grid_zoom_label.installEventFilter(self)
-        zoom_controls.addWidget(self.grid_zoom_label)
-        # Place the vertical height control beside the note grid. Together
-        # with horizontal grid zoom below, these form an L-shaped control.
+        self.grid_zoom_label.hide()  # Keep project/status logic; show only the arrow controls.
+        # Minimal L-shaped controls: both rails are exactly 160 px long.
+        # No box, text caption, or numeric readout around the height control.
         height_panel = QWidget()
-        height_panel.setObjectName('gridHeightPanel')
-        height_panel.setFixedWidth(60)
-        height_panel.setStyleSheet('QWidget#gridHeightPanel {background-color:rgba(37,67,88,110);border:1px solid rgba(140,194,224,75);border-radius:7px;}')
+        height_panel.setFixedWidth(32)
+        height_panel.setStyleSheet('background:transparent;border:0;')
         height_column = QVBoxLayout(height_panel)
-        height_column.setContentsMargins(6, 9, 6, 8)
-        height_column.setSpacing(5)
-        height_caption = QLabel('HOOGTE')
-        height_caption.setStyleSheet('font-size:9px;font-weight:700;color:#bce4f5;background:transparent;border:0;')
-        height_caption.setAlignment(Qt.AlignHCenter)
-        height_caption.setToolTip('Balkhoogte — scroll hier om de hoogte aan te passen')
-        height_caption.installEventFilter(self)
-        height_column.addWidget(height_caption)
+        height_column.setContentsMargins(0, 0, 0, 0)
+        height_column.setSpacing(3)
+        height_column.addStretch(1)
+        height_up = QLabel('↑')
+        height_up.setAlignment(Qt.AlignCenter)
+        height_up.setFixedHeight(17)
+        height_up.setToolTip('Hogere notenbalken')
+        height_column.addWidget(height_up)
         self.grid_row_height = QSlider(Qt.Vertical)
         self.grid_row_height.setRange(24, 96)
-        self.grid_row_height.setMinimumHeight(135)
+        self.grid_row_height.setFixedHeight(160)
         self.grid_row_height.setFixedWidth(26)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
         self.grid_row_height.setValue(38)
-        self.grid_row_height.setInvertedAppearance(False)
-        self.grid_row_height.setToolTip(
-            'Hoogte van de notenbalken (24–96 px); beïnvloedt de horizontale zoom niet')
+        self.grid_row_height.setToolTip('Notenbalkhoogte; scroll hier of sleep om aan te passen')
         self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
         self.grid_row_height.installEventFilter(self)
-        height_column.addWidget(self.grid_row_height, 1, Qt.AlignHCenter)
+        height_column.addWidget(self.grid_row_height, 0, Qt.AlignHCenter)
+        height_down = QLabel('↓')
+        height_down.setAlignment(Qt.AlignCenter)
+        height_down.setFixedHeight(17)
+        height_down.setToolTip('Lagere notenbalken')
+        height_column.addWidget(height_down)
         self.grid_row_height_label = QLabel('38')
-        self.grid_row_height_label.setAlignment(Qt.AlignCenter)
-        self.grid_row_height_label.setStyleSheet('color:#e5f8ff;font-size:11px;font-weight:700;background:transparent;border:0;')
-        self.grid_row_height_label.setToolTip('Balkhoogte in pixels — scroll om aan te passen')
-        self.grid_row_height_label.installEventFilter(self)
-        height_panel.installEventFilter(self)
-        self._height_wheel_targets = (height_panel, height_caption, self.grid_row_height, self.grid_row_height_label)
-        self._zoom_wheel_targets = (self.grid_zoom, zoom_caption, self.grid_zoom_label)
-        height_column.addWidget(self.grid_row_height_label)
+        self.grid_row_height_label.hide()  # Kept for programmatic state, not shown.
+        for target in (height_panel, height_up, height_down):
+            target.installEventFilter(self)
+        self._height_wheel_targets = (height_panel, height_up, height_down, self.grid_row_height)
+        self._zoom_wheel_targets = (self.grid_zoom, zoom_caption)
         grid_content_row.insertWidget(0, height_panel)
-        # Align the horizontal zoom with the left corner of the grid controls.
-        zoom_controls.insertSpacing(0, 60)
+        zoom_controls.insertSpacing(0, 32)
         grid_column.addLayout(zoom_controls)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
@@ -3126,18 +3125,24 @@ class Window(QMainWindow):
             font.setBold(bool(button.text().strip()))
             button.setFont(font)
             button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
+            button.setFixedHeight(self.grid_row_height.value())
         self.chord_grid.setHorizontalSpacing(0)
         self.chord_grid.setVerticalSpacing(3)  # Keep rows tight; zoom changes cells, not gaps.
 
     def apply_grid_row_height(self, height):
-        """Adjust note-bar height only; keep width, text, playhead and audio intact."""
+        """Resize actual note blocks AND section rows, not just their font."""
         self.grid_row_height_label.setText(str(height))
         for i, button in enumerate(self.grid_buttons):
-            button.setFixedHeight(height)
             font = button.font()
             font.setPixelSize(self._grid_note_font_px())
             button.setFont(font)
             button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
+            button.setFixedHeight(height)
+        for section in getattr(self, 'grid_section_buttons', ()):
+            section.setFixedHeight(height)
+        if hasattr(self, 'chord_grid'):
+            self.chord_grid.invalidate()
+            self.grid_host.updateGeometry()
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
@@ -3285,6 +3290,7 @@ class Window(QMainWindow):
         self.grid_buttons = []
         self.grid_cells = []
         self.grid_chord_names = []
+        self.grid_section_buttons = []
         bpm = self.grid_bpm.value()
         beat_length = 60.0 / bpm
         total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
@@ -3317,6 +3323,7 @@ class Window(QMainWindow):
                 'text-align:left;padding:3px 6px;')
             section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
             self.chord_grid.addWidget(section, section_row, 0)
+            self.grid_section_buttons.append(section)
         for beat_index in range(beats):
             t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
             bar = beat_index // 4
@@ -3334,7 +3341,7 @@ class Window(QMainWindow):
                 label = (pattern_name + '  ' + label).strip()
             button = QPushButton(label)
             self.grid_chord_names.append(chord)
-            button.setMinimumHeight(30)
+            button.setMinimumHeight(24)
             border = '#344658'
             background = '#223242'
             if pattern:
@@ -3352,6 +3359,7 @@ class Window(QMainWindow):
         for col in range(1, 17):
             self.chord_grid.setColumnStretch(col, 1)
         self.apply_grid_zoom(self.grid_zoom.value())
+        self.apply_grid_row_height(self.grid_row_height.value())
         self.grid_active = -1
         self.grid_row = -1
         self.update_grid_position((self.live.position_ms if self.live else self.player.position())/1000)
