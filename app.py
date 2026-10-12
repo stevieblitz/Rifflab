@@ -1205,10 +1205,14 @@ class Window(QMainWindow):
         self.grid_zoom.setFixedWidth(160)
         self.grid_zoom.setToolTip('Scale chord cells and chord font size; audio speed stays unchanged')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
+        self.grid_zoom.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom)
-        zoom_controls.addWidget(QLabel('⌕ Zoom'))
+        zoom_caption = QLabel('⌕ Zoom')
+        zoom_caption.installEventFilter(self)
+        zoom_controls.addWidget(zoom_caption)
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(45)
+        self.grid_zoom_label.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom_label)
         # Place the vertical height control beside the note grid. Together
         # with horizontal grid zoom below, these form an L-shaped control.
@@ -1222,7 +1226,8 @@ class Window(QMainWindow):
         height_caption = QLabel('HOOGTE')
         height_caption.setStyleSheet('font-size:9px;font-weight:700;color:#bce4f5;background:transparent;border:0;')
         height_caption.setAlignment(Qt.AlignHCenter)
-        height_caption.setToolTip('Balkhoogte')
+        height_caption.setToolTip('Balkhoogte — scroll hier om de hoogte aan te passen')
+        height_caption.installEventFilter(self)
         height_column.addWidget(height_caption)
         self.grid_row_height = QSlider(Qt.Vertical)
         self.grid_row_height.setRange(24, 96)
@@ -1235,11 +1240,16 @@ class Window(QMainWindow):
         self.grid_row_height.setToolTip(
             'Hoogte van de notenbalken (24–96 px); beïnvloedt de horizontale zoom niet')
         self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
+        self.grid_row_height.installEventFilter(self)
         height_column.addWidget(self.grid_row_height, 1, Qt.AlignHCenter)
         self.grid_row_height_label = QLabel('38')
         self.grid_row_height_label.setAlignment(Qt.AlignCenter)
         self.grid_row_height_label.setStyleSheet('color:#e5f8ff;font-size:11px;font-weight:700;background:transparent;border:0;')
-        self.grid_row_height_label.setToolTip('Balkhoogte in pixels')
+        self.grid_row_height_label.setToolTip('Balkhoogte in pixels — scroll om aan te passen')
+        self.grid_row_height_label.installEventFilter(self)
+        height_panel.installEventFilter(self)
+        self._height_wheel_targets = (height_panel, height_caption, self.grid_row_height, self.grid_row_height_label)
+        self._zoom_wheel_targets = (self.grid_zoom, zoom_caption, self.grid_zoom_label)
         height_column.addWidget(self.grid_row_height_label)
         grid_content_row.insertWidget(0, height_panel)
         # Align the horizontal zoom with the left corner of the grid controls.
@@ -2084,6 +2094,25 @@ class Window(QMainWindow):
             self.chord_loading.raise_()
 
     def eventFilter(self, obj, event):
+        # Wheel scrolling in the nearby L-shaped controls adjusts that axis.
+        # Elsewhere (especially over the note grid) standard scrolling remains.
+        if event.type() == event.Type.Wheel:
+            slider = None
+            if obj in getattr(self, '_height_wheel_targets', ()):
+                slider = self.grid_row_height
+            elif obj in getattr(self, '_zoom_wheel_targets', ()):
+                slider = self.grid_zoom
+            if slider is not None:
+                delta = event.angleDelta().y() or event.angleDelta().x()
+                if not delta:
+                    delta = event.pixelDelta().y() or event.pixelDelta().x()
+                    step = 1 if delta > 0 else -1
+                else:
+                    step = max(1, round(abs(delta) / 60)) * (1 if delta > 0 else -1)
+                if delta:
+                    slider.setValue(slider.value() + step)
+                event.accept()
+                return True
         if (hasattr(self, 'chord_scroll') and
                 obj is self.chord_scroll.viewport() and
                 event.type() == event.Type.Resize):
@@ -3049,6 +3078,13 @@ class Window(QMainWindow):
             'border-radius:7px;padding:4px;'
         )
 
+    def _grid_note_font_px(self):
+        # Height is the primary legibility control; horizontal zoom makes
+        # smaller proportional changes. Keep large text on tall note rows.
+        height = self.grid_row_height.value()
+        width_factor = 0.88 + 0.12 * self.grid_zoom.value() / 100.0
+        return max(11, min(34, round((12 + (height - 24) * 0.25) * width_factor)))
+
     def _chord_segment_style(self, index, active=False):
         """Translucent blue-white glass with horizontal pitch-color accents."""
         chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
@@ -3071,7 +3107,7 @@ class Window(QMainWindow):
             f'border-bottom-left-radius:{5 if beginning else 0}px;'
             f'border-top-right-radius:{5 if ending else 0}px;'
             f'border-bottom-right-radius:{5 if ending else 0}px;'
-            f'font-size:{max(9, round(12 * self.grid_zoom.value() / 100))}px;'
+            f'font-size:{self._grid_note_font_px()}px;'
             f'font-weight:{"800" if active else ("650" if self.grid_buttons[index].text().strip() else "400")};'
             f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
             f'{max(3, round(5 * self.grid_zoom.value() / 100))}px;'
@@ -3086,7 +3122,7 @@ class Window(QMainWindow):
             button.setMinimumWidth(round(36 * scale))
             button.setFixedHeight(self.grid_row_height.value())
             font = button.font()
-            font.setPointSizeF(max(8.0, 11.0 * scale))
+            font.setPixelSize(self._grid_note_font_px())
             font.setBold(bool(button.text().strip()))
             button.setFont(font)
             button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
@@ -3096,8 +3132,12 @@ class Window(QMainWindow):
     def apply_grid_row_height(self, height):
         """Adjust note-bar height only; keep width, text, playhead and audio intact."""
         self.grid_row_height_label.setText(str(height))
-        for button in self.grid_buttons:
+        for i, button in enumerate(self.grid_buttons):
             button.setFixedHeight(height)
+            font = button.font()
+            font.setPixelSize(self._grid_note_font_px())
+            button.setFont(font)
+            button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
