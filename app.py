@@ -1206,6 +1206,22 @@ class Window(QMainWindow):
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(45)
         zoom_controls.addWidget(self.grid_zoom_label)
+        # Independent note-row height: width/font zoom must not affect this.
+        zoom_controls.addSpacing(9)
+        zoom_controls.addWidget(QLabel('↕ Hoogte'))
+        self.grid_row_height = QSlider(Qt.Horizontal)
+        self.grid_row_height.setRange(24, 96)
+        self.grid_row_height.setSingleStep(1)
+        self.grid_row_height.setPageStep(4)
+        self.grid_row_height.setValue(38)
+        self.grid_row_height.setFixedWidth(94)
+        self.grid_row_height.setToolTip(
+            'Hoogte van de notenbalken (24–96 px); verandert breedte, tekst en afspeelsnelheid niet')
+        self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
+        zoom_controls.addWidget(self.grid_row_height)
+        self.grid_row_height_label = QLabel('38 px')
+        self.grid_row_height_label.setFixedWidth(43)
+        zoom_controls.addWidget(self.grid_row_height_label)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
         self.time_label.setMinimumWidth(85)
@@ -1880,7 +1896,7 @@ class Window(QMainWindow):
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
             'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
-            'zoom': self.grid_zoom.value(), 'lookahead_ms': self.chord_lookahead.value(),
+            'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
             'enabled': {name: self.checks[name].isChecked() for name in STEMS},
@@ -2007,6 +2023,7 @@ class Window(QMainWindow):
         self.sensitivity.setValue(int(data.get('stability', 2)))
         self.transpose.setValue(int(data.get('transpose', 0)))
         self.grid_zoom.setValue(int(data.get('zoom', 100)))
+        self.grid_row_height.setValue(int(data.get('row_height', 38)))
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
         self.follow.setChecked(bool(data.get('auto_scroll', True)))
         self.chord_data = data.get('chord_data', [])
@@ -2530,7 +2547,7 @@ class Window(QMainWindow):
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
             'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
-            'zoom': self.grid_zoom.value(), 'lookahead_ms': self.chord_lookahead.value(),
+            'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
             'enabled': {name: self.checks[name].isChecked() for name in STEMS},
@@ -3043,7 +3060,7 @@ class Window(QMainWindow):
         scale = zoom / 100.0
         for i, button in enumerate(self.grid_buttons):
             button.setMinimumWidth(round(36 * scale))
-            button.setFixedHeight(round(38 * scale))
+            button.setFixedHeight(self.grid_row_height.value())
             font = button.font()
             font.setPointSizeF(max(8.0, 11.0 * scale))
             font.setBold(bool(button.text().strip()))
@@ -3051,6 +3068,12 @@ class Window(QMainWindow):
             button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
         self.chord_grid.setHorizontalSpacing(0)
         self.chord_grid.setVerticalSpacing(3)  # Keep rows tight; zoom changes cells, not gaps.
+
+    def apply_grid_row_height(self, height):
+        """Adjust note-bar height only; keep width, text, playhead and audio intact."""
+        self.grid_row_height_label.setText(f'{height} px')
+        for button in self.grid_buttons:
+            button.setFixedHeight(height)
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
