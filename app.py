@@ -1457,22 +1457,30 @@ class Window(QMainWindow):
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
-        mixer_holder.setMaximumWidth(330)
+        mixer_holder.setMaximumWidth(390)
         mixer_holder.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         mixer_holder_layout = QVBoxLayout(mixer_holder)
         mixer_holder_layout.setContentsMargins(0, 0, 0, 0)
         mixer_holder_layout.setSpacing(0)
-        mixer_holder_layout.addWidget(stem_panel, 0, Qt.AlignTop)
-        mixer_holder_layout.addStretch(1)
+        self.mixer_scroll = QScrollArea(mixer_holder)
+        self.mixer_scroll.setWidgetResizable(True)
+        self.mixer_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.mixer_scroll.setWidget(stem_panel)
+        mixer_holder_layout.addWidget(self.mixer_scroll, 1)
         self.play_splitter.insertWidget(0, mixer_holder)
         self.play_splitter.setStretchFactor(0, 0)
         self.play_splitter.setStretchFactor(1, 1)
-        self.play_splitter.setSizes([202, 780])
+        self.play_splitter.setSizes([270, 780])
         self.restore_splitter(self.play_splitter, 'play_splitter_grid_v3')
         # Mirror each control; both tabs edit the SAME live mixer state.
         self.connect_export_mixer()
         self.tabs.currentChanged.connect(lambda _i: self.sync_all_export_mixer())
         self.io_sections.currentChanged.connect(lambda _i: self.sync_all_export_mixer())
+        # Move the original tuner widget to its own page, without recreating controls.
+        self.tuner_dialog.setWindowFlags(Qt.Widget)
+        self.tuner_dialog.setMinimumWidth(0)
+        self.tabs.addTab(self.tuner_dialog, 'TUNER')
         layout = tuner_layout
         layout.addWidget(QLabel('CHROMATIC TUNER  /  LINE 6 / WINDOWS INPUT'))
         tuner_row = QHBoxLayout()
@@ -1572,7 +1580,8 @@ class Window(QMainWindow):
         tuner_corner_layout.setContentsMargins(0, 0, 3, 0)
         tuner_corner_layout.setSpacing(0)
         tuner_corner_layout.addWidget(self.tuner_quick_button)
-        self.tabs.setCornerWidget(tuner_corner, Qt.TopRightCorner)
+        # The tuner now lives on its own tab; keep the original icon assets.
+        self.tuner_quick_button.hide()
         outer.addLayout(footer)
         outer.addWidget(self.progress)
         self.setStyleSheet('''
@@ -1651,15 +1660,67 @@ class Window(QMainWindow):
           QProgressBar{max-height:4px;background:#202d3b;border:0}
           QProgressBar::chunk{background:#7bd6ff}
         ''')
+        self.setup_developer_menus()
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
+    def setup_developer_menus(self):
+        bar = self.menuBar()
+        bar.setNativeMenuBar(False)
+        bar.setStyleSheet("QMenuBar{background:#172331;color:#e8edf2;border-bottom:1px solid #344658;}"
+                          "QMenuBar::item{padding:6px 13px;}"
+                          "QMenuBar::item:selected{background:#28455b;}"
+                          "QMenu{background:#172331;color:#e8edf2;border:1px solid #344658;}"
+                          "QMenu::item{padding:6px 24px;}"
+                          "QMenu::item:selected{background:#28455b;}")
+        file_menu = bar.addMenu('&File')
+        file_menu.addAction('Open Project…', self.open_project)
+        file_menu.addAction('Save Project', self.save_project)
+        file_menu.addAction('Save Project As…', self.save_project_as_menu)
+        recent = file_menu.addMenu('Recent Projects')
+        recent.aboutToShow.connect(lambda: self.fill_recent_file_menu(recent))
+        file_menu.addSeparator()
+        file_menu.addAction('Import Audio…', self.open_file)
+        file_menu.addAction('Import / Export', lambda: self.tabs.setCurrentIndex(2))
+        file_menu.addAction('Export WAV…', self.export_mix)
+        file_menu.addSeparator()
+        file_menu.addAction('Exit', self.close)
+        view = bar.addMenu('&View')
+        self.view_mixer_action = view.addAction('Stem Mixer')
+        self.view_mixer_action.setCheckable(True)
+        self.view_mixer_action.setChecked(True)
+        self.view_mixer_action.toggled.connect(self.play_splitter.widget(0).setVisible)
+        self.view_tuner_action = view.addAction('Tuner')
+        self.view_tuner_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.tuner_dialog))
+        view.addSeparator()
+        view.addAction('Reset Mixer Layout', self.reset_mixer_layout)
+        view.addAction('Show PLAY', lambda: self.tabs.setCurrentIndex(0))
+        view.addAction('Show Library', lambda: self.tabs.setCurrentIndex(1))
+
+    def save_project_as_menu(self):
+        original = self.project_file
+        self.project_file = None
+        self.save_project()
+        if self.project_file is None:
+            self.project_file = original
+
+    def fill_recent_file_menu(self, menu):
+        menu.clear()
+        for idx in range(self.recent_projects.count()):
+            path = self.recent_projects.itemData(idx)
+            if path:
+                menu.addAction(self.recent_projects.itemText(idx),
+                               lambda checked=False, p=path: self.load_project(p))
+        if not menu.actions():
+            action = menu.addAction('No recent projects')
+            action.setEnabled(False)
+
+    def reset_mixer_layout(self):
+        self.play_splitter.widget(0).show()
+        self.view_mixer_action.setChecked(True)
+        self.play_splitter.setSizes([270, 780])
+
     def toggle_tuner_panel(self):
-        if self.tuner_dialog.isVisible():
-            self.tuner_dialog.hide()
-        else:
-            self.tuner_dialog.show()
-            self.tuner_dialog.raise_()
-            self.tuner_dialog.activateWindow()
+        self.tabs.setCurrentWidget(self.tuner_dialog)
 
     def status_message(self, message):
         self.status.setText(message)
