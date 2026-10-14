@@ -5,7 +5,7 @@ name: Build RiffLab UI Test for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [main, experiment/real-ui-screenshot]
+    branches: [main, experiment/real-ui-screenshot, restore-from-dev69]
     paths:
       - 'app.py'
       - 'ai_worker.py'
