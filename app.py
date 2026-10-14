@@ -2436,6 +2436,10 @@ class Window(QMainWindow):
         self.chord_loading_stop.setEnabled(True)
         self.chord_loading_stop.show()
 
+    def _accuracy_key(self):
+        """Stable worker/cache identifier independent of translated UI labels."""
+        return ('fast', 'balanced', 'detailed')[self.accuracy.currentIndex()]
+
     def reanalyze_current(self):
         if self.analysis_running:
             return
@@ -2482,10 +2486,10 @@ class Window(QMainWindow):
             cache.mkdir(parents=True, exist_ok=True)
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes_v3' if bass_mode else 'chords_v2'}_{self.accuracy.currentText().lower()}.json"
+            chords_file = cache / f"{'bass_notes_v3' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
             beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
             if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
-            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self.accuracy.currentText().lower(), cancel_event=self.analysis_cancel))
+            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
             if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
             if not self.analysis_cancel.is_set():
                 self.signals.beats.emit(beats)
@@ -2701,11 +2705,11 @@ class Window(QMainWindow):
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_context_v7_{self.accuracy.currentText().lower()}.json'
-                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self.accuracy.currentText().lower(), str(self.stems['drums'])]
+                cache = self.folder / f'bass_context_v7_{self._accuracy_key()}.json'
+                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self._accuracy_key(), str(self.stems['drums'])]
             else:
-                cache = self.folder / f'chords_instruments_v5_{self.accuracy.currentText().lower()}.json'
-                task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self.accuracy.currentText().lower()]
+                cache = self.folder / f'chords_instruments_v5_{self._accuracy_key()}.json'
+                task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self._accuracy_key()]
             if cache.exists() and not force:
                 result = json.loads(cache.read_text(encoding='utf-8'))
             else:
