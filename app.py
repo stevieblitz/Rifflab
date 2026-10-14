@@ -2458,7 +2458,6 @@ class Window(QMainWindow):
             beats = json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
             (self.folder / 'beats_drums_v2.json').write_text(json.dumps(beats), encoding='utf-8')
             if not self.analysis_cancel.is_set():
-                if not self.analysis_cancel.is_set():
                 self.signals.beats.emit(beats)
         except AnalysisCancelled:
             pass
@@ -2669,6 +2668,7 @@ class Window(QMainWindow):
         self.grid_bpm.blockSignals(False)
         self.status_message('Stems ready — bass tracking enabled; switch to Chord Mode for harmony.')
         self.start_live()
+        self._start_analysis_ui()
         threading.Thread(target=self._analyze, daemon=True).start()
 
     def update_grid_mode_buttons(self, _index=None):
@@ -2701,8 +2701,8 @@ class Window(QMainWindow):
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_context_v6_{self.accuracy.currentText().lower()}.json'
-                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self.accuracy.currentText().lower()]
+                cache = self.folder / f'bass_context_v7_{self.accuracy.currentText().lower()}.json'
+                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self.accuracy.currentText().lower(), str(self.stems['drums'])]
             else:
                 cache = self.folder / f'chords_instruments_v5_{self.accuracy.currentText().lower()}.json'
                 task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self.accuracy.currentText().lower()]
@@ -2728,7 +2728,8 @@ class Window(QMainWindow):
             beats = json.loads(beats_cache.read_text(encoding='utf-8')) if beats_cache.exists() else json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
             if not beats_cache.exists():
                 beats_cache.write_text(json.dumps(beats), encoding='utf-8')
-            self.signals.beats.emit(beats)
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
         except AnalysisCancelled:
             pass
         except Exception as exc:
