@@ -1454,6 +1454,22 @@ class Window(QMainWindow):
             self.volume_labels[stem] = amount
             panel.addWidget(channel)
         panel.addStretch(0)
+        self.stem_panel = stem_panel
+        self.mixer_overlay = QWidget(stem_panel)
+        self.mixer_overlay.setObjectName('stemOverlay')
+        self.mixer_overlay.setStyleSheet(
+            'QWidget#stemOverlay{background:rgba(15,23,34,204);border-radius:4px;}'
+            'QPushButton#generateStems{background:#276080;color:white;border:1px solid #7bd6ff;'
+            'border-radius:5px;padding:12px;font-weight:700;}')
+        overlay_layout = QVBoxLayout(self.mixer_overlay)
+        overlay_layout.setContentsMargins(12, 65, 12, 12)
+        self.generate_stems_button = QPushButton('Generate Stems')
+        self.generate_stems_button.setObjectName('generateStems')
+        self.generate_stems_button.clicked.connect(self.generate_stems_clicked)
+        overlay_layout.addWidget(self.generate_stems_button)
+        overlay_layout.addStretch(1)
+        stem_panel.installEventFilter(self)
+        self.mixer_overlay.setGeometry(stem_panel.rect())
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
@@ -1555,6 +1571,10 @@ class Window(QMainWindow):
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
         footer.addWidget(self.status, 1)
+        self.stems_led = QLabel('● STEMS OFF')
+        self.stems_led.setMinimumWidth(125)
+        footer.addWidget(self.stems_led)
+        self.refresh_stems_led()
         self.maker_credit = QLabel(
             'by <a href="https://github.com/stevieblitz/Rifflab" '
             'style="color:#7bd6ff;text-decoration:none;">Stevie Blitz</a>, powered by AI'
@@ -2226,6 +2246,7 @@ class Window(QMainWindow):
             self.source_audio = None
             self.folder = folder
             self.stems = {name: folder / f'{name}.wav' for name in STEMS}
+            self.refresh_stems_led()
             self.load_waveform(self.stems)
             self.chord_data = []
             self.display_chords = []
@@ -2329,6 +2350,10 @@ class Window(QMainWindow):
             self.chord_loading.raise_()
 
     def eventFilter(self, obj, event):
+        if (hasattr(self, 'mixer_overlay') and obj is self.stem_panel
+                and event.type() == event.Type.Resize):
+            self.mixer_overlay.setGeometry(self.stem_panel.rect())
+            self.mixer_overlay.raise_()
         # Wheel scrolling in the nearby L-shaped controls adjusts that axis.
         # Elsewhere (especially over the note grid) standard scrolling remains.
         if event.type() == event.Type.Wheel:
@@ -2367,6 +2392,8 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         self.processing = busy
+        if hasattr(self, 'stems_led'):
+            self.refresh_stems_led()
         if not busy and not self.analysis_running:
             self.set_chord_loading(False)
         for widget in (self.load_url, self.load_file, self.project_save,
@@ -2385,6 +2412,7 @@ class Window(QMainWindow):
             self.reanalyze_button.setEnabled(True)
 
     def on_error(self, message):
+        self._generating_stems = False
         self.analysis_running = False
         self.cancel_analysis_button.hide()
         self.set_chord_loading(False)
@@ -2575,6 +2603,7 @@ class Window(QMainWindow):
         self.project_file = None
         self.stems = {}
         self.folder = None
+        self.refresh_stems_led()
         self.chord_data = []
         self.display_chords = []
         self.display_times = []
@@ -2805,9 +2834,37 @@ class Window(QMainWindow):
             except sqlite3.Error:
                 pass
 
+    def refresh_stems_led(self):
+        if not hasattr(self, 'stems_led'):
+            return
+        ready = all(name in self.stems and Path(self.stems[name]).is_file() for name in STEMS)
+        creating = bool(getattr(self, '_generating_stems', False) and self.processing)
+        label, color = (('● STEMS READY', '#6dd2aa') if ready else
+                        ('● CREATING', '#efb760') if creating else
+                        ('● STEMS OFF', '#92a1ad'))
+        self.stems_led.setText(label)
+        self.stems_led.setStyleSheet(f'color:{color};font-size:11px;font-weight:700;')
+        self.mixer_overlay.setVisible(not ready)
+        if not ready:
+            self.mixer_overlay.raise_()
+        self.generate_stems_button.setEnabled(
+            not self.processing and self.source_audio is not None
+            and Path(self.source_audio).is_file())
+        self.generate_stems_button.setText('Generating Stems…' if creating else 'Generate Stems')
+
+    def generate_stems_clicked(self):
+        if self.processing or self.analysis_running:
+            self.status_message('Wait for the current import or analysis to finish.')
+            return
+        if self.source_audio and Path(self.source_audio).is_file():
+            self.start_split(Path(self.source_audio))
+        else:
+            self.status_message('Open an audio file to create stems.')
+
     def start_split(self, path):
         if self.processing:
             return
+        self._generating_stems = True
         self.set_busy(True)
         threading.Thread(target=self._split_safe, args=(path,), daemon=True).start()
 
@@ -2829,12 +2886,14 @@ class Window(QMainWindow):
         self.signals.separated.emit(str(folder))
 
     def on_separated(self, folder):
+        self._generating_stems = False
         self.project_file = None
         self.folder = Path(folder)
         self.source_audio = None
         self.beat_times = []
         self.section_overrides = {}
         self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
+        self.refresh_stems_led()
         self.load_waveform(self.stems)
         self.chord_data = []
         self.chord_times = []
