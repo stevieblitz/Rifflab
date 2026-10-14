@@ -1362,7 +1362,192 @@ class Window(QMainWindow):
           QProgressBar{max-height:4px;background:#202d3b;border:0}
           QProgressBar::chunk{background:#7bd6ff}
         ''')
+        self.build_application_menus()
+        self.restore_workspace_preferences()
         QTimer.singleShot(0, self.size_tuner_to_tabs)
+
+
+    # Native desktop File / View menus; the existing tab controls remain available.
+    def build_application_menus(self):
+        bar = self.menuBar()
+        bar.setNativeMenuBar(False)
+        bar.setStyleSheet("""
+            QMenuBar {background:#152333;color:#e5f4ff;padding:3px 8px;border-bottom:1px solid #2b4256}
+            QMenuBar::item {padding:5px 15px;border-radius:4px}
+            QMenuBar::item:selected {background:#28445e}
+            QMenu {background:#152333;color:#e5f4ff;border:1px solid #35546c;padding:5px}
+            QMenu::item {padding:7px 30px 7px 20px}
+            QMenu::item:selected {background:#285274}
+        """)
+        file_menu = bar.addMenu('&File')
+        file_menu.addAction('New / Import Audio', lambda: self.open_import_workspace())
+        file_menu.addAction('Open Project…', self.open_project)
+        file_menu.addAction('Save Project', self.save_project)
+        file_menu.addAction('Save Project As…', self.save_project_as)
+        recent_menu = file_menu.addMenu('Recent Projects')
+        recent_menu.aboutToShow.connect(lambda: self.populate_recent_menu(recent_menu))
+        file_menu.addSeparator()
+        file_menu.addAction('Import Audio…', self.open_file)
+        file_menu.addAction('Import / Export Workspace', lambda: self.tabs.setCurrentIndex(2))
+        file_menu.addAction('Export WAV…', self.export_mix)
+        file_menu.addSeparator()
+        file_menu.addAction('Exit', self.close)
+
+        view_menu = bar.addMenu('&View')
+        self.workspace_actions = {}
+        for key, label, widget in (
+            ('mixer', 'Stem Mixer', self.play_splitter.widget(0)),
+            ('grid', 'Chord / Bass Grid', self.play_splitter.widget(1)),
+            ('waveform', 'Waveform Timeline', self.waveform),
+            ('indicator', 'Main Chord Indicator', self.chord),
+            ('analysis', 'Analysis Controls', self.findChild(QWidget, 'analysisToolbar')),
+        ):
+            action = view_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(True)
+            action.toggled.connect(lambda checked, k=key: self.set_workspace_panel(k, checked))
+            self.workspace_actions[key] = (action, widget)
+        tuner_action = view_menu.addAction('Tuner Window')
+        tuner_action.setCheckable(True)
+        tuner_action.setChecked(False)
+        tuner_action.toggled.connect(self.set_tuner_window_visible)
+        self.tuner_view_action = tuner_action
+        view_menu.addSeparator()
+        workspace_menu = view_menu.addMenu('Workspace')
+        workspace_menu.addAction('Save Workspace…', self.save_workspace_file)
+        workspace_menu.addAction('Load Workspace…', self.load_workspace_file)
+        workspace_menu.addAction('Reset Workspace', self.reset_workspace)
+        view_menu.addSeparator()
+        view_menu.addAction('Show Library', lambda: self.tabs.setCurrentIndex(1))
+        view_menu.addAction('Show Import / Export', lambda: self.tabs.setCurrentIndex(2))
+
+    def open_import_workspace(self):
+        self.tabs.setCurrentIndex(2)
+        self.io_sections.setCurrentIndex(0)
+
+    def save_project_as(self):
+        old_path = self.project_file
+        self.project_file = None
+        try:
+            self.save_project()
+        finally:
+            if self.project_file is None:
+                self.project_file = old_path
+
+    def populate_recent_menu(self, menu):
+        menu.clear()
+        self.refresh_recent_projects()
+        count = 0
+        for i in range(self.recent_projects.count()):
+            path = self.recent_projects.itemData(i)
+            if not path:
+                continue
+            count += 1
+            menu.addAction(self.recent_projects.itemText(i), lambda checked=False, p=path: self.load_project(p))
+        if not count:
+            action = menu.addAction('No recent projects')
+            action.setEnabled(False)
+
+    def set_workspace_panel(self, key, visible):
+        pair = self.workspace_actions.get(key)
+        if not pair:
+            return
+        action, widget = pair
+        if widget is not None:
+            widget.setVisible(bool(visible))
+        if action.isChecked() != bool(visible):
+            action.blockSignals(True)
+            action.setChecked(bool(visible))
+            action.blockSignals(False)
+        # Ensure a hidden splitter child can be restored at a useful width.
+        if visible and key == 'mixer':
+            sizes = self.play_splitter.sizes()
+            if sizes and sizes[0] < 100:
+                self.play_splitter.setSizes([220, max(350, sum(sizes) - 220)])
+        self.persist_workspace_preferences()
+
+    def set_tuner_window_visible(self, visible):
+        if visible:
+            self.tuner_dialog.show()
+            self.tuner_dialog.raise_()
+            self.tuner_dialog.activateWindow()
+        else:
+            self.tuner_dialog.hide()
+        self.persist_workspace_preferences()
+
+    def workspace_snapshot(self):
+        return {
+            'version': 1,
+            'panels': {key: action.isChecked() for key, (action, _) in self.workspace_actions.items()},
+            'grid_zoom': self.grid_zoom.value(),
+            'play_splitter': list(self.play_splitter.sizes()),
+            'export_splitter': list(self.export_splitter.sizes()),
+        }
+
+    def apply_workspace_snapshot(self, snapshot):
+        if not isinstance(snapshot, dict):
+            return
+        panels = snapshot.get('panels', {})
+        if isinstance(panels, dict):
+            for key in self.workspace_actions:
+                if key in panels:
+                    self.set_workspace_panel(key, bool(panels[key]))
+        zoom = snapshot.get('grid_zoom')
+        if isinstance(zoom, int):
+            self.grid_zoom.setValue(max(self.grid_zoom.minimum(), min(zoom, self.grid_zoom.maximum())))
+        for field, splitter in (('play_splitter', self.play_splitter),
+                                ('export_splitter', self.export_splitter)):
+            sizes = snapshot.get(field)
+            if isinstance(sizes, list) and len(sizes) == splitter.count() and all(isinstance(n, int) and n >= 0 for n in sizes) and sum(sizes):
+                splitter.setSizes(sizes)
+        self.persist_workspace_preferences()
+
+    def persist_workspace_preferences(self):
+        if not hasattr(self, 'workspace_actions'):
+            return
+        self.layout_settings.setValue('workspace_snapshot_v1',
+                                      json.dumps(self.workspace_snapshot()))
+
+    def restore_workspace_preferences(self):
+        raw = self.layout_settings.value('workspace_snapshot_v1')
+        if raw:
+            try:
+                self.apply_workspace_snapshot(json.loads(raw))
+            except (ValueError, TypeError):
+                pass
+
+    def save_workspace_file(self):
+        path, _ = QFileDialog.getSaveFileName(self, 'Save Workspace', str(ROOT / 'workspace.json'),
+                                               'RiffLab Workspace (*.json)')
+        if not path:
+            return
+        try:
+            Path(path).write_text(json.dumps(self.workspace_snapshot(), indent=2), encoding='utf-8')
+            self.status_message('Workspace saved.')
+        except OSError as exc:
+            QMessageBox.warning(self, 'Save Workspace', str(exc))
+
+    def load_workspace_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Load Workspace', str(ROOT),
+                                               'RiffLab Workspace (*.json)')
+        if not path:
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or data.get('version') != 1:
+                raise ValueError('Unsupported workspace format')
+            self.apply_workspace_snapshot(data)
+            self.status_message('Workspace loaded.')
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, 'Load Workspace', str(exc))
+
+    def reset_workspace(self):
+        self.apply_workspace_snapshot({'version': 1,
+            'panels': {key: True for key in self.workspace_actions},
+            'grid_zoom': 100, 'play_splitter': [220, 780], 'export_splitter': [240, 680]})
+        self.set_tuner_window_visible(False)
+        self.tuner_view_action.setChecked(False)
+        self.status_message('Workspace reset.')
 
     def toggle_tuner_panel(self):
         if self.tuner_dialog.isVisible():
@@ -3077,6 +3262,7 @@ class Window(QMainWindow):
                 pass
 
     def closeEvent(self,event):
+        self.persist_workspace_preferences()
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
         self.layout_settings.setValue('export_splitter_left_v2', self.export_splitter.saveState())
         self.stop_live()
