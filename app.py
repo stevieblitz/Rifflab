@@ -1081,40 +1081,44 @@ class Window(QMainWindow):
         self.analysis_mode.setToolTip('Bass Mode tracks actual bass-note changes, including semitone steps; Chord Mode estimates harmony')
         self.analysis_mode.currentIndexChanged.connect(self.switch_analysis_mode)
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
-        options.addWidget(QLabel('◈ Accuracy'))
         self.accuracy = QComboBox()
-        self.accuracy.addItems(['Fast · snelle preview', 'Balanced · normaal', 'Detailed · meer precisie'])
+        self.accuracy.addItems(['Fast', 'Balanced', 'Detailed'])
         self.accuracy.setCurrentIndex(1)
-        self.accuracy.setToolTip('Rekentijd en resolutie van de AI-analyse. Wijziging toepassen met Re-analyze; sneller is niet per definitie nauwkeuriger.')
-        options.addWidget(self.accuracy)
-        self.reanalyze_button = QPushButton('Re-analyze')
+        self.accuracy.setToolTip('AI analysis resolution. Re-analyze to apply; more detail does not guarantee accuracy.')
+        self.reanalyze_button = QPushButton('Analyze')
         self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
-        self.reanalyze_button.setToolTip('Nieuwe AI-berekening met de gekozen Accuracy. NoteGuard en Stability worden direct toegepast zonder nieuwe analyse.')
-        self.reanalyze_button.clicked.connect(self.reanalyze_current)
+        self.reanalyze_button.setToolTip('Analyze notes; during analysis, click again to stop.')
+        self.reanalyze_button.clicked.connect(self.toggle_analysis)
         options.addWidget(self.reanalyze_button)
         self.cancel_analysis_button = QPushButton('Stop Analyze')
         self.cancel_analysis_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
         self.cancel_analysis_button.setToolTip('Stop the running AI analysis while keeping the current song.')
         self.cancel_analysis_button.clicked.connect(self.stop_analysis)
         self.cancel_analysis_button.hide()
-        options.addWidget(self.cancel_analysis_button)
-        options.addWidget(QLabel('◇ NoteGuard'))
+        # Legacy cancellation action retained for API compatibility, but not shown.
         self.noteguard = QComboBox()
-        self.noteguard.addItems(['Uit · alle detecties', 'Licht · snelle riffs', 'Normaal · betrouwbaar', 'Sterk · grondtonen'])
+        self.noteguard.addItems(['Off', 'Light', 'Balanced', 'Strict'])
         self.noteguard.setCurrentIndex(0)
-        self.noteguard.setToolTip('Filtert korte twijfelachtige detecties op de bestaande noten. Dit herberekent de audio niet.')
+        self.noteguard.setToolTip('Display-only note cleanup. Original detections remain unchanged.')
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
-        options.addWidget(self.noteguard)
-        options.addWidget(QLabel('≋ Stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
         self.sensitivity.setValue(0)
-        self.sensitivity.setToolTip('Minimale duur van een nootwijziging; hogere waarde = minder korte wisselingen. Wordt direct toegepast.')
+        self.sensitivity.setToolTip('Minimum displayed note duration. Set to zero for every detected change.')
         self.sensitivity.setFixedWidth(90)
         self.sensitivity.valueChanged.connect(self.rebuild_chords)
-        options.addWidget(self.sensitivity)
         self.sensitivity_label = QLabel('≥0.0 s')
-        options.addWidget(self.sensitivity_label)
+        self.note_preset = QComboBox()
+        self.note_preset.addItems(['Notes · All', 'Notes · Light', 'Notes · Balanced', 'Notes · Smooth', 'Notes · Custom'])
+        self.note_preset.setMinimumWidth(132)
+        self.note_preset.setToolTip('Display filtering only; choose All for highest fidelity to detection.')
+        self.note_preset.currentIndexChanged.connect(self.apply_note_preset)
+        options.addWidget(self.note_preset)
+        self.note_settings_button = QPushButton('⚙')
+        self.note_settings_button.setFixedWidth(30)
+        self.note_settings_button.setToolTip('Analysis and note display settings')
+        self.note_settings_button.clicked.connect(self.open_note_settings)
+        options.addWidget(self.note_settings_button)
         options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
         self.transpose.setRange(-12, 12)
@@ -1123,7 +1127,7 @@ class Window(QMainWindow):
         self.transpose.setToolTip('Notation only: changes displayed notes/chords, never the audio pitch or the instrument tuning.')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
-        self.tuning_advice = QPushButton('Tuning guide  ↗')
+        self.tuning_advice = QPushButton('Tuning  ↗')
         self.tuning_advice.setToolTip(
             'Open the tuner and choose a string tuning. Transpose does not retune audio.')
         self.tuning_advice.clicked.connect(self.open_tuning_guide)
@@ -1542,7 +1546,7 @@ class Window(QMainWindow):
         self.live_timer.start(80)
         self.player.playbackStateChanged.connect(self.on_playback_state)
         self.player.positionChanged.connect(self.check_qt_loop)
-        self.player.errorOccurred.connect(lambda error, msg: self.status_message(f'Audiofout: {msg}') if msg else None)
+        self.player.errorOccurred.connect(lambda error, msg: self.status_message(f'Audio error: {msg}') if msg else None)
         footer = QHBoxLayout()
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
@@ -2322,6 +2326,7 @@ class Window(QMainWindow):
             self.split_local.setEnabled(self.source_audio is not None)
             self.analyze_local.setEnabled(self.source_audio is not None)
             self.reanalyze_button.setEnabled(True)
+        self.reanalyze_button.setText('Re-analyze' if (self.stems or self.source_audio) else 'Analyze')
 
     def on_error(self, message):
         self.analysis_running = False
@@ -2553,6 +2558,8 @@ class Window(QMainWindow):
         self.analysis_cancel.set()
         self.status_message('Stopping analysis…')
         self.cancel_analysis_button.setEnabled(False)
+        self.reanalyze_button.setText('Stopping…')
+        self.reanalyze_button.setEnabled(False)
         self.chord_loading_label.setText('Stopping analysis…')
         self.chord_loading_stop.setEnabled(False)
 
@@ -2560,9 +2567,72 @@ class Window(QMainWindow):
         self.analysis_cancel = threading.Event()
         self.analysis_running = True
         self.cancel_analysis_button.setEnabled(True)
-        self.cancel_analysis_button.show()
+        self.reanalyze_button.setText('■ Stop')
+        self.reanalyze_button.setEnabled(True)
         self.chord_loading_stop.setEnabled(True)
         self.chord_loading_stop.show()
+
+    def toggle_analysis(self):
+        if self.analysis_running:
+            self.stop_analysis()
+        elif self.stems or self.source_audio:
+            self.reanalyze_current()
+        else:
+            self.status_message('Import a song before analyzing.')
+
+    def apply_note_preset(self, index):
+        # These affect presentation only, never overwrite transcription.
+        settings = ((0, 0), (1, 0), (2, 1), (3, 3))
+        if index >= len(settings):
+            self.open_note_settings()
+            return
+        guard, stability = settings[index]
+        self.noteguard.blockSignals(True)
+        self.sensitivity.blockSignals(True)
+        self.noteguard.setCurrentIndex(guard)
+        self.sensitivity.setValue(stability)
+        self.noteguard.blockSignals(False)
+        self.sensitivity.blockSignals(False)
+        self.rebuild_chords()
+
+    def open_note_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Analysis & note display settings')
+        dialog.setMinimumWidth(350)
+        form = QFormLayout(dialog)
+        quality = QComboBox()
+        quality.addItems(['Fast', 'Balanced', 'Detailed'])
+        quality.setCurrentIndex(self.accuracy.currentIndex())
+        quality.setToolTip('Changes to accuracy take effect on the next analysis.')
+        guard = QComboBox()
+        guard.addItems(['Off', 'Light', 'Balanced', 'Strict'])
+        guard.setCurrentIndex(self.noteguard.currentIndex())
+        duration = QDoubleSpinBox()
+        duration.setRange(0.0, 2.0)
+        duration.setSingleStep(0.1)
+        duration.setDecimals(1)
+        duration.setSuffix(' seconds')
+        duration.setValue(self.sensitivity.value() * .1)
+        form.addRow('Analysis accuracy', quality)
+        form.addRow('Note verification', guard)
+        form.addRow('Minimum note length', duration)
+        explanation = QLabel('Verification and minimum length change only the grid. '
+                             'Accuracy requires a fresh analysis. Keep both filters '
+                             'off to inspect every detected note.')
+        explanation.setWordWrap(True)
+        form.addRow(explanation)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            self.accuracy.setCurrentIndex(quality.currentIndex())
+            self.noteguard.setCurrentIndex(guard.currentIndex())
+            self.sensitivity.setValue(round(duration.value() * 10))
+            self.note_preset.blockSignals(True)
+            self.note_preset.setCurrentIndex(4)
+            self.note_preset.blockSignals(False)
+            self.rebuild_chords()
 
     def _accuracy_key(self):
         """Stable worker/cache identifier independent of translated UI labels."""
@@ -2576,7 +2646,6 @@ class Window(QMainWindow):
             return
         self._start_analysis_ui()
         self.set_chord_loading(True, 'Re-analyzing notes…')
-        self.reanalyze_button.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.status_message('Re-analyzing audio with ' + self.accuracy.currentText() + ' accuracy…')
         if self.stems and self.folder:
@@ -2639,6 +2708,7 @@ class Window(QMainWindow):
             self.set_busy(False)
             self.status_message('Analysis stopped.' if was_cancelled else 'Import complete — notes and stems ready.')
         self.analyze_local.setEnabled(self.source_audio is not None)
+        self.reanalyze_button.setText('Re-analyze' if (self.stems or self.source_audio) else 'Analyze')
         self.reanalyze_button.setEnabled(True)
         if was_cancelled:
             self.status_message('Analysis stopped. Existing audio remains available.')
@@ -3725,7 +3795,7 @@ class Window(QMainWindow):
                 'Many accidentals detected. This can be the musical key, NOT proof '
                 'of Eb tuning. Open the tuner to compare before deciding.')
         else:
-            self.tuning_advice.setText('Tuning guide  ↗')
+            self.tuning_advice.setText('Tuning  ↗')
             self.tuning_advice.setToolTip(
                 'Choose instrument tuning manually. Transpose affects notation only.')
 
