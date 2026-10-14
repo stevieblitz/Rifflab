@@ -77,8 +77,10 @@ jobs:
                 Copy-Item $probe vendor/bin/ffprobe.exe -Force
                 foreach ($tool in @('ffmpeg.exe', 'ffprobe.exe')) {
                   $binary = (Resolve-Path (Join-Path 'vendor/bin' $tool)).Path
-                  & $binary -version | Select-Object -First 1
-                  if ($LASTEXITCODE -ne 0) { throw "Executable failed: $tool" }
+                  $versionOutput = & $binary -version 2>&1
+                  $exitCode = $LASTEXITCODE
+                  if ($exitCode -ne 0) { throw "Executable failed: $tool (exit $exitCode): $versionOutput" }
+                  $versionOutput | Select-Object -First 1
                 }
                 $installed = $true
                 break
