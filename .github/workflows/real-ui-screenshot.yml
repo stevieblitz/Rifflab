@@ -1,5 +1,8 @@
 name: Real RiffLab UI Screenshot
 on:
+  push:
+    branches: [restore-from-dev69]
+    paths: ['app.py', '.github/workflows/real-ui-screenshot.yml']
   pull_request:
     paths:
       - '.github/workflows/real-ui-screenshot.yml'
