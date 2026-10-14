@@ -3,7 +3,7 @@
 **Bron van waarheid:** werk uitsluitend verder vanaf de door gebruiker aangewezen stabiele Windows UI test run #69, commit `9f2865fa43856a5fe16f7b805c29bb9456bf1d58` (v2.0.0-dev.69). Ontwikkel op `restore-from-dev69`, **niet op main**. Geen 1.3.x-code of blinde cherry-picks, geen nieuwe zware build tot de UI en audio gecontroleerd zijn. Dit zijn wensen van de gebruiker, niet nieuwe featurevoorstellen van de assistent.
 
 ## P0 — audio / regressie (moet altijd correct blijven)
-- [ ] **Transpose is notation-only:** verschuift zichtbare noten/akkoorden én hoofdindicator, **nooit** audio-pitch, mix of export. Test bij -12, -1, 0, +1, +12; spelen én pauzeren, met/zonder stems.
+- [ ] **Geen pitch-aanpasser als nieuwe feature.** Behoud uitsluitend eventuele bestaande notation-only transpose indien nodig voor getoonde noten; verander de audio-pitch nooit. Voeg geen pitch-shift-knop of pitchregeling toe.
 - [ ] **Steps is niet pitch:** wijziging van steps/timing/resolutie verandert nooit audio-pitch. Onderzoek de feitelijke control en signaalverbinding op dev.69.
 - [ ] **BPM verandert echte afspeelsnelheid met behoud van pitch** en houdt waveform/grid in sync.
 - [ ] Detectie van chords/notes alleen uit bass/guitar/other, niet vocals; Bass Mode toont de grondtonen, geen major/minor.
@@ -12,6 +12,8 @@
 
 ## P1 — PLAYER / timeline
 - [ ] Lange, aaneengesloten gekleurde nootbalken, **geen losse beatblokjes**. De lengte weerspiegelt de duur; doorlopende noot hoeft niet bij maatgrens te breken.
+- [ ] **Vloeiende playback-progress in de nootbalken:** tijdens afspelen vult een accentkleur de zichtbare balk continu van links naar rechts op basis van de exacte audiopositie (niet discrete beat-hops of TAK-TAK-TAK). Rest van balk behoudt de rustige basiskleur. Gebruik bij voorkeur frame-gebaseerde update (~30–60 fps), zonder analyse/audio-engine te veranderen.
+- [ ] **Maatgrenzen blijven zichtbaar door lange noten heen:** heldere verticale barlines/maatnummers boven (en subtiel door) de voortgang, zodat de volgende maat ook binnen een aangehouden noot te zien is. Geen reset van de progress op de maatgrens als de noot doorloopt.
 - [ ] Beatlijnen en afzonderlijke duidelijke **maatstrepen/nummers boven de nootbalken**; steeds zichtbaar waar volgende maat begint (Chordify-referentie).
 - [ ] Verticale akkoord-/noottimeline met automatisch volgen en circa 4–8 maten vooruit, klik om te springen; A/B-loop.
 - [ ] Horizontale zoom met echt horizontale slider, verticale hoogtezoom met echt verticale slider, beide in player dock.
