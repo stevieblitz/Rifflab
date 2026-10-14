@@ -2653,7 +2653,7 @@ class Window(QMainWindow):
     def apply_mixer_levels(self):
         """Single realtime path for M, S and volume controls."""
         levels = self.get_levels()
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(levels)
         else:
             self.request_mix()
@@ -2711,19 +2711,15 @@ class Window(QMainWindow):
     def volume_changed(self, _value=None):
         for stem, slider in self.volumes.items():
             self.volume_labels[stem].setText(f'{slider.value()}%')
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(self.get_levels())
         else:
             self.mix_debounce.start(350)
 
     def transpose_changed(self, _value=None):
+        """Notation only: never restart audio, alter pitch or rerender a mix."""
         self.render_grid()
-        self.on_position(self.player.position())
-        if self.transpose.value() == 0 and self.stems:
-            self.start_live()
-        else:
-            self.stop_live()
-            self.mix_debounce.start(350)
+        self.on_position(self.live.position_ms if self.live else self.player.position())
 
     def transpose_chord(self, chord):
         match = re.fullmatch(r'([A-G])([#b]?)(.*)', chord)
@@ -2773,7 +2769,7 @@ class Window(QMainWindow):
         self.on_position(self.live.position_ms if self.live else self.player.position())
 
     def request_mix(self, _checked=None):
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(self.get_levels())
             return
         if not self.stems:
@@ -2785,7 +2781,7 @@ class Window(QMainWindow):
         self.mix_counter += 1
         seq = self.mix_counter
         levels = self.get_levels()
-        transpose = self.transpose.value()
+        transpose = 0  # Transpose control is visual-only; audio stays at original pitch.
         pos = self.player.position()
         playing = self.player.playbackState() == QMediaPlayer.PlayingState
         self.player.pause()
@@ -3027,7 +3023,7 @@ class Window(QMainWindow):
         if filename:
             try:
                 self.status_message('Exporting WAV…')
-                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),self.transpose.value()), daemon=True).start()
+                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),0), daemon=True).start()
             except Exception as exc:
                 self.on_error(str(exc))
 
