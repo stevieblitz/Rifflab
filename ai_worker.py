@@ -292,26 +292,57 @@ def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
             result.append((t, note))
     return sorted(result, key=lambda x: x[0])
 
-def bass_context(bass_path, other_path, accuracy="balanced"):
-    """Bass-root-first notes, with guitar harmony as fallback during gaps.
+def bass_context(bass_path, other_path, accuracy="balanced", drums_path=None):
+    """Root Engine v2: bass candidate notes + musical/harmonic corroboration.
 
-    Bass detections are never replaced by guitar chord guesses. When no bass
-    detection is available at the beginning, the harmony root can fill it.
+    Repeated plucks never create events. Chord estimates and beat locations
+    *support* changes; they do not invent isolated roots against the bass.
     """
     import bisect
     primary = bass_notes(bass_path, accuracy)
     if not primary:
         harmony = chords_instruments(other_path, bass_path, accuracy)
         return [(t, chord_root(c)) for t, c in harmony]
-    # Retain bass-led riff articulation. The other stem supplies only context
-    # before the first confidently detected bass note.
-    if primary[0][0] > 0.4:
-        harmony = chords_instruments(other_path, bass_path, accuracy)
-        early = [(t, chord_root(c)) for t, c in harmony if t < primary[0][0]]
-        if early:
-            return early + primary
-    # A root-only view must never insert speculative notes from repeated riffs.
-    return primary
+    harmony = chords_instruments(other_path, bass_path, accuracy)
+    if not harmony:
+        return primary
+    harmonic_times = [float(t) for t, _ in harmony]
+    harmonic_roots = [chord_root(name) for _, name in harmony]
+    beat_times = []
+    if drums_path:
+        try:
+            beat_times = [float(t) for t in beats(drums_path).get('beats', [])]
+        except Exception:
+            pass
+    # Bass pitches have already passed the low-register evidence gate.
+    # Only suppress changes which sound like brief ornaments or errors.
+    # Chord/beat information is supporting context, not an absolute authority.
+    result = []
+    for i, (start, note) in enumerate(primary):
+        if result and note == result[-1][1]:
+            continue
+        end = primary[i + 1][0] if i + 1 < len(primary) else float('inf')
+        duration = end - start
+        if i > 0 and i + 1 < len(primary) and duration < .75:
+            mid = start + duration / 2
+            hidx = bisect.bisect_right(harmonic_times, mid) - 1
+            harmony_support = hidx >= 0 and harmonic_roots[hidx] == note
+            beat_support = False
+            if beat_times:
+                pos = bisect.bisect_left(beat_times, start)
+                beat_support = any(abs(beat_times[k] - start) < .16
+                                   for k in (pos - 1, pos) if 0 <= k < len(beat_times))
+            # The short excursion needs independent evidence from harmony
+            # AND the rhythmic grid before replacing an established root.
+            if not (harmony_support and beat_support):
+                continue
+        result.append((start, note))
+    # The previous root can reappear once a short ornament is removed.
+    compact = []
+    for t, note in result:
+        if not compact or compact[-1][1] != note:
+            compact.append((t, note))
+    return compact
 
 
 def chord_root(name):
