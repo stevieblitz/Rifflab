@@ -613,7 +613,11 @@ class Signals(QObject):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('RiffLab Alpha v2.0.0-dev.1 — Music Practice')
+        try:
+            from build_info import BUILD_NUMBER
+        except ImportError:
+            BUILD_NUMBER = 'local'
+        self.setWindowTitle(f'RiffLab Alpha v2.0.0-dev.{BUILD_NUMBER} — Music Practice')
         self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
         self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
         self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
