@@ -11,6 +11,11 @@ on:
       - 'requirements-*.txt'
       - '.github/workflows/windows-build.yml'
 
+# Keep only the latest Windows build for each branch.
+concurrency:
+  group: rifflab-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
