@@ -591,7 +591,7 @@ class Signals(QObject):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('RiffLab Alpha 1.3.0 — Music Practice')
+        self.setWindowTitle('RiffLab Alpha v2.0.0-dev.1 — Music Practice')
         self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
         self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
         self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
@@ -1249,10 +1249,11 @@ class Window(QMainWindow):
         self.grid_zoom.setRange(65, 200)
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
-        self.grid_zoom.setValue(100)
+        self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
         self.grid_zoom.setFixedWidth(160)
         self.grid_zoom.setToolTip('↔ Zoom: notenbreedte; scroll of sleep om aan te passen')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
+        self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
         self.grid_zoom.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom)
         zoom_caption = QLabel('↔')
@@ -1283,9 +1284,10 @@ class Window(QMainWindow):
         self.grid_row_height.setFixedWidth(26)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
-        self.grid_row_height.setValue(38)
+        self.grid_row_height.setValue(max(24, min(96, int(self.layout_settings.value('grid_row_height', 38)))))
         self.grid_row_height.setToolTip('Notenbalkhoogte; scroll hier of sleep om aan te passen')
         self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
+        self.grid_row_height.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_row_height', value))
         self.grid_row_height.installEventFilter(self)
         height_column.addWidget(self.grid_row_height, 0, Qt.AlignHCenter)
         height_down = QLabel('↓')
@@ -2225,13 +2227,40 @@ class Window(QMainWindow):
             self.load_local(Path(path))
 
     def paste_youtube_link(self):
-        """Paste a YouTube link from anywhere in RiffLab and open import."""
-        clipboard_text = QApplication.clipboard().text().strip()
-        if not valid_youtube_url(clipboard_text):
+        """Ctrl+V accepts YouTube URLs AND existing local audio files."""
+        if not self._shortcut_allowed():
             return
-        self.tabs.setCurrentIndex(2)
-        self.url.setText(clipboard_text)
-        self.url.setFocus()
+        clipboard = QApplication.clipboard()
+        mime = clipboard.mimeData()
+        candidates = []
+        if mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    candidates.append(Path(url.toLocalFile()))
+        raw = clipboard.text().strip().strip('"').strip("'")
+        if raw:
+            # Windows Explorer Copy as path, plain-text paths and file:// URLs.
+            if raw.startswith('file://'):
+                url = QUrl(raw)
+                if url.isLocalFile():
+                    candidates.append(Path(url.toLocalFile()))
+            else:
+                candidates.append(Path(raw))
+        for candidate in candidates:
+            if (candidate.is_file()
+                    and candidate.suffix.lower() in ('.mp3', '.wav', '.flac', '.m4a', '.ogg')):
+                if self.processing or self.analysis_running:
+                    self.status_message('Wacht tot de huidige import of analyse stopt.')
+                    return
+                self.tabs.setCurrentIndex(0)
+                self.load_local(candidate.resolve())
+                return
+        if valid_youtube_url(raw):
+            self.tabs.setCurrentIndex(2)
+            self.url.setText(raw)
+            self.url.setFocus()
+        else:
+            self.status_message('Ctrl+V: kopieer een lokaal audiobestand of YouTube-link.')
 
     def download_url(self):
         url = self.url.text().strip()
@@ -3580,6 +3609,8 @@ class Window(QMainWindow):
                 pass
 
     def closeEvent(self,event):
+        self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
+        self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
         self.layout_settings.setValue('export_splitter_left_v2', self.export_splitter.saveState())
         self.stop_live()
