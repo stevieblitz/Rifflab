@@ -1091,6 +1091,16 @@ class Window(QMainWindow):
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(40)
         zoom_controls.addWidget(self.grid_zoom_label)
+        self.grid_height = QSlider(Qt.Vertical)
+        self.grid_height.setRange(65, 200)
+        self.grid_height.setValue(100)
+        self.grid_height.setFixedHeight(66)
+        self.grid_height.setToolTip('Vertical note-bar zoom')
+        self.grid_height.valueChanged.connect(self.apply_grid_zoom)
+        zoom_controls.addSpacing(12)
+        zoom_controls.addWidget(self.grid_height)
+        self.grid_height_label = QLabel('100%')
+        zoom_controls.addWidget(self.grid_height_label)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
         self.time_label.setMinimumWidth(85)
@@ -1495,7 +1505,7 @@ class Window(QMainWindow):
         return {
             'version': 1,
             'panels': {key: action.isChecked() for key, (action, _) in self.workspace_actions.items()},
-            'grid_zoom': self.grid_zoom.value(),
+            'grid_zoom': self.grid_zoom.value(), 'grid_height': self.grid_height.value(),
             'play_splitter': list(self.play_splitter.sizes()),
             'export_splitter': list(self.export_splitter.sizes()),
         }
@@ -1511,6 +1521,9 @@ class Window(QMainWindow):
         zoom = snapshot.get('grid_zoom')
         if isinstance(zoom, int):
             self.grid_zoom.setValue(max(self.grid_zoom.minimum(), min(zoom, self.grid_zoom.maximum())))
+        height = snapshot.get('grid_height')
+        if isinstance(height, int):
+            self.grid_height.setValue(height)
         for field, splitter in (('play_splitter', self.play_splitter),
                                 ('export_splitter', self.export_splitter)):
             sizes = snapshot.get(field)
@@ -1560,7 +1573,7 @@ class Window(QMainWindow):
     def reset_workspace(self):
         self.apply_workspace_snapshot({'version': 1,
             'panels': {key: True for key in self.workspace_actions},
-            'grid_zoom': 100, 'play_splitter': [270, 780], 'export_splitter': [240, 680]})
+            'grid_zoom': 100, 'grid_height': 100, 'play_splitter': [270, 780], 'export_splitter': [240, 680]})
         self.set_tuner_window_visible(False)
         self.tuner_view_action.setChecked(False)
         self.status_message('Workspace reset.')
@@ -1978,7 +1991,7 @@ class Window(QMainWindow):
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
             'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
-            'zoom': self.grid_zoom.value(), 'lookahead_ms': self.chord_lookahead.value(),
+            'zoom': self.grid_zoom.value(), 'height_zoom': self.grid_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
             'enabled': {name: self.checks[name].isChecked() for name in STEMS},
@@ -2103,6 +2116,7 @@ class Window(QMainWindow):
         self.sensitivity.setValue(int(data.get('stability', 2)))
         self.transpose.setValue(int(data.get('transpose', 0)))
         self.grid_zoom.setValue(int(data.get('zoom', 100)))
+        self.grid_height.setValue(int(data.get('height_zoom', 100)))
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
         self.follow.setChecked(bool(data.get('auto_scroll', True)))
         self.chord_data = data.get('chord_data', [])
@@ -2943,25 +2957,21 @@ class Window(QMainWindow):
         self.chord.setText(self.transpose_chord(self.display_chords[idx][1])
                            if idx >= 0 else '—')
 
-    def apply_grid_zoom(self, zoom):
-        """Scale chord labels together with their cells and spacing."""
-        self.grid_zoom_label.setText(f'{zoom}%')
-        scale = zoom / 100.0
-        for button in self.grid_buttons:
-            button.setMinimumWidth(round(36 * scale))
-            button.setFixedHeight(round(38 * scale))
-            font = button.font()
-            font.setPointSizeF(max(8.0, 11.0 * scale))
-            font.setBold(bool(button.text().strip()))
-            button.setFont(font)
-            padding_y = max(1, round(3 * scale))
-            padding_x = max(2, round(5 * scale))
-            button.setStyleSheet(
-                'background:#223242;border:1px solid #344658;'
-                f'border-radius:{max(3, round(4 * scale))}px;'
-                f'text-align:left;padding:{padding_y}px {padding_x}px;'
-            )
-        self.chord_grid.setSpacing(max(2, round(4 * scale)))
+    def apply_grid_zoom(self, _value=None):
+        self.grid_zoom_label.setText(f'{self.grid_zoom.value()}%')
+        self.grid_height_label.setText(f'{self.grid_height.value()}%')
+        xscale = self.grid_zoom.value() / 100.0
+        yscale = self.grid_height.value() / 100.0
+        for btn in set(self.grid_buttons):
+            if btn is None:
+                continue
+            btn.setMinimumWidth(round(34 * xscale))
+            btn.setFixedHeight(round(38 * yscale))
+            font = btn.font()
+            font.setPointSizeF(max(8, 11 * yscale))
+            btn.setFont(font)
+        self.chord_grid.setHorizontalSpacing(max(1, round(3*xscale)))
+        self.chord_grid.setVerticalSpacing(max(3, round(9*yscale)))
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
@@ -3083,87 +3093,89 @@ class Window(QMainWindow):
         counts = Counter(v[0] for v in matches.values())
         return {beat: info for beat, info in matches.items() if counts[info[0]] >= 2}
 
+    def _note_color(self, label):
+        root = re.match(r'^[A-G]', str(label))
+        return {'C':'#4b98cf','D':'#ae83d1','E':'#4fa9aa','F':'#d49a70',
+                'G':'#7caf88','A':'#c189bc','B':'#c3af6b'}.get(
+                    root.group(0) if root else '', '#526778')
+
+    def _paint_note(self, widget, active=False):
+        accent = widget.property('accentColor') or '#526778'
+        widget.setStyleSheet(
+            f'background:{"#2c5572" if active else "#1e3040"};'
+            f'border:1px solid {"#9fe6ff" if active else accent};'
+            f'border-left:4px solid {accent};border-radius:3px;'
+            'color:#eff8ff;text-align:left;padding:2px 7px;')
+
     def render_grid(self, *_):
-        """Four bars per row, four clickable beat cells per bar. Grid uses a fixed BPM estimate."""
+        """Long duration bars with measure markers independent of note changes."""
         while self.chord_grid.count():
             item = self.chord_grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self.grid_buttons = []
         self.grid_cells = []
-        bpm = self.grid_bpm.value()
-        beat_length = 60.0 / bpm
-        total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
-        beats = min(800, max(16, len(self.beat_times) if self.beat_times else math.ceil(total / beat_length)))
-        beat_seconds = [self.beat_times[i] if self.beat_times else i * beat_length for i in range(beats)]
-        patterns = {}  # Pattern assistance happens during audio analysis, not in the grid
-        occurrences = Counter()
-        pattern_labels = {}
-        for start, (letter, confidence, group_idx) in sorted(patterns.items()):
-            occurrences[letter] += 1
-            pattern_labels[start] = (f'{letter}{occurrences[letter]}', confidence, group_idx)
-        self.pattern_matches = pattern_labels
-        for beat_index in range(beats):
-            t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
-            bar = beat_index // 4
-            beat = beat_index % 4
-            row = bar // 4
-            col = (bar % 4) * 4 + beat
+        bpm = max(1, self.grid_bpm.value())
+        beat_len = 60.0 / bpm
+        total = max(self._duration / 1000, self.display_times[-1]+4 if self.display_times else 0, 45)
+        beats = min(800, max(16, len(self.beat_times) if self.beat_times else math.ceil(total/beat_len)))
+        times = [self.beat_times[i] if self.beat_times else i*beat_len for i in range(beats)]
+        labels = []
+        for t in times:
             idx = bisect.bisect_right(self.display_times, t) - 1
-            chord = self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—'
-            prev_idx = bisect.bisect_right(self.display_times, max(0,t-beat_length)) - 1
-            previous = self.transpose_chord(self.display_chords[prev_idx][1]) if prev_idx >= 0 else '—'
-            label = chord if chord != previous or (beat_index == 0 and chord != '—') else ''
-            pattern = pattern_labels.get(beat_index)
-            if pattern:
-                pattern_name, confidence, group = pattern
-                label = (pattern_name + '  ' + label).strip()
-            button = QPushButton(label)
-            button.setMinimumHeight(30)
-            border = '#344658'
-            background = '#223242'
-            if pattern:
-                border = '#478bc1' if group % 2 == 0 else '#b17baf'
-                background = '#293f54' if group % 2 == 0 else '#3b3045'
-            button.setStyleSheet(f'background:{background};border:1px solid {border};border-radius:3px;text-align:left;padding:2px 4px;')
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            hint = (f' • repeated riff {pattern[0]} • similarity {pattern[1]:.0%}' if pattern else '')
-            button.setToolTip(f'Bar {bar+1} • beat {beat+1} • {t:.1f}s{hint}')
-            button.clicked.connect(lambda checked=False, seconds=t: self.seek_and_play(int(seconds*1000)))
-            self.chord_grid.addWidget(button, row, col)
-            self.grid_buttons.append(button)
-            self.grid_cells.append((t,beat))
+            labels.append(self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—')
+        self.grid_cells = [(t, i%4) for i,t in enumerate(times)]
+        self.grid_buttons = [None]*beats
+        for start in range(0, beats, 16):
+            end = min(beats, start+16)
+            row = (start//16)*2
+            for bar_start in range(start, end, 4):
+                marker = QLabel(f'{bar_start//4 + 1:02d}')
+                marker.setStyleSheet('color:#7b9cb5;font-size:10px;border-left:2px solid #5c8098;'
+                                     'padding-left:5px;background:transparent;')
+                self.chord_grid.addWidget(marker, row, bar_start%16, 1, min(4,end-bar_start))
+            i=start
+            while i<end:
+                label=labels[i]
+                j=i+1
+                while j<end and labels[j]==label:
+                    j+=1
+                btn=QPushButton(label if label!='—' else '')
+                btn.setProperty('accentColor', self._note_color(label))
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                btn.setToolTip(f'{label} · {times[i]:.2f}s · {j-i} beats')
+                btn.clicked.connect(lambda _checked=False, t=times[i]: self.seek_and_play(int(t*1000)))
+                self._paint_note(btn)
+                self.chord_grid.addWidget(btn,row+1,i%16,1,j-i)
+                for k in range(i,j):
+                    self.grid_buttons[k]=btn
+                i=j
         for col in range(16):
-            self.chord_grid.setColumnStretch(col, 1)
-        self.apply_grid_zoom(self.grid_zoom.value())
-        self.grid_active = -1
-        self.grid_row = -1
+            self.chord_grid.setColumnStretch(col,1)
+        self.apply_grid_zoom()
+        self.grid_active=-1
+        self.grid_row=-1
         self.update_grid_position((self.live.position_ms if self.live else self.player.position())/1000)
 
     def update_grid_position(self, seconds):
         if not self.grid_buttons:
             return
-        idx = max(0,min(len(self.grid_buttons)-1, bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times else int(seconds * self.grid_bpm.value()/60)))
-        if idx == self.grid_active:
+        idx=max(0,min(len(self.grid_buttons)-1,
+            bisect.bisect_right(self.beat_times,seconds)-1 if self.beat_times
+            else int(seconds*self.grid_bpm.value()/60)))
+        if idx==self.grid_active:
             return
-        old = self.grid_active
-        self.grid_active = idx
-        for j in (old,idx):
-            if j < 0 or j >= len(self.grid_buttons):
-                continue
-            active = j == idx
-            first = self.grid_cells[j][1] == 0
-            self.grid_buttons[j].setStyleSheet(
-                f'background:{"#2878ad" if active else "#223242"};'
-                f'border:1px solid {"#7bd6ff" if active else "#526778" if first else "#344658"};'
-                'border-radius:3px;text-align:left;padding:2px 4px;'
-            )
-        row = idx // 16
-        if self.follow.isChecked() and row != self.grid_row:
-            self.grid_row = row
-            bar = self.chord_scroll.verticalScrollBar()
-            button = self.grid_buttons[min(row*16,len(self.grid_buttons)-1)]
-            bar.setValue(max(0,button.y()-int(self.chord_scroll.viewport().height()*.25)))
+        previous=self.grid_buttons[self.grid_active] if 0<=self.grid_active<len(self.grid_buttons) else None
+        current=self.grid_buttons[idx]
+        if previous is not None and previous is not current:
+            self._paint_note(previous,False)
+        self._paint_note(current,True)
+        self.grid_active=idx
+        row=(idx//16)*2
+        if self.follow.isChecked() and row!=self.grid_row:
+            self.grid_row=row
+            scroll=self.chord_scroll.verticalScrollBar()
+            scroll.setValue(max(0,current.y()-int(self.chord_scroll.viewport().height()*.25)))
 
     def find_devices(self):
         self.devices.clear()
