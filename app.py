@@ -595,6 +595,52 @@ class TunerMeter(QWidget):
         painter.end()
 
 
+class MiniTunerView(QWidget):
+    """Compact waveform trace + cents needle, using the existing tuner input."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.cents = 0.0
+        self.active = False
+        self.samples = ()
+        self.setFixedHeight(57)
+        self.setToolTip('Live input waveform and pitch deviation: center = in tune')
+
+    def set_reading(self, cents=0.0, active=False, samples=()):
+        self.cents = max(-50.0, min(50.0, float(cents)))
+        self.active = bool(active)
+        self.samples = tuple(samples)
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = max(self.width(), 1), self.height()
+        center = w / 2
+        p.fillRect(self.rect(), QColor('#152531'))
+        p.setPen(QPen(QColor('#334d5d'), 1))
+        p.drawLine(8, h-13, w-8, h-13)
+        for cents in (-50, -25, 0, 25, 50):
+            x = round(center + cents * (w-24) / 100)
+            p.setPen(QPen(QColor('#58cfc8' if cents == 0 else '#527082'),
+                          2 if cents == 0 else 1))
+            p.drawLine(x, h-19 if cents == 0 else h-17, x, h-7)
+        if self.active and self.samples:
+            p.setPen(QPen(QColor('#79b9de'), 1))
+            previous = None
+            count = len(self.samples)
+            for i, value in enumerate(self.samples):
+                x = 9 + round(i * (w-18) / max(1, count-1))
+                y = round(19 - max(-1., min(1., value)) * 13)
+                if previous is not None:
+                    p.drawLine(previous[0], previous[1], x, y)
+                previous = (x, y)
+        if self.active:
+            x = round(center + self.cents * (w-24) / 100)
+            p.setPen(QPen(QColor('#65e8c4' if abs(self.cents) <= 5 else '#ffc37a'), 3))
+            p.drawLine(x, h-23, x, h-5)
+        p.end()
+
+
 class Signals(QObject):
     status = Signal(str)
     stage = Signal(str)
@@ -682,6 +728,7 @@ class Window(QMainWindow):
         self.tuner_pitch = 0.0
         self.tuner_level = 0.0
         self.tuner_last = 0.0
+        self._tuner_waveform = ()
         self._tuner_display_cents = None
         self.project_file = None
         self._pending_project = None
@@ -1467,6 +1514,46 @@ class Window(QMainWindow):
         mixer_holder_layout.setContentsMargins(0, 0, 0, 0)
         mixer_holder_layout.setSpacing(0)
         mixer_holder_layout.addWidget(stem_panel, 0, Qt.AlignTop)
+        # Inline tuner deliberately shares the existing full tuner engine.
+        mini = QWidget()
+        mini.setObjectName('mixerTuner')
+        mini.setStyleSheet(
+            'QWidget#mixerTuner{background:#172633;border:1px solid #304a5d;border-radius:5px}')
+        mini_layout = QVBoxLayout(mini)
+        mini_layout.setContentsMargins(7, 7, 7, 7)
+        mini_layout.setSpacing(4)
+        mini_header = QHBoxLayout()
+        mini_header.setSpacing(3)
+        mini_header.addWidget(QLabel('TUNER'))
+        mini_header.addStretch()
+        self.mini_tuner_live = QPushButton('● Off')
+        self.mini_tuner_live.setFixedWidth(52)
+        self.mini_tuner_live.setToolTip('Start or stop microphone monitoring')
+        self.mini_tuner_live.clicked.connect(self.toggle_tuner)
+        mini_header.addWidget(self.mini_tuner_live)
+        self.mini_tuner_settings = QPushButton('⚙')
+        self.mini_tuner_settings.setFixedWidth(27)
+        self.mini_tuner_settings.setToolTip('Select audio input and detailed tuner controls')
+        self.mini_tuner_settings.clicked.connect(self.toggle_tuner_panel)
+        mini_header.addWidget(self.mini_tuner_settings)
+        mini_layout.addLayout(mini_header)
+        self.mini_tuner_preset = QComboBox()
+        self.mini_tuner_preset.addItems([
+            'Chromatic', 'Guitar E', 'Guitar Eb', 'Guitar D',
+            'Drop D', 'Drop C#', 'Bass E', 'Bass Eb', 'Bass D'])
+        self.mini_tuner_preset.setToolTip('Select a tuning; individual string targets are in tuner settings')
+        self.mini_tuner_preset.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mini_tuner_preset.currentIndexChanged.connect(
+            lambda index: self.tuner_preset.setCurrentIndex(index))
+        mini_layout.addWidget(self.mini_tuner_preset)
+        self.mini_tuner_note = QLabel('—  ·  Mic off')
+        self.mini_tuner_note.setAlignment(Qt.AlignCenter)
+        self.mini_tuner_note.setStyleSheet(
+            'font-weight:700;color:#d5efff;background:transparent;font-size:13px')
+        mini_layout.addWidget(self.mini_tuner_note)
+        self.mini_tuner_view = MiniTunerView()
+        mini_layout.addWidget(self.mini_tuner_view)
+        mixer_holder_layout.addWidget(mini, 0, Qt.AlignTop)
         mixer_holder_layout.addStretch(1)
         self.play_splitter.insertWidget(0, mixer_holder)
         self.play_splitter.setStretchFactor(0, 0)
@@ -1502,6 +1589,7 @@ class Window(QMainWindow):
         self.tuner_preset.setToolTip(
             'Choose the instrument tuning and check each string against its target frequency and cent meter.')
         self.tuner_preset.currentIndexChanged.connect(self.refresh_tuner_strings)
+        self.tuner_preset.currentIndexChanged.connect(self.sync_mini_tuner_preset)
         self.tuner_preset.currentIndexChanged.connect(
             lambda index: self.layout_settings.setValue('preferred_tuning_preset', index))
         tuning_row.addWidget(self.tuner_preset, 2)
@@ -1533,6 +1621,7 @@ class Window(QMainWindow):
         saved_tuning = int(self.layout_settings.value('preferred_tuning_preset', 0))
         self.tuner_preset.setCurrentIndex(max(0, min(8, saved_tuning)))
         self.refresh_tuner_strings()
+        self.sync_mini_tuner_preset()
         self.find_devices()
         self.tuner_timer = QTimer(self)
         self.tuner_timer.timeout.connect(self.update_tuner)
@@ -3818,6 +3907,13 @@ class Window(QMainWindow):
         self.status_message(
             'Tuning is a manual instrument choice. Transpose changes notation only.')
 
+    def sync_mini_tuner_preset(self, _index=None):
+        if not hasattr(self, 'mini_tuner_preset'):
+            return
+        self.mini_tuner_preset.blockSignals(True)
+        self.mini_tuner_preset.setCurrentIndex(self.tuner_preset.currentIndex())
+        self.mini_tuner_preset.blockSignals(False)
+
     def refresh_tuner_strings(self, _index=None):
         """Per-string reference pitches (MIDI); don't guess a song's tuning."""
         tunings = {
@@ -3865,6 +3961,9 @@ class Window(QMainWindow):
             self.tuner_note.setText('—')
             self.tuner_details.setText('Tuner stopped')
             self.tuner_button.setText('Start Tuner')
+            self.mini_tuner_live.setText('● Off')
+            self.mini_tuner_note.setText('—  ·  Mic off')
+            self.mini_tuner_view.set_reading()
             return
         try:
             import sounddevice as sd
@@ -3879,6 +3978,7 @@ class Window(QMainWindow):
                 if self.tuner_level < .006:
                     return
                 x = x - np.mean(x)
+                self._tuner_waveform = tuple(float(v) for v in x[::max(1, len(x)//45)][:45])
                 n = len(x)
                 spec = np.fft.rfft(x,n=2*n)
                 corr = np.fft.irfft(spec*np.conj(spec))[:n]
@@ -3899,6 +3999,7 @@ class Window(QMainWindow):
             self._tuner_display_cents = None
             self.tuner_details.setText('Listening… · A4 = 440 Hz')
             self.tuner_button.setText('Stop Tuner')
+            self.mini_tuner_live.setText('● Live')
         except Exception as exc:
             self.tuner_stream = None
             QMessageBox.warning(self,'Tuner',str(exc))
@@ -3910,6 +4011,8 @@ class Window(QMainWindow):
             self.tuner_note.setText('—')
             self.tuner_details.setText('Play one string · A4 = 440 Hz')
             self.tuner_meter.set_reading(0, False)
+            self.mini_tuner_note.setText('—  ·  Listening')
+            self.mini_tuner_view.set_reading()
             self._tuner_display_cents = None
             return
         frequency = self.tuner_pitch
@@ -3939,6 +4042,8 @@ class Window(QMainWindow):
         self.tuner_details.setText(
             f'{smooth:+.1f} cents   ·   {frequency:.2f} Hz   ·   {direction}')
         self.tuner_meter.set_reading(smooth)
+        self.mini_tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}  ·  {smooth:+.0f}¢')
+        self.mini_tuner_view.set_reading(smooth, True, self._tuner_waveform)
 
     def stop_live(self):
         if self.live:
