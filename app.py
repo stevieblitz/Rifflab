@@ -1059,13 +1059,13 @@ class Window(QMainWindow):
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
         options.addWidget(QLabel('◈ Accuracy'))
         self.accuracy = QComboBox()
-        self.accuracy.addItems(['Fast', 'Balanced', 'Detailed'])
+        self.accuracy.addItems(['Fast · snelle preview', 'Balanced · normaal', 'Detailed · meer precisie'])
         self.accuracy.setCurrentIndex(1)
-        self.accuracy.setToolTip('Analysis quality. Select a level and click Re-analyze to apply it.')
+        self.accuracy.setToolTip('Rekentijd en resolutie van de AI-analyse. Wijziging toepassen met Re-analyze; sneller is niet per definitie nauwkeuriger.')
         options.addWidget(self.accuracy)
         self.reanalyze_button = QPushButton('Re-analyze')
         self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
-        self.reanalyze_button.setToolTip('Run fresh chord and beat analysis without splitting stems again')
+        self.reanalyze_button.setToolTip('Nieuwe AI-berekening met de gekozen Accuracy. NoteGuard en Stability worden direct toegepast zonder nieuwe analyse.')
         self.reanalyze_button.clicked.connect(self.reanalyze_current)
         options.addWidget(self.reanalyze_button)
         self.cancel_analysis_button = QPushButton('Stop Analyze')
@@ -1076,20 +1076,20 @@ class Window(QMainWindow):
         options.addWidget(self.cancel_analysis_button)
         options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
-        self.noteguard.addItems(['Original', 'Conservative', 'Balanced', 'Strict'])
+        self.noteguard.addItems(['Uit · alle detecties', 'Licht · snelle riffs', 'Normaal · betrouwbaar', 'Sterk · grondtonen'])
         self.noteguard.setCurrentIndex(1)
-        self.noteguard.setToolTip('Second-pass note verification. Original keeps all events; Conservative protects fast riffs.')
+        self.noteguard.setToolTip('Filtert korte twijfelachtige detecties op de bestaande noten. Dit herberekent de audio niet.')
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
         options.addWidget(self.noteguard)
         options.addWidget(QLabel('≋ Stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
-        self.sensitivity.setRange(0, 20)  # 0 = no filtering; 20 = 2 seconds
+        self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
         self.sensitivity.setValue(2)
-        self.sensitivity.setToolTip('0 = show all detected changes; higher values hide short-lived detections')
+        self.sensitivity.setToolTip('Minimale duur van een nootwijziging; hogere waarde = minder korte wisselingen. Wordt direct toegepast.')
         self.sensitivity.setFixedWidth(90)
         self.sensitivity.valueChanged.connect(self.rebuild_chords)
         options.addWidget(self.sensitivity)
-        self.sensitivity_label = QLabel('0.2 s')
+        self.sensitivity_label = QLabel('≥0.2 s')
         options.addWidget(self.sensitivity_label)
         options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
@@ -3007,7 +3007,7 @@ class Window(QMainWindow):
 
     def rebuild_chords(self, _value=None):
         seconds = self.sensitivity.value() * 0.1
-        self.sensitivity_label.setText(f'{seconds:.1f} s')
+        self.sensitivity_label.setText(f'≥{seconds:.1f} s')
         if not self.chord_data:
             return
         # Never expose harmonic chord suffixes in Bass Mode, even for old
@@ -3024,28 +3024,32 @@ class Window(QMainWindow):
                 if not root_changes or note != root_changes[-1][1]:
                     root_changes.append((t, note))
             raw = root_changes
-        # Events already mark detected harmonic changes; reject only fleeting events.
-        # Preserve the old dense-frame majority method for unsplit legacy analysis.
-        dense = len(raw) > 3 and (raw[-1][0] - raw[0][0]) / len(raw) < 0.25
-        if dense and seconds > 0:
-            half = seconds / 2
-            times = [t for t, _ in raw]
-            output, last = [], None
-            for t, _ in raw:
-                lo = bisect.bisect_left(times, t - half)
-                hi = bisect.bisect_right(times, t + half)
-                chord = Counter(c for _, c in raw[lo:hi]).most_common(1)[0][0]
-                if chord != last:
-                    output.append((t, chord)); last = chord
-        else:
-            output = []
-            for i, (t, chord) in enumerate(raw):
-                end = raw[i + 1][0] if i + 1 < len(raw) else float('inf')
-                if output and end - t < seconds:
-                    continue
-                # Repeated strikes of the same root are not new chord changes.
-                if not output or chord != output[-1][1]:
-                    output.append((t, chord))
+        # Show a *minimum-duration segment*, not an arbitrary skip of its
+        # starting event. Remove short runs in reverse so A-B-A returns to A.
+        # This is a display-only edit: original AI events stay untouched.
+        output = list(raw)
+        if seconds > 0 and len(output) > 1:
+            for _ in range(3):
+                changed = False
+                filtered = [output[0]]
+                for i in range(1, len(output)):
+                    t, note = output[i]
+                    end = output[i + 1][0] if i + 1 < len(output) else float('inf')
+                    if end - t < seconds and filtered:
+                        changed = True
+                        continue
+                    if note != filtered[-1][1]:
+                        filtered.append((t, note))
+                output = filtered
+                if not changed:
+                    break
+        # In Bass Mode a repeated attack on the current root is not a change.
+        if bass_mode:
+            collapsed = []
+            for t, note in output:
+                if not collapsed or collapsed[-1][1] != note:
+                    collapsed.append((t, note))
+            output = collapsed
         self.display_chords = output
         self.display_times = [t for t, _ in output]
         self.render_grid()
