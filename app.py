@@ -1175,8 +1175,15 @@ class Window(QMainWindow):
         self.waveform = WaveformTimeline(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
         self.waveform.markerMoved.connect(self.move_loop_marker)
-        waveform_row.addWidget(self.waveform, 1)
-        self._workspace_panels['Timeline'] = self.waveform
+        timeline_panel = QWidget()
+        timeline_panel.setObjectName('timelinePanel')
+        timeline_column = QVBoxLayout(timeline_panel)
+        timeline_column.setContentsMargins(0, 0, 0, 0)
+        timeline_column.setSpacing(3)
+        timeline_row = QHBoxLayout()
+        timeline_row.setContentsMargins(0, 0, 0, 0)
+        timeline_row.setSpacing(5)
+        timeline_row.addWidget(self.waveform, 1)
         self.waveform.set_zoom(float(self.layout_settings.value('waveform_zoom', 1.0)))
         wave_zoom_controls = QVBoxLayout()
         wave_zoom_controls.setSpacing(4)
@@ -1189,7 +1196,17 @@ class Window(QMainWindow):
             wave_zoom_controls.addWidget(control)
         wave_zoom_in.clicked.connect(lambda: self.change_waveform_zoom(1))
         wave_zoom_out.clicked.connect(lambda: self.change_waveform_zoom(-1))
-        waveform_row.addLayout(wave_zoom_controls)
+        timeline_row.addLayout(wave_zoom_controls)
+        timeline_column.addLayout(timeline_row)
+        self.confidence_status = QLabel('NOTE EVENTS  ·  Confidence not calibrated')
+        self.confidence_status.setToolTip(
+            'Markers show detected note changes. Confidence scores require '
+            'calibrated audio evidence and are not currently available.')
+        self.confidence_status.setStyleSheet(
+            'color:#819eae;font-size:10px;padding:0 3px;background:transparent')
+        timeline_column.addWidget(self.confidence_status)
+        waveform_row.addWidget(timeline_panel, 1)
+        self._workspace_panels['Timeline'] = timeline_panel
         layout.addLayout(waveform_row)
         self.next_chords = QLabel('NEXT: —')
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
