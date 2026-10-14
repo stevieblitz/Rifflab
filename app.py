@@ -255,21 +255,23 @@ class WaveformTimeline(QWidget):
         painter.drawRect(0, 0, w-1, h-1)
         # Time labels occupy the top 17 px; waveform occupies the remaining area.
         if self.duration_ms:
-            minutes = self.duration_ms / 60000.0
-            step = 10 if minutes <= 4 else (30 if minutes <= 12 else 60)
-            for t in range(0, int(self.duration_ms / 1000) + 1, step):
-                x = int(t * 1000 / self.duration_ms * (w-1))
+            start, end = self._window_bounds()
+            minutes = (end - start) / 60000.0
+            step = 2 if minutes < .75 else (5 if minutes < 2 else 10 if minutes <= 4 else 30 if minutes <= 12 else 60)
+            first = int(start / 1000 / step) * step
+            for t in range(first, int(end / 1000) + 1, step):
+                x = self._time_x(t * 1000)
                 painter.setPen(QColor('#496276'))
                 painter.drawLine(x, 17, x, h-2)
                 painter.setPen(QColor('#9bb6c8'))
                 painter.drawText(x+3, 12, f'{t//60}:{t%60:02d}')
         if self.peaks:
-            mid = (h+18)//2
-            half = max(2, (h-23)//2)
+            mid = (h+18-13)//2
+            half = max(2, (h-36)//2)
             painter.setPen(QPen(QColor('#527b97'), 1))
             n = len(self.peaks)
             for x in range(w):
-                i = min(n-1, int(x*n/max(1,w)))
+                i = min(n-1, max(0, int(self._x_time(x) / max(1,self.duration_ms) * n)))
                 amp = max(1, int(self.peaks[i]*half))
                 painter.drawLine(x, mid-amp, x, mid+amp)
         else:
@@ -280,7 +282,7 @@ class WaveformTimeline(QWidget):
             a = self._marker_x(self.in_ms) if self.in_ms is not None else None
             b = self._marker_x(self.out_ms) if self.out_ms is not None else None
             if a is not None and b is not None and b > a:
-                painter.fillRect(a, 18, b-a, max(0, h-20), QColor(123, 214, 255, 24))
+                painter.fillRect(max(0,a), 18, max(0, min(w,b)-max(0,a)), max(0, h-33), QColor(123, 214, 255, 24))
             painter.setRenderHint(QPainter.Antialiasing, True)
             for x, which in ((a, 'a'), (b, 'b')):
                 if x is None:
@@ -295,11 +297,20 @@ class WaveformTimeline(QWidget):
                 painter.drawText(x+4 if which == 'a' else x-28, 12, 'IN' if which == 'a' else 'OUT')
             painter.setRenderHint(QPainter.Antialiasing, False)
         if self.duration_ms:
-            x = int(min(1, self.position_ms / self.duration_ms) * (w-1))
+            x = self._time_x(self.position_ms)
             painter.setPen(QPen(QColor('#7bd6ff'), 2))
             painter.drawLine(x, 17, x, h-2)
             painter.setBrush(QBrush(QColor('#7bd6ff')))
             painter.drawEllipse(x-4, 14, 8, 8)
+            # Subtle event accent strip: no artificial confidence percentages.
+            painter.fillRect(1, h-12, w-2, 11, QColor('#182b39'))
+            left, right = self._window_bounds()
+            painter.setPen(QPen(QColor('#75c7dc'), 2))
+            for stamp, note in self.note_events:
+                ms = stamp * 1000
+                if left <= ms <= right:
+                    x = self._time_x(ms)
+                    painter.drawLine(x, h-10, x, h-3)
         painter.end()
 
 
