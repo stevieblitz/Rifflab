@@ -1078,7 +1078,7 @@ class Window(QMainWindow):
         options.setContentsMargins(0, 0, 0, 0)
         self.analysis_mode = QComboBox()
         self.analysis_mode.addItems(['Bass Mode', 'Chord Mode'])
-        self.analysis_mode.setToolTip('Bass Mode tracks bass roots; Chord Mode estimates full harmony')
+        self.analysis_mode.setToolTip('Bass Mode tracks actual bass-note changes, including semitone steps; Chord Mode estimates harmony')
         self.analysis_mode.currentIndexChanged.connect(self.switch_analysis_mode)
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
         options.addWidget(QLabel('◈ Accuracy'))
@@ -2614,7 +2614,7 @@ class Window(QMainWindow):
             cache.mkdir(parents=True, exist_ok=True)
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes_v3' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
+            chords_file = cache / f"{'bass_notes_v4' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
             beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
             if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
             chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
@@ -2833,7 +2833,7 @@ class Window(QMainWindow):
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_context_v7_{self._accuracy_key()}.json'
+                cache = self.folder / f'bass_context_v8_{self._accuracy_key()}.json'
                 task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self._accuracy_key(), str(self.stems['drums'])]
             else:
                 cache = self.folder / f'chords_instruments_v5_{self._accuracy_key()}.json'
