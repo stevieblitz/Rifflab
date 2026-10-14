@@ -71,6 +71,13 @@ jobs:
       - name: Install UI and build tools
         run: python -m pip install -r requirements-preview.txt "pyinstaller>=6.10,<7"
 
+      - name: Verify Python syntax and label development build
+        shell: pwsh
+        run: |
+          python -m py_compile app.py ai_worker.py realtime_audio.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
+          "BUILD_NUMBER = '$"+"{{ github.run_number }}'"+" | Set-Content -Encoding UTF8 build_info.py
+
       - name: Build UI executable
         shell: pwsh
         run: |
@@ -179,11 +186,11 @@ jobs:
           }
           Remove-Item Env:PYINSTALLER_RESET_ENVIRONMENT -ErrorAction SilentlyContinue
           'Run RiffLab.exe. Keep all files in this folder together.' | Set-Content "$root/START-HERE.txt"
-          Compress-Archive -Path "$root/*" -DestinationPath RiffLab-UI-Test-Flat-Chords.zip -Force
+          Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Alpha-v2.0.0-dev-${{ github.run_number }}.zip -Force
 
       - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
-          name: RiffLab-UI-Test-Flat-Chords
-          path: RiffLab-UI-Test-Flat-Chords.zip
+          name: RiffLab-Alpha-v2.0.0-dev-${{ github.run_number }}
+          path: RiffLab-Alpha-v2.0.0-dev-${{ github.run_number }}.zip
           retention-days: 30
