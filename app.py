@@ -482,46 +482,68 @@ def ffmpeg_path():
     raise RuntimeError('FFmpeg en FFprobe ontbreken. Controleer met: Get-Command ffmpeg, ffprobe')
 
 
-def worker_command(*args):
-    """AI is a separate executable; PyTorch is never loaded in the UI process."""
+class AnalysisCancelled(Exception):
+    """A user-requested cancellation, not an AI processing failure."""
+
+
+def worker_command(*args, cancel_event=None):
+    """Run the AI worker; support cancelling long analysis jobs on Windows."""
     if not getattr(sys, 'frozen', False):
-        return command([sys.executable, str(Path(__file__).resolve().parent / 'ai_worker.py'), *map(str, args)])
-    worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
-    if not worker.is_file():
-        raise RuntimeError(f'AI worker ontbreekt: {worker}. Bewaar de hele RiffLab map.')
-    # PyInstaller 6 sets private bootloader environment variables for child
-    # processes. A DIFFERENT frozen executable must start in a fresh
-    # environment, otherwise it may inherit the UI's DLL/runtime paths and
-    # terminate with Windows 0xC0000005 before Python starts.
+        command_args = [sys.executable, str(Path(__file__).resolve().parent / 'ai_worker.py'), *map(str, args)]
+        env = None
+    else:
+        worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
+        if not worker.is_file():
+            raise RuntimeError(f'AI worker ontbreekt: {worker}. Bewaar de hele RiffLab map.')
+        command_args = [str(worker), *map(str, args)]
+        env = os.environ.copy()
+        env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
+        for name in ('PYTHONHOME', 'PYTHONPATH', 'QT_QPA_PLATFORM_PLUGIN_PATH',
+                     'QT_PLUGIN_PATH', 'QT_QPA_FONTDIR'):
+            env.pop(name, None)
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    env = os.environ.copy()
-    env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
-    for name in ('PYTHONHOME', 'PYTHONPATH', 'QT_QPA_PLATFORM_PLUGIN_PATH',
-                 'QT_PLUGIN_PATH', 'QT_QPA_FONTDIR'):
-        env.pop(name, None)
-    if os.name == 'nt':
-        # The frozen UI may have called SetDllDirectoryW(_internal). Windows
-        # inherits that DLL search path into its children. Temporarily clear
-        # it while spawning the independently packaged worker.
+    if cancel_event is not None and cancel_event.is_set():
+        raise AnalysisCancelled()
+    if os.name == 'nt' and getattr(sys, 'frozen', False):
+        # Prevent a second PyInstaller executable inheriting the UI DLL path.
         import ctypes
-        kernel = ctypes.windll.kernel32
-        kernel.SetDllDirectoryW(None)
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
     try:
-        proc = subprocess.Popen([str(worker), *map(str, args)],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, creationflags=flags, env=env)
+        proc = subprocess.Popen(command_args, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True,
+                                creationflags=flags, env=env)
     finally:
-        if os.name == 'nt':
-            kernel.SetDllDirectoryW(str(Path(sys._MEIPASS)))
-    stdout, stderr = proc.communicate()
-    if proc.returncode:
-        detail = (stderr or stdout or '').strip()
-        if not detail:
-            detail = (f'AI worker crashed with Windows exit code {proc.returncode} '
-                      f'(0x{proc.returncode & 0xffffffff:08X}). '
-                      'Check the packaged AI worker runtime/DLLs.')
-        raise RuntimeError(detail[-2500:])
-    return stdout
+        if os.name == 'nt' and getattr(sys, 'frozen', False):
+            import ctypes
+            ctypes.windll.kernel32.SetDllDirectoryW(str(Path(sys._MEIPASS)))
+    try:
+        while True:
+            try:
+                stdout, stderr = proc.communicate(timeout=0.2 if cancel_event else None)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel_event is not None and cancel_event.is_set():
+                    proc.terminate()
+                    try:
+                        proc.communicate(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.communicate()
+                    raise AnalysisCancelled()
+        if cancel_event is not None and cancel_event.is_set():
+            raise AnalysisCancelled()
+        if proc.returncode:
+            detail = (stderr or stdout or '').strip()
+            if not detail:
+                detail = (f'AI worker exited with code {proc.returncode} '
+                          f'(0x{proc.returncode & 0xffffffff:08X}). '
+                          'Check the packaged AI worker runtime/DLLs.')
+            raise RuntimeError(detail[-2500:])
+        return stdout
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
 
 
 def mix_to_file(stem_paths, levels, transpose, output):
@@ -649,6 +671,7 @@ class Window(QMainWindow):
         self.loop_b_ms = None
         self.source_audio = None
         self.analysis_running = False
+        self.analysis_cancel = threading.Event()
         self._last_render_duration = 0
         self.tuner_stream = None
         self.tuner_pitch = 0.0
@@ -1045,6 +1068,12 @@ class Window(QMainWindow):
         self.reanalyze_button.setToolTip('Run fresh chord and beat analysis without splitting stems again')
         self.reanalyze_button.clicked.connect(self.reanalyze_current)
         options.addWidget(self.reanalyze_button)
+        self.cancel_analysis_button = QPushButton('Stop Analyze')
+        self.cancel_analysis_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
+        self.cancel_analysis_button.setToolTip('Stop de lopende AI-analyse; laat de huidige song staan.')
+        self.cancel_analysis_button.clicked.connect(self.stop_analysis)
+        self.cancel_analysis_button.hide()
+        options.addWidget(self.cancel_analysis_button)
         options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
         self.noteguard.addItems(['Original', 'Conservative', 'Balanced', 'Strict'])
@@ -1161,6 +1190,10 @@ class Window(QMainWindow):
         self.chord_loading_bar.setRange(0, 0)
         self.chord_loading_bar.setTextVisible(False)
         loading_layout.addWidget(self.chord_loading_bar, alignment=Qt.AlignHCenter)
+        self.chord_loading_stop = QPushButton('■ Stop Analyze')
+        self.chord_loading_stop.setFixedWidth(165)
+        self.chord_loading_stop.clicked.connect(self.stop_analysis)
+        loading_layout.addWidget(self.chord_loading_stop, alignment=Qt.AlignHCenter)
         self.chord_loading.hide()
         self.chord_scroll.viewport().installEventFilter(self)
         # Only the grid area is horizontally split with the compact stem mixer.
@@ -2152,6 +2185,8 @@ class Window(QMainWindow):
         self.chord_loading.setGeometry(self.chord_scroll.viewport().rect())
         self.chord_loading_label.setText(message)
         self.chord_loading.setVisible(bool(loading))
+        if hasattr(self, 'chord_loading_stop'):
+            self.chord_loading_stop.setVisible(bool(loading and self.analysis_running))
         if loading:
             self.chord_loading.raise_()
 
@@ -2213,6 +2248,7 @@ class Window(QMainWindow):
 
     def on_error(self, message):
         self.analysis_running = False
+        self.cancel_analysis_button.hide()
         self.set_chord_loading(False)
         self.set_busy(False)
         self.mixing = False
@@ -2380,8 +2416,26 @@ class Window(QMainWindow):
         self.analyze_local.setEnabled(True)
         self.set_busy(True)
         self.set_stage('1/1 · Analyzing imported audio…')
-        self.analysis_running = True
+        self._start_analysis_ui()
         threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+
+    def stop_analysis(self):
+        """Ask the running worker to exit; its completion unlocks the UI."""
+        if not self.analysis_running:
+            return
+        self.analysis_cancel.set()
+        self.status_message('Stopping analysis…')
+        self.cancel_analysis_button.setEnabled(False)
+        self.chord_loading_label.setText('Stopping analysis…')
+        self.chord_loading_stop.setEnabled(False)
+
+    def _start_analysis_ui(self):
+        self.analysis_cancel = threading.Event()
+        self.analysis_running = True
+        self.cancel_analysis_button.setEnabled(True)
+        self.cancel_analysis_button.show()
+        self.chord_loading_stop.setEnabled(True)
+        self.chord_loading_stop.show()
 
     def reanalyze_current(self):
         if self.analysis_running:
@@ -2389,7 +2443,7 @@ class Window(QMainWindow):
         if not self.stems and self.source_audio is None:
             self.status_message('Open a song before re-analyzing.')
             return
-        self.analysis_running = True
+        self._start_analysis_ui()
         self.set_chord_loading(True, 'Re-analyzing notes…')
         self.reanalyze_button.setEnabled(False)
         self.analyze_local.setEnabled(False)
@@ -2414,7 +2468,7 @@ class Window(QMainWindow):
     def analyze_current(self):
         if self.source_audio is None or self.analysis_running:
             return
-        self.analysis_running = True
+        self._start_analysis_ui()
         self.set_chord_loading(True)
         self.analyze_local.setEnabled(False)
         self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
@@ -2440,13 +2494,17 @@ class Window(QMainWindow):
             self.signals.analysis_done.emit()
 
     def on_analysis_done(self):
+        was_cancelled = self.analysis_cancel.is_set()
         self.analysis_running = False
+        self.cancel_analysis_button.hide()
         self.set_chord_loading(False)
         if self.processing:
             self.set_busy(False)
-            self.status_message('Import complete — notes and stems ready.')
+            self.status_message('Analysis stopped.' if was_cancelled else 'Import complete — notes and stems ready.')
         self.analyze_local.setEnabled(self.source_audio is not None)
         self.reanalyze_button.setEnabled(True)
+        if was_cancelled:
+            self.status_message('Analysis stopped. Existing audio remains available.')
 
     def reset_bpm(self):
         # Use the actual detected BPM, rather than a fixed 130 BPM default.
