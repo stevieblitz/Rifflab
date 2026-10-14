@@ -1228,7 +1228,21 @@ class Window(QMainWindow):
         self.note_preset.setMinimumWidth(132)
         self.note_preset.setToolTip('Display filtering only; choose All for highest fidelity to detection.')
         self.note_preset.currentIndexChanged.connect(self.apply_note_preset)
-        options.addWidget(self.note_preset)
+        self.note_preset.hide()  # Kept as compatibility state for older project files.
+        options.addWidget(QLabel('Complexity'))
+        self.complexity_slider = QSlider(Qt.Horizontal)
+        self.complexity_slider.setRange(0, 100)
+        self.complexity_slider.setValue(100)
+        self.complexity_slider.setFixedWidth(110)
+        self.complexity_slider.setToolTip(
+            '100% shows every detected change. Lower values reduce displayed '
+            'detail only; no notes are removed from analysis.')
+        options.addWidget(self.complexity_slider)
+        self.complexity_label = QLabel('100%')
+        self.complexity_label.setFixedWidth(36)
+        self.complexity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        options.addWidget(self.complexity_label)
+        self.complexity_slider.valueChanged.connect(self.apply_complexity)
         self.note_settings_button = QPushButton('⚙')
         self.note_settings_button.setFixedWidth(30)
         self.note_settings_button.setToolTip('Analysis and note display settings')
@@ -2276,7 +2290,7 @@ class Window(QMainWindow):
             'loop': self.loop_enabled,
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
-            'stability': self.sensitivity.value(), 'noteguard': self.noteguard.currentIndex(), 'transpose': self.transpose.value(),
+            'stability': self.sensitivity.value(), 'noteguard': self.noteguard.currentIndex(), 'complexity': self.complexity_slider.value(), 'transpose': self.transpose.value(),
             'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
@@ -2413,6 +2427,12 @@ class Window(QMainWindow):
         }.get((self.noteguard.currentIndex(), self.sensitivity.value()), 4)
         self.note_preset.setCurrentIndex(preset)
         self.note_preset.blockSignals(False)
+        self.complexity_slider.blockSignals(True)
+        self.complexity_slider.setValue(int(data.get('complexity', {
+            0: 100, 1: 75, 2: 50, 3: 25,
+        }.get(preset, 100))))
+        self.complexity_slider.blockSignals(False)
+        self.complexity_label.setText(f'{self.complexity_slider.value()}%')
         self.transpose.setValue(int(data.get('transpose', 0)))
         # Workstation zoom preferences survive loading and re-analysis.
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
@@ -2763,6 +2783,28 @@ class Window(QMainWindow):
         else:
             self.status_message('Import a song before analyzing.')
 
+    def apply_complexity(self, value):
+        self.complexity_label.setText(f'{value}%')
+        # Preserve a full unmodified view at 100%; lower slider positions
+        # select only display filters. The AI timeline remains immutable.
+        if value >= 85:
+            guard, stability = 0, 0
+        elif value >= 65:
+            guard, stability = 1, 0
+        elif value >= 40:
+            guard, stability = 2, 1
+        elif value >= 20:
+            guard, stability = 3, 2
+        else:
+            guard, stability = 3, 4
+        self.noteguard.blockSignals(True)
+        self.sensitivity.blockSignals(True)
+        self.noteguard.setCurrentIndex(guard)
+        self.sensitivity.setValue(stability)
+        self.noteguard.blockSignals(False)
+        self.sensitivity.blockSignals(False)
+        self.rebuild_chords()
+
     def apply_note_preset(self, index):
         # These affect presentation only, never overwrite transcription.
         settings = ((0, 0), (1, 0), (2, 1), (3, 3))
@@ -2815,6 +2857,7 @@ class Window(QMainWindow):
             self.note_preset.blockSignals(True)
             self.note_preset.setCurrentIndex(4)
             self.note_preset.blockSignals(False)
+            self.complexity_label.setText('Custom')
             self.rebuild_chords()
 
     def _accuracy_key(self):
