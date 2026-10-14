@@ -1245,6 +1245,7 @@ class Window(QMainWindow):
         zoom_controls.setSpacing(6)
         # Put the actual slider at the far left; label follows it.
         self.grid_zoom = QSlider(Qt.Horizontal)
+        self.grid_zoom.setObjectName('gridZoom')
         self.grid_zoom.setRange(65, 200)
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
@@ -1276,6 +1277,7 @@ class Window(QMainWindow):
         height_up.setToolTip('Hogere notenbalken')
         height_column.addWidget(height_up)
         self.grid_row_height = QSlider(Qt.Vertical)
+        self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
         self.grid_row_height.setFixedHeight(160)
         self.grid_row_height.setFixedWidth(26)
@@ -1552,6 +1554,13 @@ class Window(QMainWindow):
           QSlider::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
+          /* Both zoom axes share exactly the same rail, thumb, and accent. */
+          QSlider#gridZoom::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
+          QSlider#gridZoom::sub-page:horizontal{background:#64b9e9;border-radius:2px}
+          QSlider#gridZoom::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
+          QSlider#gridRowHeight::groove:vertical{width:5px;background:#2b4052;border-radius:2px}
+          QSlider#gridRowHeight::add-page:vertical{background:#64b9e9;border-radius:2px}
+          QSlider#gridRowHeight::handle:vertical{background:#d5ecfa;border:1px solid #72bde9;height:11px;margin:0 -5px;border-radius:6px}
           QScrollArea{background:#141e2a}
           QPushButton[transportIcon='true']{background:#1d3042;border:1px solid #34526b;border-radius:6px}
           QPushButton[transportIcon='true']:hover{background:#263d52;border-color:#47657c}
@@ -2388,7 +2397,7 @@ class Window(QMainWindow):
             cache.mkdir(parents=True, exist_ok=True)
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes' if bass_mode else 'chords'}_v2_{self.accuracy.currentText().lower()}.json"
+            chords_file = cache / f"{'bass_notes_v3' if bass_mode else 'chords_v2'}_{self.accuracy.currentText().lower()}.json"
             beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path)))
             if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
             chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self.accuracy.currentText().lower()))
@@ -2590,7 +2599,7 @@ class Window(QMainWindow):
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_context_v4_{self.accuracy.currentText().lower()}.json'
+                cache = self.folder / f'bass_context_v6_{self.accuracy.currentText().lower()}.json'
                 task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self.accuracy.currentText().lower()]
             else:
                 cache = self.folder / f'chords_instruments_v5_{self.accuracy.currentText().lower()}.json'
@@ -2898,6 +2907,13 @@ class Window(QMainWindow):
                 if bass_mode and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
                for t, c in self.chord_data]
         raw = self.verify_note_events(raw, self.noteguard.currentIndex(), bass_mode)
+        if bass_mode:
+            # A bass-root timeline has one event per root change, not per pluck.
+            root_changes = []
+            for t, note in raw:
+                if not root_changes or note != root_changes[-1][1]:
+                    root_changes.append((t, note))
+            raw = root_changes
         # Events already mark detected harmonic changes; reject only fleeting events.
         # Preserve the old dense-frame majority method for unsplit legacy analysis.
         dense = len(raw) > 3 and (raw[-1][0] - raw[0][0]) / len(raw) < 0.25
@@ -2917,9 +2933,8 @@ class Window(QMainWindow):
                 end = raw[i + 1][0] if i + 1 < len(raw) else float('inf')
                 if output and end - t < seconds:
                     continue
-                # In Bass Mode a repeated note is a new pluck, not a
-                # redundant chord change. Preserve its timing in the grid.
-                if bass_mode or not output or chord != output[-1][1]:
+                # Repeated strikes of the same root are not new chord changes.
+                if not output or chord != output[-1][1]:
                     output.append((t, chord))
         self.display_chords = output
         self.display_times = [t for t, _ in output]
