@@ -2196,7 +2196,7 @@ class Window(QMainWindow):
             'loop': self.loop_enabled,
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
-            'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
+            'stability': self.sensitivity.value(), 'noteguard': self.noteguard.currentIndex(), 'transpose': self.transpose.value(),
             'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
@@ -2325,7 +2325,14 @@ class Window(QMainWindow):
         self.analysis_mode.blockSignals(False)
         self.update_grid_mode_buttons()
         self.accuracy.setCurrentIndex(max(0, min(2, int(data.get('accuracy', 1)))))
+        self.noteguard.setCurrentIndex(max(0, min(3, int(data.get('noteguard', 0)))))
         self.sensitivity.setValue(int(data.get('stability', 0)))
+        self.note_preset.blockSignals(True)
+        preset = {
+            (0, 0): 0, (1, 0): 1, (2, 1): 2, (3, 3): 3,
+        }.get((self.noteguard.currentIndex(), self.sensitivity.value()), 4)
+        self.note_preset.setCurrentIndex(preset)
+        self.note_preset.blockSignals(False)
         self.transpose.setValue(int(data.get('transpose', 0)))
         # Workstation zoom preferences survive loading and re-analysis.
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
@@ -3064,7 +3071,7 @@ class Window(QMainWindow):
             'in_ms': None, 'out_ms': None, 'loop': False,
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
-            'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
+            'stability': self.sensitivity.value(), 'noteguard': self.noteguard.currentIndex(), 'transpose': self.transpose.value(),
             'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
