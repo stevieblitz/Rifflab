@@ -1107,6 +1107,7 @@ class Window(QMainWindow):
         self.tuning_advice.setToolTip(
             'Open the tuner and choose a string tuning. Transpose does not retune audio.')
         self.tuning_advice.clicked.connect(self.open_tuning_guide)
+        self.tuning_advice.setAccessibleName('Open optional tuning advice')
         options.addWidget(self.tuning_advice)
         options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
@@ -3091,6 +3092,7 @@ class Window(QMainWindow):
                     collapsed.append((t, note))
             output = collapsed
         self.display_chords = output
+        self.refresh_tuning_advice()
         self.display_times = [t for t, _ in output]
         self.render_grid()
         self.on_position(self.live.position_ms if self.live else self.player.position())
@@ -3611,13 +3613,49 @@ class Window(QMainWindow):
         except Exception as exc:
             self.devices.addItem(f'No input: {exc}',None)
 
+    def refresh_tuning_advice(self):
+        """A tentative suggestion only; note names do not establish tuning."""
+        if not hasattr(self, 'tuning_advice'):
+            return
+        roots = []
+        for _, name in getattr(self, 'display_chords', []):
+            match = re.match(r'^([A-G](?:#|b)?)', str(name))
+            if match:
+                roots.append(match.group(1))
+        # Many notes written as sharps/flats can be a *key* instead of a
+        # down-tuned instrument. Therefore never infer or apply a tuning.
+        flat_family = {'Eb', 'Ab', 'Bb', 'Db', 'Gb', 'D#', 'G#', 'A#', 'C#', 'F#'}
+        is_flat_heavy = (len(roots) >= 8
+                         and sum(note in flat_family for note in roots) / len(roots) >= .6)
+        self._suggest_eb_tuning = bool(is_flat_heavy)
+        if is_flat_heavy:
+            self.tuning_advice.setText('Check Eb tuning  ↗')
+            self.tuning_advice.setToolTip(
+                'Many accidentals detected. This can be the musical key, NOT proof '
+                'of Eb tuning. Open the tuner to compare before deciding.')
+        else:
+            self.tuning_advice.setText('Tuning guide  ↗')
+            self.tuning_advice.setToolTip(
+                'Choose instrument tuning manually. Transpose affects notation only.')
+
     def open_tuning_guide(self):
         """Explain the difference; never auto-transpose or auto-retune."""
+        if getattr(self, '_suggest_eb_tuning', False):
+            response = QMessageBox.question(
+                self, 'Optional tuning suggestion',
+                'This song contains many sharp/flat note names. That can reflect '
+                'the musical key and does NOT confirm the recording uses Eb tuning.\\n\\n'
+                'Would you like to compare your instrument with Eb Standard? '
+                'This changes only the tuner preset, never the audio or transpose.',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if response == QMessageBox.Yes:
+                self.tuner_preset.setCurrentIndex(
+                    7 if self.tuner_preset.currentIndex() >= 6 else 2)
         self.tuner_dialog.show()
         self.tuner_dialog.raise_()
         self.tuner_dialog.activateWindow()
         self.status_message(
-            'Tuning is an instrument setup choice. Transpose only changes the displayed notation.')
+            'Tuning is a manual instrument choice. Transpose changes notation only.')
 
     def refresh_tuner_strings(self, _index=None):
         """Per-string reference pitches (MIDI); don't guess a song's tuning."""
