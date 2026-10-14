@@ -118,89 +118,79 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
 
 
 def bass_notes(path, accuracy="balanced"):
-    """Find stable bass *roots*, not every pluck or short passing note.
+    """Root Engine v3: preserve genuine semitone steps and repeated-root stability.
 
-    Use low-register harmonic evidence with temporal consensus and hysteresis.
-    Emitting only genuine changes avoids the note confetti in fast punk bass
-    parts. This function intentionally does not reconstruct individual attacks.
+    Track fundamentals within the bass register before collapsing octaves.
+    Earlier versions summed harmonics as competing pitch classes, smoothed
+    for 0.28 s, and discarded real E-F-E steps. Here harmonics only
+    corroborate each candidate fundamental; a short, consistent pitch
+    change is retained. One event is emitted per changed pitch class.
     """
     import librosa
     import numpy as np
-    from scipy.ndimage import uniform_filter1d
+    from scipy.ndimage import gaussian_filter1d
 
     sr = 11025
-    hop = {"fast": 512, "balanced": 256, "detailed": 256}.get(accuracy, 256)
+    hop = 512 if accuracy == "fast" else 256
     y, _ = librosa.load(path, sr=sr, mono=True)
-    if len(y) < sr // 2:
+    if len(y) < int(sr * .2):
         return []
-    # E1..D#4: prioritize fundamental/low harmonics rather than bright picks.
-    mag = np.abs(librosa.cqt(
-        y, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("E1"),
-        n_bins=36, bins_per_octave=12))
-    n = mag.shape[1]
-    if n == 0:
+    # Use C1 as the low guard band; E1 must not sit on the CQT boundary.
+    magnitude = np.abs(librosa.cqt(
+        y, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("C1"),
+        n_bins=60, bins_per_octave=12))
+    count = magnitude.shape[1]
+    if count == 0:
         return []
-    evidence = np.zeros((12, n), dtype=np.float32)
-    for k in range(36):
-        pitch_class = (k + 4) % 12
-        octave_weight = (1.0 if k < 12 else 0.52 if k < 24 else 0.22)
-        evidence[pitch_class] += mag[k] * octave_weight
-    # Frame-energy gate guards against assigning notes to silence.
-    power = np.max(mag[:24], axis=0)
-    audible = power > max(float(np.percentile(power, 30)) * .32, 1e-5)
-    # Smooth *energy for each pitch* (not integer note IDs). A quick transient
-    # cannot force a change unless the new root wins for long enough.
-    width = max(3, round(.19 * sr / hop))
-    evidence = uniform_filter1d(evidence, size=width, axis=1, mode="nearest")
-    dominance = np.argmax(evidence, axis=0)
-    # Low energy gaps hold the previous note instead of spawning new events.
-    result = []
-    current = None
-    candidate = None
-    candidate_start = 0
-    hold_frames = max(3, round(.28 * sr / hop))
-    for frame, root in enumerate(dominance):
-        if not audible[frame]:
-            candidate = None
-            continue
-        root = int(root)
-        if current is None:
-            if candidate != root:
-                candidate, candidate_start = root, frame
-            elif frame - candidate_start >= hold_frames:
-                current = root
-                result.append((round(candidate_start * hop / sr, 3), NOTES[root]))
-                candidate = None
-            continue
-        if root == current:
-            candidate = None
-            continue
-        if candidate != root:
-            candidate, candidate_start = root, frame
-            continue
-        # Require sustained evidence and a clear lead over the old root.
-        if frame - candidate_start < hold_frames:
-            continue
-        new_strength = float(np.mean(evidence[root, candidate_start:frame+1]))
-        old_strength = float(np.mean(evidence[current, candidate_start:frame+1]))
-        if new_strength < old_strength * 1.12:
-            continue
-        current = root
-        result.append((round(candidate_start * hop / sr, 3), NOTES[root]))
-        candidate = None
 
-    # In an A-B-A root progression, a very short B is usually an ornament or
-    # pitch-estimation error. Retain short B when it is not surrounded by A.
-    cleaned = []
-    for i, event in enumerate(result):
-        if (0 < i < len(result)-1
-                and result[i-1][1] == result[i+1][1]
-                and result[i-1][1] != event[1]
-                and result[i+1][0] - event[0] < .60):
+    bins = np.arange(4, 40)  # E1 through B3 candidate fundamentals
+    energy = magnitude[bins].copy()
+    # Partials corroborate THEIR own fundamental instead of becoming
+    # independent candidate notes.
+    energy += .28 * magnitude[bins + 12]
+    energy += .12 * magnitude[np.minimum(bins + 19, 59)]
+    energy *= np.where(bins < 16, 1., np.where(bins < 28, .75, .5))[:, None]
+    energy = gaussian_filter1d(
+        energy, sigma=max(.6, .04 * sr / hop), axis=1)
+    pitch_evidence = np.zeros((12, count), dtype=np.float32)
+    for pitch_class in range(12):
+        pitch_evidence[pitch_class] = np.max(
+            energy[bins % 12 == pitch_class], axis=0)
+    best = np.argmax(pitch_evidence, axis=0)
+    peaks = pitch_evidence.max(axis=0)
+    minimum_energy = max(float(np.percentile(peaks, 25)) * .18, 1e-7)
+
+    # 120 ms confirmation suppresses isolated pick transients without
+    # suppressing ordinary 200-350 ms one-fret bass steps.
+    confirmation = max(2, int(.12 * sr / hop))
+    current, candidate, candidate_start = None, None, 0
+    decoded = []
+    for frame, pitch in enumerate(best):
+        if peaks[frame] < minimum_energy:
+            decoded.append(current)
             continue
-        if not cleaned or cleaned[-1][1] != event[1]:
-            cleaned.append(event)
-    return cleaned
+        pitch = int(pitch)
+        if current is None:
+            if candidate != pitch:
+                candidate, candidate_start = pitch, frame
+            elif frame - candidate_start >= max(2, confirmation // 2):
+                current = pitch
+        elif pitch != current:
+            if candidate != pitch:
+                candidate, candidate_start = pitch, frame
+            elif frame - candidate_start >= confirmation:
+                current = pitch
+        else:
+            candidate = None
+        decoded.append(current)
+
+    result = []
+    for frame, pitch in enumerate(decoded):
+        if pitch is not None and (not result or result[-1][1] != NOTES[pitch]):
+            result.append((
+                round(max(0., (frame - confirmation) * hop / sr), 3),
+                NOTES[pitch]))
+    return result
 
 
 def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
@@ -293,56 +283,18 @@ def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
     return sorted(result, key=lambda x: x[0])
 
 def bass_context(bass_path, other_path, accuracy="balanced", drums_path=None):
-    """Root Engine v2: bass candidate notes + musical/harmonic corroboration.
+    """Root Engine v3: bass-root changes must not be vetoed by chord/beat models.
 
-    Repeated plucks never create events. Chord estimates and beat locations
-    *support* changes; they do not invent isolated roots against the bass.
+    Harmony and beats are separate analyses, not hard admission requirements
+    for bass notes. The older AND gate deleted genuine chromatic notes.
     """
-    import bisect
     primary = bass_notes(bass_path, accuracy)
-    if not primary:
-        harmony = chords_instruments(other_path, bass_path, accuracy)
-        return [(t, chord_root(c)) for t, c in harmony]
-    harmony = chords_instruments(other_path, bass_path, accuracy)
-    if not harmony:
+    if primary:
         return primary
-    harmonic_times = [float(t) for t, _ in harmony]
-    harmonic_roots = [chord_root(name) for _, name in harmony]
-    beat_times = []
-    if drums_path:
-        try:
-            beat_times = [float(t) for t in beats(drums_path).get('beats', [])]
-        except Exception:
-            pass
-    # Bass pitches have already passed the low-register evidence gate.
-    # Only suppress changes which sound like brief ornaments or errors.
-    # Chord/beat information is supporting context, not an absolute authority.
-    result = []
-    for i, (start, note) in enumerate(primary):
-        if result and note == result[-1][1]:
-            continue
-        end = primary[i + 1][0] if i + 1 < len(primary) else float('inf')
-        duration = end - start
-        if i > 0 and i + 1 < len(primary) and duration < .75:
-            mid = start + duration / 2
-            hidx = bisect.bisect_right(harmonic_times, mid) - 1
-            harmony_support = hidx >= 0 and harmonic_roots[hidx] == note
-            beat_support = False
-            if beat_times:
-                pos = bisect.bisect_left(beat_times, start)
-                beat_support = any(abs(beat_times[k] - start) < .16
-                                   for k in (pos - 1, pos) if 0 <= k < len(beat_times))
-            # The short excursion needs independent evidence from harmony
-            # AND the rhythmic grid before replacing an established root.
-            if not (harmony_support and beat_support):
-                continue
-        result.append((start, note))
-    # The previous root can reappear once a short ornament is removed.
-    compact = []
-    for t, note in result:
-        if not compact or compact[-1][1] != note:
-            compact.append((t, note))
-    return compact
+    # Only use harmony when bass extraction provides no usable evidence.
+    # This is a lower-confidence fallback, not a source of additional notes.
+    return [(t, chord_root(chord))
+            for t, chord in chords_instruments(other_path, bass_path, accuracy)]
 
 
 def chord_root(name):
