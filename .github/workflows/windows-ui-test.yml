@@ -76,7 +76,7 @@ jobs:
         run: |
           python -m py_compile app.py ai_worker.py realtime_audio.py
           if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
-          "BUILD_NUMBER = '$"+"{{ github.run_number }}'"+" | Set-Content -Encoding UTF8 build_info.py
+          "BUILD_NUMBER = '${{ github.run_number }}'" | Set-Content -Encoding UTF8 build_info.py
 
       - name: Build UI executable
         shell: pwsh
