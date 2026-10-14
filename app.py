@@ -25,7 +25,7 @@ from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
 )
 
 def loop_boundary_icon(which):
@@ -129,17 +129,45 @@ class WaveformTimeline(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.peaks = []
+        self.zoom = 1.0
+        self.note_events = []
         self.duration_ms = 0
         self.position_ms = 0
         self.dragging = False
         self.marker_drag = None
         self.in_ms = None
         self.out_ms = None
-        self.setMinimumHeight(72)
-        self.setMaximumHeight(100)
+        self.setMinimumHeight(88)
+        self.setMaximumHeight(110)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip('Click or drag to seek; chord grid follows playback')
+
+    def set_zoom(self, value):
+        self.zoom = max(1.0, min(8.0, float(value)))
+        self.update()
+
+    def set_note_events(self, events):
+        # These are verified note event timestamps, NOT confidence scores.
+        self.note_events = [(float(t), str(name)) for t, name in events]
+        self.update()
+
+    def _window_bounds(self):
+        if self.duration_ms <= 0 or self.zoom <= 1:
+            return 0.0, float(self.duration_ms)
+        span = self.duration_ms / self.zoom
+        start = max(0.0, min(float(self.position_ms) - span / 2,
+                              self.duration_ms - span))
+        return start, start + span
+
+    def _time_x(self, ms):
+        start, end = self._window_bounds()
+        return round((float(ms) - start) / max(1.0, end-start) * (self.width()-1))
+
+    def _x_time(self, x):
+        start, end = self._window_bounds()
+        fraction = max(0.0, min(1.0, float(x)/max(1, self.width()-1)))
+        return int(start + fraction * (end-start))
 
     def set_waveform(self, peaks):
         self.peaks = list(peaks)
@@ -159,7 +187,7 @@ class WaveformTimeline(QWidget):
         self.update()
 
     def _marker_x(self, ms):
-        return round(max(0, min(self.duration_ms, ms)) / max(1, self.duration_ms) * (self.width()-1))
+        return self._time_x(max(0, min(self.duration_ms, ms)))
 
     def _marker_at(self, x):
         if not self.duration_ms:
@@ -174,7 +202,7 @@ class WaveformTimeline(QWidget):
     def _move_marker(self, x):
         if self.marker_drag is None or not self.duration_ms:
             return
-        ms = round(max(0.0, min(1.0, x/max(1, self.width()-1))) * self.duration_ms)
+        ms = self._x_time(x)
         if self.marker_drag == 'a':
             self.in_ms = ms
         else:
@@ -185,8 +213,7 @@ class WaveformTimeline(QWidget):
     def _seek_from_x(self, x):
         if self.duration_ms <= 0:
             return
-        fraction = max(0.0, min(1.0, x / max(1, self.width()-1)))
-        position = round(fraction * self.duration_ms)
+        position = self._x_time(x)
         self.set_position(position)
         self.seekRequested.emit(position)
 
@@ -228,21 +255,23 @@ class WaveformTimeline(QWidget):
         painter.drawRect(0, 0, w-1, h-1)
         # Time labels occupy the top 17 px; waveform occupies the remaining area.
         if self.duration_ms:
-            minutes = self.duration_ms / 60000.0
-            step = 10 if minutes <= 4 else (30 if minutes <= 12 else 60)
-            for t in range(0, int(self.duration_ms / 1000) + 1, step):
-                x = int(t * 1000 / self.duration_ms * (w-1))
+            start, end = self._window_bounds()
+            minutes = (end - start) / 60000.0
+            step = 2 if minutes < .75 else (5 if minutes < 2 else 10 if minutes <= 4 else 30 if minutes <= 12 else 60)
+            first = int(start / 1000 / step) * step
+            for t in range(first, int(end / 1000) + 1, step):
+                x = self._time_x(t * 1000)
                 painter.setPen(QColor('#496276'))
                 painter.drawLine(x, 17, x, h-2)
                 painter.setPen(QColor('#9bb6c8'))
                 painter.drawText(x+3, 12, f'{t//60}:{t%60:02d}')
         if self.peaks:
-            mid = (h+18)//2
-            half = max(2, (h-23)//2)
+            mid = (h+18-13)//2
+            half = max(2, (h-36)//2)
             painter.setPen(QPen(QColor('#527b97'), 1))
             n = len(self.peaks)
             for x in range(w):
-                i = min(n-1, int(x*n/max(1,w)))
+                i = min(n-1, max(0, int(self._x_time(x) / max(1,self.duration_ms) * n)))
                 amp = max(1, int(self.peaks[i]*half))
                 painter.drawLine(x, mid-amp, x, mid+amp)
         else:
@@ -253,7 +282,7 @@ class WaveformTimeline(QWidget):
             a = self._marker_x(self.in_ms) if self.in_ms is not None else None
             b = self._marker_x(self.out_ms) if self.out_ms is not None else None
             if a is not None and b is not None and b > a:
-                painter.fillRect(a, 18, b-a, max(0, h-20), QColor(123, 214, 255, 24))
+                painter.fillRect(max(0,a), 18, max(0, min(w,b)-max(0,a)), max(0, h-33), QColor(123, 214, 255, 24))
             painter.setRenderHint(QPainter.Antialiasing, True)
             for x, which in ((a, 'a'), (b, 'b')):
                 if x is None:
@@ -268,11 +297,20 @@ class WaveformTimeline(QWidget):
                 painter.drawText(x+4 if which == 'a' else x-28, 12, 'IN' if which == 'a' else 'OUT')
             painter.setRenderHint(QPainter.Antialiasing, False)
         if self.duration_ms:
-            x = int(min(1, self.position_ms / self.duration_ms) * (w-1))
+            x = self._time_x(self.position_ms)
             painter.setPen(QPen(QColor('#7bd6ff'), 2))
             painter.drawLine(x, 17, x, h-2)
             painter.setBrush(QBrush(QColor('#7bd6ff')))
             painter.drawEllipse(x-4, 14, 8, 8)
+            # Subtle event accent strip: no artificial confidence percentages.
+            painter.fillRect(1, h-12, w-2, 11, QColor('#182b39'))
+            left, right = self._window_bounds()
+            painter.setPen(QPen(QColor('#75c7dc'), 2))
+            for stamp, note in self.note_events:
+                ms = stamp * 1000
+                if left <= ms <= right:
+                    x = self._time_x(ms)
+                    painter.drawLine(x, h-10, x, h-3)
         painter.end()
 
 
@@ -447,46 +485,203 @@ def command(args):
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     proc = subprocess.run(args, capture_output=True, text=True, creationflags=flags)
     if proc.returncode:
-        raise RuntimeError((proc.stderr or proc.stdout or 'Command failed')[-1600:])
+        detail = (proc.stderr or proc.stdout or '').strip()
+        if not detail:
+            detail = (
+                f'AI subprocess exited with code {proc.returncode} without output. '
+                f'Executable: {args[0]}. '
+                'Possible native DLL or PyInstaller startup failure.'
+            )
+        raise RuntimeError(detail[-2500:])
     return proc.stdout
 
 
 def ffmpeg_path():
     """Return a directory containing BOTH ffmpeg and ffprobe for yt-dlp."""
     exe_dir = Path(sys.executable).resolve().parent
+    # Frozen PyInstaller apps may resolve __file__ inside _internal.
+    # Prefer the portable application's bundled tools beside RiffLab.exe.
     search_dirs = [exe_dir / 'bin', exe_dir, Path(__file__).resolve().parent / 'bin']
     ffmpeg_exe = shutil.which('ffmpeg')
     ffprobe_exe = shutil.which('ffprobe')
+    # A PATH-installed Chocolatey shim may be broken. Always prefer our
+    # tested portable binaries before trying anything installed globally.
     if ffmpeg_exe:
-        search_dirs.insert(0, Path(ffmpeg_exe).resolve().parent)
+        search_dirs.append(Path(ffmpeg_exe).resolve().parent)
     if ffprobe_exe:
-        search_dirs.insert(0, Path(ffprobe_exe).resolve().parent)
+        search_dirs.append(Path(ffprobe_exe).resolve().parent)
     for folder in search_dirs:
         if (folder / 'ffmpeg.exe').is_file() and (folder / 'ffprobe.exe').is_file():
             return str(folder)
     if ffmpeg_exe and ffprobe_exe:
-        # yt-dlp can locate each executable independently via PATH.
+        # Separate PATH directories are supported by yt-dlp; do not point
+        # ffmpeg_location at one incomplete directory.
         return None
     raise RuntimeError('FFmpeg en FFprobe ontbreken. Controleer met: Get-Command ffmpeg, ffprobe')
 
 
-def worker_command(*args):
-    """AI is a separate executable; PyTorch is never loaded in the UI process."""
+class AnalysisCancelled(Exception):
+    """A user-requested cancellation, not an AI processing failure."""
+
+
+def worker_command(*args, cancel_event=None):
+    """Run the AI worker; support cancelling long analysis jobs on Windows."""
     if not getattr(sys, 'frozen', False):
-        return command([sys.executable, str(Path(__file__).resolve().parent / 'ai_worker.py'), *map(str, args)])
-    worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
-    if not worker.is_file():
-        raise RuntimeError(f'AI worker ontbreekt: {worker}. Bewaar de hele RiffLab map.')
-    return command([str(worker), *map(str, args)])
+        command_args = [sys.executable, str(Path(__file__).resolve().parent / 'ai_worker.py'), *map(str, args)]
+        env = None
+    else:
+        worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
+        if not worker.is_file():
+            raise RuntimeError(f'AI worker missing: {worker}. Keep the entire RiffLab folder together.')
+        command_args = [str(worker), *map(str, args)]
+        env = os.environ.copy()
+        env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
+        for name in ('PYTHONHOME', 'PYTHONPATH', 'QT_QPA_PLATFORM_PLUGIN_PATH',
+                     'QT_PLUGIN_PATH', 'QT_QPA_FONTDIR'):
+            env.pop(name, None)
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    if cancel_event is not None and cancel_event.is_set():
+        raise AnalysisCancelled()
+    if os.name == 'nt' and getattr(sys, 'frozen', False):
+        # Prevent a second PyInstaller executable inheriting the UI DLL path.
+        import ctypes
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
+    try:
+        proc = subprocess.Popen(command_args, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True,
+                                creationflags=flags, env=env)
+    finally:
+        if os.name == 'nt' and getattr(sys, 'frozen', False):
+            import ctypes
+            ctypes.windll.kernel32.SetDllDirectoryW(str(Path(sys._MEIPASS)))
+    try:
+        while True:
+            try:
+                stdout, stderr = proc.communicate(timeout=0.2 if cancel_event else None)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel_event is not None and cancel_event.is_set():
+                    proc.terminate()
+                    try:
+                        proc.communicate(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.communicate()
+                    raise AnalysisCancelled()
+        if cancel_event is not None and cancel_event.is_set():
+            raise AnalysisCancelled()
+        if proc.returncode:
+            detail = (stderr or stdout or '').strip()
+            if not detail:
+                detail = (f'AI worker exited with code {proc.returncode} '
+                          f'(0x{proc.returncode & 0xffffffff:08X}). '
+                          'Check the packaged AI worker runtime/DLLs.')
+            raise RuntimeError(detail[-2500:])
+        return stdout
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
 
 
 def mix_to_file(stem_paths, levels, transpose, output):
+    # Transpose is notation-only. Preserve original audio pitch in every mix/export.
     worker_command('mix', str(output), json.dumps({name: str(stem_paths[name]) for name in STEMS}),
-                   json.dumps(levels), str(transpose))
+                   json.dumps(levels), '0')
+
+
+class TunerMeter(QWidget):
+    """Read-only, high-contrast tuning needle: center is in tune (0 cents)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.cents = 0.0
+        self.signal_active = False
+        self.setMinimumHeight(76)
+        self.setToolTip('Pitch deviation in cents: left is flat, right is sharp; center is in tune.')
+
+    def set_reading(self, cents, active=True):
+        self.cents = max(-50.0, min(50.0, float(cents)))
+        self.signal_active = bool(active)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        width = self.width()
+        left, right = 27, max(28, width - 27)
+        middle = (left + right) / 2
+        y = 38
+        painter.setPen(QPen(QColor('#38566c'), 3))
+        painter.drawLine(left, y, right, y)
+        for cent in range(-50, 51, 10):
+            x = round(middle + cent * (right-left) / 100)
+            is_center = cent == 0
+            painter.setPen(QPen(QColor('#66d2c1' if is_center else '#54778e'),
+                                2 if is_center else 1))
+            painter.drawLine(x, y - (14 if is_center else 7),
+                             x, y + (14 if is_center else 7))
+        painter.setPen(QColor('#98b9ce'))
+        painter.drawText(left-8, 70, '-50')
+        painter.drawText(round(middle)-5, 70, '0')
+        painter.drawText(right-17, 70, '+50')
+        if self.signal_active:
+            x = round(middle + self.cents * (right-left) / 100)
+            color = QColor('#51dec1' if abs(self.cents) <= 5 else '#f2ba66')
+            painter.setPen(QPen(color, 3))
+            painter.drawLine(x, y-21, x, y+21)
+        painter.end()
+
+
+class MiniTunerView(QWidget):
+    """Compact waveform trace + cents needle, using the existing tuner input."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.cents = 0.0
+        self.active = False
+        self.samples = ()
+        self.setFixedHeight(57)
+        self.setToolTip('Live input waveform and pitch deviation: center = in tune')
+
+    def set_reading(self, cents=0.0, active=False, samples=()):
+        self.cents = max(-50.0, min(50.0, float(cents)))
+        self.active = bool(active)
+        self.samples = tuple(samples)
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = max(self.width(), 1), self.height()
+        center = w / 2
+        p.fillRect(self.rect(), QColor('#152531'))
+        p.setPen(QPen(QColor('#334d5d'), 1))
+        p.drawLine(8, h-13, w-8, h-13)
+        for cents in (-50, -25, 0, 25, 50):
+            x = round(center + cents * (w-24) / 100)
+            p.setPen(QPen(QColor('#58cfc8' if cents == 0 else '#527082'),
+                          2 if cents == 0 else 1))
+            p.drawLine(x, h-19 if cents == 0 else h-17, x, h-7)
+        if self.active and self.samples:
+            p.setPen(QPen(QColor('#79b9de'), 1))
+            previous = None
+            count = len(self.samples)
+            for i, value in enumerate(self.samples):
+                x = 9 + round(i * (w-18) / max(1, count-1))
+                y = round(19 - max(-1., min(1., value)) * 13)
+                if previous is not None:
+                    p.drawLine(previous[0], previous[1], x, y)
+                previous = (x, y)
+        if self.active:
+            x = round(center + self.cents * (w-24) / 100)
+            p.setPen(QPen(QColor('#65e8c4' if abs(self.cents) <= 5 else '#ffc37a'), 3))
+            p.drawLine(x, h-23, x, h-5)
+        p.end()
 
 
 class Signals(QObject):
     status = Signal(str)
+    stage = Signal(str)
     separated = Signal(str)
     chords = Signal(object)
     mixed = Signal(str, int, bool)
@@ -502,22 +697,26 @@ class Signals(QObject):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('RiffLab Alpha 1.3.0 — Music Practice')
-        self.brand_asset = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets' / 'rifflab-logo.svg'
-        if self.brand_asset.is_file():
-            icon_renderer = QSvgRenderer(str(self.brand_asset))
-            icon_renderer.setViewBox(QRectF(0, 0, 160, 380.69))
-            icon_pixmap = QPixmap(128, 128)
-            icon_pixmap.fill(Qt.transparent)
-            icon_painter = QPainter(icon_pixmap)
-            icon_renderer.render(icon_painter, QRectF(37, 5, 54, 118))
-            icon_painter.end()
-            self.setWindowIcon(QIcon(icon_pixmap))
+        try:
+            from build_info import BUILD_NUMBER
+        except ImportError:
+            BUILD_NUMBER = 'local'
+        self.setWindowTitle(f'RiffLab Alpha v2.0.0-dev.{BUILD_NUMBER} — Music Practice')
+        self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
+        self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
+        self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
+        # Windows titlebar icon is the supplied RL mark. The .exe / desktop
+        # icon is intentionally different: the standalone Erlenmeyer flask.
+        window_icon = self.assets_dir / 'rifflab-window-icon.png'
+        if window_icon.is_file():
+            self.setWindowIcon(QIcon(str(window_icon)))
         self.resize(1080, 690)
         self.layout_settings = QSettings('RiffLab', 'RiffLab')
         self.setMinimumSize(640, 430)
+        self.setAcceptDrops(True)
         self.signals = Signals()
         self.signals.status.connect(self.status_message)
+        self.signals.stage.connect(self.set_stage)
         self.signals.separated.connect(self.on_separated)
         self.signals.chords.connect(self.on_chords)
         self.signals.mixed.connect(self.on_mixed)
@@ -541,6 +740,7 @@ class Window(QMainWindow):
         self.display_chords = []
         self.display_times = []
         self.processing = False
+        self.import_stage = ''
         self.mixing = False
         self.pending_mix = False
         self.mix_counter = 0
@@ -553,17 +753,21 @@ class Window(QMainWindow):
         self.grid_row = -1
         self.beat_times = []
         self.pattern_matches = {}
+        self.section_overrides = {}
         self.beat_offset = 0.0
         self.loop_enabled = False
         self.loop_a_ms = None
         self.loop_b_ms = None
         self.source_audio = None
         self.analysis_running = False
+        self.analysis_cancel = threading.Event()
         self._last_render_duration = 0
         self.tuner_stream = None
         self.tuner_pitch = 0.0
         self.tuner_level = 0.0
         self.tuner_last = 0.0
+        self._tuner_waveform = ()
+        self._tuner_display_cents = None
         self.project_file = None
         self._pending_project = None
         self.library_db = ROOT / "library.sqlite3"
@@ -578,26 +782,34 @@ class Window(QMainWindow):
         project_row = QHBoxLayout(project_header)
         project_row.setContentsMargins(8, 0, 8, 0)
         project_row.setSpacing(8)
+        project_header.setFixedHeight(42)
         self.project_save = QPushButton('Save')
         self.project_save.setIcon(qta.icon('fa5s.save', color='#e5f4ff'))
         self.project_save.setToolTip('Save project (Ctrl+S)')
         self.project_save.clicked.connect(self.save_project)
+        self.project_save.setFixedWidth(92)
         project_row.addWidget(self.project_save)
+        self.project_save.hide()
         self.project_load = QPushButton('Open')
         self.project_load.setIcon(qta.icon('fa5s.folder-open', color='#e5f4ff'))
         self.project_load.setToolTip('Open a saved project (Ctrl+O)')
         self.project_load.clicked.connect(self.open_project)
+        self.project_load.setFixedWidth(92)
         project_row.addWidget(self.project_load)
-        project_row.addWidget(QLabel('Recent'))
+        self.project_load.hide()
+        recent_caption = QLabel('◷ Recent')
+        project_row.addWidget(recent_caption)
+        recent_caption.hide()
         self.recent_projects = QComboBox()
         self.recent_projects.setMinimumWidth(155)
         self.recent_projects.setToolTip('Quickly switch between saved songs')
         self.recent_projects.activated.connect(self.open_recent_project)
-        self.recent_projects.setFixedWidth(280)
+        self.recent_projects.setFixedWidth(200)
         project_row.addWidget(self.recent_projects)
+        self.recent_projects.hide()
         self.now_playing = ScrollingSongTitle()
         self.now_playing.setObjectName('nowPlayingTitle')
-        self.now_playing.setFixedWidth(440)
+        self.now_playing.setFixedWidth(260)
         self.now_playing.setMinimumHeight(40)
         project_row.addWidget(self.now_playing)
         self.update_now_playing()
@@ -609,6 +821,13 @@ class Window(QMainWindow):
             ('I', lambda: self._shortcut_marker('a')),
             ('O', lambda: self._shortcut_marker('b')),
             ('Ctrl+S', self.save_project), ('Ctrl+O', self.open_project),
+            ('Ctrl+V', self.paste_youtube_link),
+            ('Ctrl+1', lambda: self.tabs.setCurrentIndex(0)),
+            ('Ctrl+2', lambda: self.tabs.setCurrentIndex(1)),
+            ('Ctrl+3', lambda: self.tabs.setCurrentIndex(2)),
+            ('Ctrl+Shift+O', self.open_file),
+            ('Ctrl+Shift+T', self.toggle_tuner_panel),
+            ('Ctrl+R', self.reanalyze_current),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.setContext(Qt.WindowShortcut)
@@ -618,8 +837,29 @@ class Window(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
+        self.progress.setFormat('Ready')
+        self.progress.setTextVisible(True)
+        # One compact header row shared with the right-aligned navigation tabs.
+        # Avoid an extra toolbar row and prevent expanding Save/Open buttons.
+        self._workspace_panels = {}
+        self._workspace_actions = {}
+        file_menu = self.menuBar().addMenu('File')
+        file_menu.addAction('Open Project…', self.open_project)
+        file_menu.addAction('Import Audio…', self.open_file)
+        file_menu.addAction('Save Project', self.save_project)
+        self.file_recent_menu = file_menu.addMenu('Recent Projects')
+        self.file_recent_menu.aboutToShow.connect(self.populate_file_recent)
+        file_menu.addSeparator()
+        file_menu.addAction('Exit', self.close)
+        view_menu = self.menuBar().addMenu('View')
+        workspace_menu = view_menu.addMenu('Workspace')
+        workspace_menu.addAction('Save Workspace As…', self.save_workspace_as)
+        workspace_menu.addAction('Load Workspace…', self.load_workspace_dialog)
+        workspace_menu.addAction('Reset Default Layout', self.reset_workspace)
+        self.panels_menu = view_menu.addMenu('Panels')
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
+        self.tabs.setCornerWidget(project_header, Qt.TopLeftCorner)
         outer.addWidget(self.tabs, 1)
         def tab_page(name):
             page = QWidget()
@@ -637,7 +877,7 @@ class Window(QMainWindow):
         self.tabs.setTabToolTip(0, 'Chord Grid / Play')
         self.tabs.setCurrentIndex(0)
         self.tabs.tabBar().setObjectName('mainTabBar')
-        self.tabs.setCornerWidget(project_header, Qt.TopLeftCorner)
+        # Project controls have fixed widths, leaving the right-hand tabs visible.
         self.tuner_dialog = QDialog(self)
         self.tuner_dialog.setWindowTitle('RiffLab · Chromatic Tuner')
         self.tuner_dialog.setMinimumWidth(430)
@@ -695,9 +935,9 @@ class Window(QMainWindow):
         self.library_remove.clicked.connect(self.remove_library_song)
         library_toolbar.addWidget(self.library_remove)
         library_layout.addLayout(library_toolbar)
-        self.library_table = QTableWidget(0, 7)
+        self.library_table = QTableWidget(0, 8)
         self.library_table.setHorizontalHeaderLabels(
-            ['★', 'Song', 'Artist', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
+            ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
         self.library_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.library_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.library_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -705,7 +945,19 @@ class Window(QMainWindow):
         self.library_table.verticalHeader().hide()
         self.library_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.library_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         self.library_table.doubleClicked.connect(self.open_library_song)
+        self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
+        for sequence, callback in (
+            ('Return', self.open_library_song), ('Enter', self.open_library_song),
+            ('F2', self.edit_library_song), ('Delete', self.remove_library_song),
+            ('Ctrl+D', self.toggle_library_favorite),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self.library_table)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(callback)
+            self.shortcuts.append(shortcut)
         library_layout.addWidget(self.library_table, 1)
         self.library_summary = QLabel('Double-click a song to open its saved project.')
         self.library_summary.setObjectName('ioDescription')
@@ -737,6 +989,7 @@ class Window(QMainWindow):
         url_row.addWidget(self.url, 1)
         self.load_url = QPushButton('Download & Split')
         self.load_url.clicked.connect(self.download_url)
+        self.url.returnPressed.connect(self.download_url)
         url_row.addWidget(self.load_url)
         import_layout.addLayout(url_row)
         local_row = QHBoxLayout()
@@ -752,6 +1005,7 @@ class Window(QMainWindow):
         self.analyze_local.setEnabled(False)
         self.analyze_local.clicked.connect(self.analyze_current)
         self.analyze_local.setIcon(qta.icon('fa5s.wave-square', color='white'))
+        self.analyze_local.hide()  # One shared Analyze / Stop control lives on PLAY
         local_row.addWidget(self.analyze_local)
         local_row.addStretch()
         import_layout.addLayout(local_row)
@@ -765,7 +1019,8 @@ class Window(QMainWindow):
         export_layout.addWidget(export_info)
         self.export_splitter = MinimalSplitter(Qt.Horizontal)
         self.export_splitter.setObjectName('exportSplitter')
-        self.export_splitter.setHandleWidth(8)
+        self.export_splitter.setHandleWidth(12)
+        self.export_splitter.setToolTip('Drag the divider to resize panels')
         self.export_splitter.setChildrenCollapsible(False)
         export_layout.addWidget(self.export_splitter, 1)
         export_left = QWidget()
@@ -882,15 +1137,76 @@ class Window(QMainWindow):
         waveform_row = QHBoxLayout()
         waveform_row.setContentsMargins(0, 0, 0, 0)
         waveform_row.setSpacing(8)
+        # Actual user-supplied brand sits beside the current note and waveform.
+        self.header_brand = QLabel()
+        self.header_brand.setObjectName('headerBrand')
+        self.header_brand.setFixedSize(170, 72)
+        self.header_brand.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.header_brand.setStyleSheet('background:transparent;border:0;')
+        # The supplied full wordmark includes STEVIEBLITZ'S and Powered by AI.
+        # The old SVG is a different artwork and must not replace it.
+        if self.new_brand_asset.is_file():
+            logo = QPixmap(str(self.new_brand_asset))
+            if not logo.isNull():
+                ratio = max(1.0, self.devicePixelRatioF())
+                width = min(168, logo.width() / ratio)
+                height = min(68, logo.height() / ratio)
+                fitted = logo.size().scaled(
+                    QSize(max(1, round(width * ratio)),
+                          max(1, round(height * ratio))), Qt.KeepAspectRatio)
+                rendered = logo.scaled(
+                    fitted, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                rendered.setDevicePixelRatio(ratio)
+                self.header_brand.setPixmap(rendered)
+            else:
+                self.header_brand.setText('RiffLab')
+        else:
+            self.header_brand.setText('RiffLab')
+            self.header_brand.setStyleSheet(
+                'background:transparent;border:0;color:#13a2d7;'
+                'font-size:22px;font-weight:800;')
+        waveform_row.addWidget(self.header_brand)
         self.chord = QLabel('—')
         self.chord.setAlignment(Qt.AlignCenter)
         self.chord.setFixedSize(100, 72)
-        self.chord.setStyleSheet('font-size:23px;font-weight:750;color:#eaf6ff;background:#203247;border:1px solid #34536d;border-radius:6px;padding:4px')
+        self._set_current_chord('—')
         waveform_row.addWidget(self.chord)
+        self._workspace_panels['Main Indicator'] = self.chord
         self.waveform = WaveformTimeline(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
         self.waveform.markerMoved.connect(self.move_loop_marker)
-        waveform_row.addWidget(self.waveform, 1)
+        timeline_panel = QWidget()
+        timeline_panel.setObjectName('timelinePanel')
+        timeline_column = QVBoxLayout(timeline_panel)
+        timeline_column.setContentsMargins(0, 0, 0, 0)
+        timeline_column.setSpacing(3)
+        timeline_row = QHBoxLayout()
+        timeline_row.setContentsMargins(0, 0, 0, 0)
+        timeline_row.setSpacing(5)
+        timeline_row.addWidget(self.waveform, 1)
+        self.waveform.set_zoom(float(self.layout_settings.value('waveform_zoom', 1.0)))
+        wave_zoom_controls = QVBoxLayout()
+        wave_zoom_controls.setSpacing(4)
+        wave_zoom_controls.setContentsMargins(0, 0, 0, 0)
+        wave_zoom_in = QPushButton('+')
+        wave_zoom_out = QPushButton('−')
+        for control in (wave_zoom_in, wave_zoom_out):
+            control.setFixedSize(25, 25)
+            control.setToolTip('Waveform time zoom, independent of note grid zoom')
+            wave_zoom_controls.addWidget(control)
+        wave_zoom_in.clicked.connect(lambda: self.change_waveform_zoom(1))
+        wave_zoom_out.clicked.connect(lambda: self.change_waveform_zoom(-1))
+        timeline_row.addLayout(wave_zoom_controls)
+        timeline_column.addLayout(timeline_row)
+        self.confidence_status = QLabel('NOTE EVENTS  ·  Confidence not calibrated')
+        self.confidence_status.setToolTip(
+            'Markers show detected note changes. Confidence scores require '
+            'calibrated audio evidence and are not currently available.')
+        self.confidence_status.setStyleSheet(
+            'color:#819eae;font-size:10px;padding:0 3px;background:transparent')
+        timeline_column.addWidget(self.confidence_status)
+        waveform_row.addWidget(timeline_panel, 1)
+        self._workspace_panels['Timeline'] = timeline_panel
         layout.addLayout(waveform_row)
         self.next_chords = QLabel('NEXT: —')
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -901,37 +1217,76 @@ class Window(QMainWindow):
         options.setContentsMargins(0, 0, 0, 0)
         self.analysis_mode = QComboBox()
         self.analysis_mode.addItems(['Bass Mode', 'Chord Mode'])
-        self.analysis_mode.setToolTip('Bass Mode tracks bass roots; Chord Mode estimates full harmony')
+        self.analysis_mode.setToolTip('Bass Mode tracks actual bass-note changes, including semitone steps; Chord Mode estimates harmony')
         self.analysis_mode.currentIndexChanged.connect(self.switch_analysis_mode)
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
-        options.addWidget(QLabel('Accuracy'))
         self.accuracy = QComboBox()
         self.accuracy.addItems(['Fast', 'Balanced', 'Detailed'])
         self.accuracy.setCurrentIndex(1)
-        self.accuracy.setToolTip('Analysis quality. Select a level and click Re-analyze to apply it.')
-        options.addWidget(self.accuracy)
-        self.reanalyze_button = QPushButton('Re-analyze')
-        self.reanalyze_button.setToolTip('Run fresh chord and beat analysis without splitting stems again')
-        self.reanalyze_button.clicked.connect(self.reanalyze_current)
+        self.accuracy.setToolTip('AI analysis resolution. Re-analyze to apply; more detail does not guarantee accuracy.')
+        self.reanalyze_button = QPushButton('Analyze')
+        self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
+        self.reanalyze_button.setToolTip('Analyze notes; during analysis, click again to stop.')
+        self.reanalyze_button.clicked.connect(self.toggle_analysis)
         options.addWidget(self.reanalyze_button)
-        options.addWidget(QLabel('Chord stability'))
+        self.cancel_analysis_button = QPushButton('Stop Analyze')
+        self.cancel_analysis_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
+        self.cancel_analysis_button.setToolTip('Stop the running AI analysis while keeping the current song.')
+        self.cancel_analysis_button.clicked.connect(self.stop_analysis)
+        self.cancel_analysis_button.hide()
+        # Legacy cancellation action retained for API compatibility, but not shown.
+        self.noteguard = QComboBox()
+        self.noteguard.addItems(['Off', 'Light', 'Balanced', 'Strict'])
+        self.noteguard.setCurrentIndex(0)
+        self.noteguard.setToolTip('Display-only note cleanup. Original detections remain unchanged.')
+        self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
         self.sensitivity = QSlider(Qt.Horizontal)
-        self.sensitivity.setRange(0, 20)  # 0 = no filtering; 20 = 2 seconds
-        self.sensitivity.setValue(2)
-        self.sensitivity.setToolTip('0 = show all detected changes; higher values hide short-lived detections')
+        self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
+        self.sensitivity.setValue(0)
+        self.sensitivity.setToolTip('Minimum displayed note duration. Set to zero for every detected change.')
         self.sensitivity.setFixedWidth(90)
         self.sensitivity.valueChanged.connect(self.rebuild_chords)
-        options.addWidget(self.sensitivity)
-        self.sensitivity_label = QLabel('0.2 s')
-        options.addWidget(self.sensitivity_label)
-        options.addWidget(QLabel('Transpose (semitones)'))
+        self.sensitivity_label = QLabel('≥0.0 s')
+        self.note_preset = QComboBox()
+        self.note_preset.addItems(['Notes · All', 'Notes · Light', 'Notes · Balanced', 'Notes · Smooth', 'Notes · Custom'])
+        self.note_preset.setMinimumWidth(132)
+        self.note_preset.setToolTip('Display filtering only; choose All for highest fidelity to detection.')
+        self.note_preset.currentIndexChanged.connect(self.apply_note_preset)
+        self.note_preset.hide()  # Kept as compatibility state for older project files.
+        options.addWidget(QLabel('Complexity'))
+        self.complexity_slider = QSlider(Qt.Horizontal)
+        self.complexity_slider.setRange(0, 100)
+        self.complexity_slider.setValue(100)
+        self.complexity_slider.setFixedWidth(110)
+        self.complexity_slider.setToolTip(
+            '100% shows every detected change. Lower values reduce displayed '
+            'detail only; no notes are removed from analysis.')
+        options.addWidget(self.complexity_slider)
+        self.complexity_label = QLabel('100%')
+        self.complexity_label.setFixedWidth(36)
+        self.complexity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        options.addWidget(self.complexity_label)
+        self.complexity_slider.valueChanged.connect(self.apply_complexity)
+        self.note_settings_button = QPushButton('⚙')
+        self.note_settings_button.setFixedWidth(30)
+        self.note_settings_button.setToolTip('Analysis and note display settings')
+        self.note_settings_button.clicked.connect(self.open_note_settings)
+        options.addWidget(self.note_settings_button)
+        options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
         self.transpose.setRange(-12, 12)
         self.transpose.setValue(0)
         self.transpose.setSuffix(' st')
+        self.transpose.setToolTip('Notation only: changes displayed notes/chords, never the audio pitch or the instrument tuning.')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
-        options.addWidget(QLabel('BPM'))
+        self.tuning_advice = QPushButton('Tuning  ↗')
+        self.tuning_advice.setToolTip(
+            'Open the tuner and choose a string tuning. Transpose does not retune audio.')
+        self.tuning_advice.clicked.connect(self.open_tuning_guide)
+        self.tuning_advice.setAccessibleName('Open optional tuning advice')
+        options.addWidget(self.tuning_advice)
+        options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
         self.grid_bpm.setRange(40, 250)
         self.grid_bpm.setValue(130)
@@ -946,11 +1301,11 @@ class Window(QMainWindow):
         self.reset_bpm_button.setAccessibleName('Reset BPM')
         self.reset_bpm_button.clicked.connect(self.reset_bpm)
         options.addWidget(self.reset_bpm_button)
-        self.follow = QCheckBox('Auto-scroll')
+        self.follow = QCheckBox('↧ Auto-scroll')
         self.follow.setChecked(True)
         options.addWidget(self.follow)
         options.addSpacing(12)
-        options.addWidget(QLabel('Lookahead'))
+        options.addWidget(QLabel('◷ Lookahead'))
         self.chord_lookahead = QSpinBox()
         self.chord_lookahead.setRange(0, 500)
         self.chord_lookahead.setSingleStep(25)
@@ -976,7 +1331,9 @@ class Window(QMainWindow):
         grid_header.setSpacing(0)
         grid_header.addStretch(1)
         self.bass_mode_button = QPushButton('Bass')
+        self.bass_mode_button.setIcon(qta.icon('fa5s.music', color='#a9d9ef'))
         self.chord_mode_button = QPushButton('Chords')
+        self.chord_mode_button.setIcon(qta.icon('fa5s.th-large', color='#a9d9ef'))
         for button in (self.bass_mode_button, self.chord_mode_button):
             button.setCheckable(True)
             button.setProperty('gridModeButton', True)
@@ -999,18 +1356,49 @@ class Window(QMainWindow):
         self.grid_host = QWidget()
         self.chord_grid = QGridLayout(self.grid_host)
         self.chord_grid.setContentsMargins(4, 4, 4, 4)
+        self.chord_grid.setHorizontalSpacing(0)
+        self.chord_grid.setVerticalSpacing(3)
         self.chord_grid.setSpacing(3)
+        self.chord_grid.setAlignment(Qt.AlignTop)
         self.chord_scroll.setWidget(self.grid_host)
+        self.chord_loading = QWidget(self.chord_scroll.viewport())
+        self.chord_loading.setObjectName('chordLoading')
+        self.chord_loading.setStyleSheet(
+            'QWidget#chordLoading {background-color:rgba(9,19,30,225);}')
+        loading_layout = QVBoxLayout(self.chord_loading)
+        loading_layout.setAlignment(Qt.AlignCenter)
+        self.chord_loading_label = QLabel('Analyzing notes…')
+        self.chord_loading_label.setAlignment(Qt.AlignCenter)
+        self.chord_loading_label.setStyleSheet(
+            'color:#eaf6ff;font-size:17px;font-weight:700;background:transparent;')
+        loading_layout.addWidget(self.chord_loading_label)
+        self.chord_loading_bar = QProgressBar()
+        self.chord_loading_bar.setFixedWidth(260)
+        self.chord_loading_bar.setRange(0, 0)
+        self.chord_loading_bar.setTextVisible(False)
+        loading_layout.addWidget(self.chord_loading_bar, alignment=Qt.AlignHCenter)
+        self.chord_loading_stop = QPushButton('■ Stop Analyze')
+        self.chord_loading_stop.setFixedWidth(165)
+        self.chord_loading_stop.clicked.connect(self.stop_analysis)
+        self.chord_loading_stop.hide()  # Analyze/Stop lives in the main toolbar
+        loading_layout.addWidget(self.chord_loading_stop, alignment=Qt.AlignHCenter)
+        self.chord_loading.hide()
+        self.chord_scroll.viewport().installEventFilter(self)
         # Only the grid area is horizontally split with the compact stem mixer.
         self.play_splitter = MinimalSplitter(Qt.Horizontal)
         self.play_splitter.setObjectName('playSplitter')
-        self.play_splitter.setHandleWidth(8)
+        self.play_splitter.setHandleWidth(12)
+        self.play_splitter.setToolTip('Drag the divider to resize the mixer and note grid')
         self.play_splitter.setChildrenCollapsible(False)
         # The grid consumes all available vertical space above the pinned transport.
         self.play_splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.play_splitter.setMinimumHeight(190)
         grid_host_panel = QWidget()
-        grid_column.addWidget(self.chord_scroll, 1)
+        grid_content_row = QHBoxLayout()
+        grid_content_row.setContentsMargins(0, 0, 0, 0)
+        grid_content_row.setSpacing(6)
+        grid_content_row.addWidget(self.chord_scroll, 1)
+        grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
         grid_host_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.play_splitter.addWidget(grid_host_panel)
@@ -1079,24 +1467,58 @@ class Window(QMainWindow):
         zoom_controls.setSpacing(6)
         # Put the actual slider at the far left; label follows it.
         self.grid_zoom = QSlider(Qt.Horizontal)
-        self.grid_zoom.setRange(70, 180)
-        self.grid_zoom.setSingleStep(10)
-        self.grid_zoom.setPageStep(10)
-        self.grid_zoom.setValue(100)
-        self.grid_zoom.setFixedWidth(90)
-        self.grid_zoom.setToolTip('Scale chord cells and chord font size; audio speed stays unchanged')
+        self.grid_zoom.setObjectName('gridZoom')
+        self.grid_zoom.setRange(65, 200)
+        self.grid_zoom.setSingleStep(1)
+        self.grid_zoom.setPageStep(5)
+        self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
+        self.grid_zoom.setFixedWidth(160)
+        self.grid_zoom.setToolTip('Adjust note-block width by dragging or scrolling')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
+        self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
+        self.grid_zoom.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom)
-        zoom_controls.addWidget(QLabel('Zoom'))
         self.grid_zoom_label = QLabel('100%')
-        self.grid_zoom_label.setFixedWidth(40)
-        zoom_controls.addWidget(self.grid_zoom_label)
+        self.grid_zoom_label.setFixedWidth(45)
+        self.grid_zoom_label.installEventFilter(self)
+        self.grid_zoom_label.hide()  # Keep project/status logic without visual clutter.
+        # Minimal L-shaped controls: both rails are exactly 160 px long.
+        # No box, text caption, or numeric readout around the height control.
+        height_panel = QWidget()
+        height_panel.setFixedWidth(32)
+        height_panel.setStyleSheet('background:transparent;border:0;')
+        height_column = QVBoxLayout(height_panel)
+        height_column.setContentsMargins(0, 0, 0, 0)
+        height_column.setSpacing(3)
+        height_column.addStretch(1)
+        self.grid_row_height = QSlider(Qt.Vertical)
+        self.grid_row_height.setObjectName('gridRowHeight')
+        self.grid_row_height.setRange(24, 96)
+        self.grid_row_height.setFixedHeight(160)
+        self.grid_row_height.setFixedWidth(26)
+        self.grid_row_height.setSingleStep(1)
+        self.grid_row_height.setPageStep(4)
+        self.grid_row_height.setValue(max(24, min(96, int(self.layout_settings.value('grid_row_height', 38)))))
+        self.grid_row_height.setToolTip('Adjust note-block height by dragging or scrolling')
+        self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
+        self.grid_row_height.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_row_height', value))
+        self.grid_row_height.installEventFilter(self)
+        height_column.addWidget(self.grid_row_height, 0, Qt.AlignHCenter)
+        self.grid_row_height_label = QLabel('38')
+        self.grid_row_height_label.hide()  # Kept for programmatic state, not shown.
+        height_panel.installEventFilter(self)
+        self._height_wheel_targets = (height_panel, self.grid_row_height)
+        self._zoom_wheel_targets = (self.grid_zoom,)
+        grid_content_row.insertWidget(0, height_panel)
+        zoom_controls.insertSpacing(0, 32)
+        grid_column.addLayout(zoom_controls)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
         self.time_label.setMinimumWidth(85)
-        zoom_controls.addSpacing(10)
-        zoom_controls.addWidget(self.time_label)
-        controls.addLayout(zoom_controls, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        time_controls = QHBoxLayout()
+        time_controls.setContentsMargins(4, 0, 0, 0)
+        time_controls.addWidget(self.time_label)
+        controls.addLayout(time_controls, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
@@ -1106,27 +1528,13 @@ class Window(QMainWindow):
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
+        self._workspace_panels['Mixer'] = stem_panel
         stem_panel.setMinimumWidth(165)
         stem_panel.setMaximumWidth(330)
         stem_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         panel = QVBoxLayout(stem_panel)
         panel.setContentsMargins(6, 4, 6, 4)
         panel.setSpacing(9)
-        if self.brand_asset.is_file():
-            self.brand_logo = QLabel()
-            self.brand_logo.setObjectName('riffLabBrand')
-            self.brand_logo.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.brand_logo.setFixedHeight(55)
-            self.brand_logo.setMinimumWidth(150)
-            self.brand_logo.setStyleSheet('background: transparent; border: none; padding: 0;')
-            logo_renderer = QSvgRenderer(str(self.brand_asset))
-            logo_pixmap = QPixmap(240, 68)
-            logo_pixmap.fill(Qt.transparent)
-            logo_painter = QPainter(logo_pixmap)
-            logo_renderer.render(logo_painter, QRectF(0, 0, 240, 67))
-            logo_painter.end()
-            self.brand_logo.setPixmap(logo_pixmap.scaledToWidth(170, Qt.SmoothTransformation))
-            panel.addWidget(self.brand_logo)
         mixer_header = QHBoxLayout()
         mixer_header.setContentsMargins(0, 0, 0, 0)
         mixer_title = QLabel('STEM MIXER')
@@ -1207,6 +1615,7 @@ class Window(QMainWindow):
         panel.addStretch(0)
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
+        self.mixer_holder = mixer_holder
         mixer_holder.setMinimumWidth(165)
         mixer_holder.setMaximumWidth(330)
         mixer_holder.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
@@ -1214,6 +1623,54 @@ class Window(QMainWindow):
         mixer_holder_layout.setContentsMargins(0, 0, 0, 0)
         mixer_holder_layout.setSpacing(0)
         mixer_holder_layout.addWidget(stem_panel, 0, Qt.AlignTop)
+        # Inline tuner deliberately shares the existing full tuner engine.
+        mini = QWidget()
+        mini.setObjectName('mixerTuner')
+        self._workspace_panels['Tuner'] = mini
+        mini.setStyleSheet(
+            'QWidget#mixerTuner{background:#172633;border:1px solid #304a5d;border-radius:5px}')
+        mini_layout = QVBoxLayout(mini)
+        mini_layout.setContentsMargins(7, 7, 7, 7)
+        mini_layout.setSpacing(4)
+        mini_header = QHBoxLayout()
+        mini_header.setSpacing(3)
+        mini_header.addWidget(QLabel('TUNER'))
+        mini_header.addStretch()
+        self.mini_tuner_live = QPushButton('● Off')
+        self.mini_tuner_live.setFixedWidth(52)
+        self.mini_tuner_live.setToolTip('Start or stop microphone monitoring')
+        self.mini_tuner_live.clicked.connect(self.toggle_tuner)
+        mini_header.addWidget(self.mini_tuner_live)
+        self.mini_tuner_settings = QPushButton('⚙')
+        self.mini_tuner_settings.setFixedWidth(27)
+        self.mini_tuner_settings.setToolTip('Select audio input and detailed tuner controls')
+        self.mini_tuner_settings.clicked.connect(self.toggle_tuner_panel)
+        mini_header.addWidget(self.mini_tuner_settings)
+        mini_layout.addLayout(mini_header)
+        self.mini_tuner_preset = QComboBox()
+        self.mini_tuner_preset.addItems([
+            'Chromatic', 'Guitar E', 'Guitar Eb', 'Guitar D',
+            'Drop D', 'Drop C#', 'Bass E', 'Bass Eb', 'Bass D'])
+        self.mini_tuner_preset.setToolTip('Select a tuning; individual string targets are in tuner settings')
+        self.mini_tuner_preset.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mini_tuner_preset.currentIndexChanged.connect(
+            lambda index: self.tuner_preset.setCurrentIndex(index))
+        mini_layout.addWidget(self.mini_tuner_preset)
+        self.mini_tuner_note = QLabel('—  ·  Mic off')
+        self.mini_tuner_note.setAlignment(Qt.AlignCenter)
+        self.mini_tuner_note.setStyleSheet(
+            'font-weight:700;color:#d5efff;background:transparent;font-size:13px')
+        mini_layout.addWidget(self.mini_tuner_note)
+        self.mini_tuner_view = MiniTunerView()
+        mini_layout.addWidget(self.mini_tuner_view)
+        mixer_holder_layout.addWidget(mini, 0, Qt.AlignTop)
+        for name, panel_widget in self._workspace_panels.items():
+            action = self.panels_menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(True)
+            action.toggled.connect(lambda shown, key=name: self.set_workspace_panel(key, shown))
+            self._workspace_actions[name] = action
+        self._restore_workspace_preferences()
         mixer_holder_layout.addStretch(1)
         self.play_splitter.insertWidget(0, mixer_holder)
         self.play_splitter.setStretchFactor(0, 0)
@@ -1228,6 +1685,9 @@ class Window(QMainWindow):
         layout.addWidget(QLabel('CHROMATIC TUNER  /  LINE 6 / WINDOWS INPUT'))
         tuner_row = QHBoxLayout()
         self.devices = QComboBox()
+        self.devices.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.devices.setMinimumContentsLength(16)
+        self.devices.setToolTip('Audio input device; open list for full name')
         tuner_row.addWidget(self.devices, 1)
         self.device_refresh = QPushButton('Refresh Inputs')
         self.device_refresh.setIcon(qta.icon('fa5s.sync-alt', color='white'))
@@ -1238,19 +1698,54 @@ class Window(QMainWindow):
         self.tuner_button.clicked.connect(self.toggle_tuner)
         tuner_row.addWidget(self.tuner_button)
         layout.addLayout(tuner_row)
-        self.tuner_note = QLabel('—  ·  waiting for input')
+        # Rocksmith-style guided tuning, alongside free chromatic mode.
+        tuning_row = QHBoxLayout()
+        self.tuner_preset = QComboBox()
+        self.tuner_preset.addItems([
+            'Chromatic', 'Guitar E', 'Guitar Eb', 'Guitar D',
+            'Drop D', 'Drop C#', 'Bass E', 'Bass Eb', 'Bass D',
+        ])
+        self.tuner_preset.setToolTip(
+            'Choose the instrument tuning and check each string against its target frequency and cent meter.')
+        self.tuner_preset.currentIndexChanged.connect(self.refresh_tuner_strings)
+        self.tuner_preset.currentIndexChanged.connect(self.sync_mini_tuner_preset)
+        self.tuner_preset.currentIndexChanged.connect(
+            lambda index: self.layout_settings.setValue('preferred_tuning_preset', index))
+        tuning_row.addWidget(self.tuner_preset, 2)
+        self.tuner_string = QComboBox()
+        self.tuner_string.setToolTip('Choose a string to tune against its reference frequency.')
+        self.tuner_string.setMinimumWidth(88)
+        self.tuner_string.currentIndexChanged.connect(self.refresh_tuner_target)
+        tuning_row.addWidget(self.tuner_string, 1)
+        layout.addLayout(tuning_row)
+        self.tuner_target = QLabel('Chromatic mode · select a tuning preset for guided tuning')
+        self.tuner_target.setAlignment(Qt.AlignCenter)
+        self.tuner_target.setStyleSheet(
+            'font-size:13px;color:#a4d4f1;background:transparent;padding:4px;')
+        layout.addWidget(self.tuner_target)
+        self.tuner_note = QLabel('—')
         self.tuner_note.setAlignment(Qt.AlignCenter)
-        self.tuner_note.setStyleSheet('font-size:24px;font-weight:700;color:#7bd6ff')
+        self.tuner_note.setMinimumHeight(78)
+        self.tuner_note.setStyleSheet(
+            'font-size:46px;font-weight:800;color:#eaf7ff;'
+            'background-color:rgba(41,76,99,95);'
+            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
         layout.addWidget(self.tuner_note)
-        self.tuner_meter = QSlider(Qt.Horizontal)
-        self.tuner_meter.setRange(-50,50)
-        self.tuner_meter.setEnabled(False)
+        self.tuner_details = QLabel('Play one string · A4 = 440 Hz')
+        self.tuner_details.setAlignment(Qt.AlignCenter)
+        self.tuner_details.setStyleSheet('font-size:14px;color:#aac8db;')
+        layout.addWidget(self.tuner_details)
+        self.tuner_meter = TunerMeter()
         layout.addWidget(self.tuner_meter)
         layout.addStretch(1)
+        saved_tuning = int(self.layout_settings.value('preferred_tuning_preset', 0))
+        self.tuner_preset.setCurrentIndex(max(0, min(8, saved_tuning)))
+        self.refresh_tuner_strings()
+        self.sync_mini_tuner_preset()
         self.find_devices()
         self.tuner_timer = QTimer(self)
         self.tuner_timer.timeout.connect(self.update_tuner)
-        self.tuner_timer.start(120)
+        self.tuner_timer.start(50)  # Responsive needle; ~20 UI updates per second.
         self.render_grid()
         self.mix_debounce = QTimer(self)
         self.mix_debounce.setSingleShot(True)
@@ -1260,7 +1755,7 @@ class Window(QMainWindow):
         self.live_timer.start(80)
         self.player.playbackStateChanged.connect(self.on_playback_state)
         self.player.positionChanged.connect(self.check_qt_loop)
-        self.player.errorOccurred.connect(lambda error, msg: self.status_message(f'Audiofout: {msg}') if msg else None)
+        self.player.errorOccurred.connect(lambda error, msg: self.status_message(f'Audio error: {msg}') if msg else None)
         footer = QHBoxLayout()
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
@@ -1351,6 +1846,13 @@ class Window(QMainWindow):
           QSlider::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
+          /* Both zoom axes share exactly the same rail, thumb, and accent. */
+          QSlider#gridZoom::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
+          QSlider#gridZoom::sub-page:horizontal{background:#64b9e9;border-radius:2px}
+          QSlider#gridZoom::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
+          QSlider#gridRowHeight::groove:vertical{width:5px;background:#2b4052;border-radius:2px}
+          QSlider#gridRowHeight::add-page:vertical{background:#64b9e9;border-radius:2px}
+          QSlider#gridRowHeight::handle:vertical{background:#d5ecfa;border:1px solid #72bde9;height:11px;margin:0 -5px;border-radius:6px}
           QScrollArea{background:#141e2a}
           QPushButton[transportIcon='true']{background:#1d3042;border:1px solid #34526b;border-radius:6px}
           QPushButton[transportIcon='true']:hover{background:#263d52;border-color:#47657c}
@@ -1362,6 +1864,9 @@ class Window(QMainWindow):
           QProgressBar{max-height:4px;background:#202d3b;border:0}
           QProgressBar::chunk{background:#7bd6ff}
         ''')
+        saved_geometry = self.layout_settings.value('window_geometry_v1')
+        if saved_geometry:
+            self.restoreGeometry(saved_geometry)
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
     def toggle_tuner_panel(self):
@@ -1519,17 +2024,47 @@ class Window(QMainWindow):
         self.library_table.setRowCount(len(rows))
         for row_index, song in enumerate(rows):
             values = ('★' if song['favorite'] else '', song['title'], song['artist'],
-                      song['tuning'], f"{song['original_bpm']:g}",
+                      song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.UserRole, song['project_path'])
-                if col in (4, 5):
+                if col in (5, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.library_table.setItem(row_index, col, item)
         self.library_table.setSortingEnabled(False)
         self.library_summary.setText(
             f'{len(rows)} songs  ·  Double-click to open a project  ·  Edit Details to set artist and tuning')
+
+    def show_library_context_menu(self, pos):
+        """Right-click actions for the song actually under the cursor."""
+        item = self.library_table.itemAt(pos)
+        if item is None:
+            return
+        self.library_table.selectRow(item.row())
+        path = self.selected_library_path()
+        if not path:
+            return
+        menu = QMenu(self.library_table)
+        open_action = menu.addAction('Open project')
+        details_action = menu.addAction('Edit song details')
+        favorite_action = menu.addAction('Toggle favorite')
+        menu.addSeparator()
+        copy_action = menu.addAction('Copy project path')
+        menu.addSeparator()
+        remove_action = menu.addAction('Remove from Library')
+        selected = menu.exec(self.library_table.viewport().mapToGlobal(pos))
+        if selected == open_action:
+            self.open_library_song()
+        elif selected == details_action:
+            self.edit_library_song()
+        elif selected == favorite_action:
+            self.toggle_library_favorite()
+        elif selected == copy_action:
+            QApplication.clipboard().setText(path)
+            self.status_message('Project path copied.')
+        elif selected == remove_action:
+            self.remove_library_song()
 
     def selected_library_path(self):
         row = self.library_table.currentRow()
@@ -1738,6 +2273,9 @@ class Window(QMainWindow):
         return values
 
     def save_project(self):
+        if self.processing:
+            self.status_message('Wait for import and analysis to finish before saving.')
+            return
         if not self.stems and not self.source_audio:
             self.status_message('Open a song before saving a project.')
             return
@@ -1776,13 +2314,14 @@ class Window(QMainWindow):
             'loop': self.loop_enabled,
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
-            'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
-            'zoom': self.grid_zoom.value(), 'lookahead_ms': self.chord_lookahead.value(),
+            'stability': self.sensitivity.value(), 'noteguard': self.noteguard.currentIndex(), 'complexity': self.complexity_slider.value(), 'transpose': self.transpose.value(),
+            'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
             'enabled': {name: self.checks[name].isChecked() for name in STEMS},
             'solo': {name: self.solos[name].isChecked() for name in STEMS},
             'chord_data': self.chord_data, 'beat_times': self.beat_times,
+            'section_overrides': self.section_overrides,
         }
         temp = path.with_suffix('.riff.tmp')
         try:
@@ -1794,8 +2333,26 @@ class Window(QMainWindow):
             self.remember_project(path)
             self.index_library_project(path, data)
             self.status_message(f'Project saved: {path.name}')
+            return True
         except OSError as exc:
             QMessageBox.warning(self, 'Save project', str(exc))
+        return False
+
+    def populate_file_recent(self):
+        self.file_recent_menu.clear()
+        count = 0
+        for i in range(self.recent_projects.count()):
+            path = self.recent_projects.itemData(i)
+            if not path or not Path(path).is_file():
+                continue
+            label = self.recent_projects.itemText(i) or Path(path).stem
+            action = self.file_recent_menu.addAction(label)
+            action.setToolTip(str(path))
+            action.triggered.connect(lambda checked=False, value=str(path): self.load_project(value))
+            count += 1
+        if not count:
+            empty = self.file_recent_menu.addAction('No recent projects')
+            empty.setEnabled(False)
 
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open RiffLab Project',
@@ -1827,6 +2384,8 @@ class Window(QMainWindow):
             QMessageBox.warning(self, 'Open project', f'Cannot load project:\n{exc}')
             self.refresh_recent_projects()
             return
+        if not self._confirm_unsaved_changes():
+            return
         self.speed_generation += 1  # invalidate previous tempo renders
         self.project_file = str(path)
         self.url.setText(str(data.get('youtube_url') or ''))
@@ -1853,7 +2412,7 @@ class Window(QMainWindow):
             self.analyze_local.setEnabled(False)
             self.start_live()
         else:
-            self.load_local(source)
+            self.load_local(source, check_unsaved=False)
         self._restore_project_settings(data)
         self.sync_all_export_mixer()
         self.project_file = str(path)
@@ -1865,6 +2424,7 @@ class Window(QMainWindow):
         self.switch_analysis_mode()
 
     def _restore_project_settings(self, data):
+        self.section_overrides = {int(k): str(v) for k, v in (data.get('section_overrides') or {}).items()}
         self.detected_bpm = max(1.0, float(data.get('detected_bpm', 130)))
         for name in STEMS:
             slider = self.volumes[name]
@@ -1899,12 +2459,26 @@ class Window(QMainWindow):
         self.analysis_mode.blockSignals(False)
         self.update_grid_mode_buttons()
         self.accuracy.setCurrentIndex(max(0, min(2, int(data.get('accuracy', 1)))))
-        self.sensitivity.setValue(int(data.get('stability', 2)))
+        self.noteguard.setCurrentIndex(max(0, min(3, int(data.get('noteguard', 0)))))
+        self.sensitivity.setValue(int(data.get('stability', 0)))
+        self.note_preset.blockSignals(True)
+        preset = {
+            (0, 0): 0, (1, 0): 1, (2, 1): 2, (3, 3): 3,
+        }.get((self.noteguard.currentIndex(), self.sensitivity.value()), 4)
+        self.note_preset.setCurrentIndex(preset)
+        self.note_preset.blockSignals(False)
+        self.complexity_slider.blockSignals(True)
+        self.complexity_slider.setValue(int(data.get('complexity', {
+            0: 100, 1: 75, 2: 50, 3: 25,
+        }.get(preset, 100))))
+        self.complexity_slider.blockSignals(False)
+        self.complexity_label.setText(f'{self.complexity_slider.value()}%')
         self.transpose.setValue(int(data.get('transpose', 0)))
-        self.grid_zoom.setValue(int(data.get('zoom', 100)))
+        # Workstation zoom preferences survive loading and re-analysis.
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
         self.follow.setChecked(bool(data.get('auto_scroll', True)))
         self.chord_data = data.get('chord_data', [])
+        self.waveform.set_note_events(self.chord_data)
         self.chord_times = [float(item[0]) for item in self.chord_data]
         self.beat_times = [float(t) for t in data.get('beat_times', [])]
         self.rebuild_chords()
@@ -1928,24 +2502,174 @@ class Window(QMainWindow):
             self.player.setPosition(pos)
         # Projects restore paused; the user decides when to resume.
 
+    def set_chord_loading(self, loading, message='Analyzing notes and chords…'):
+        if not hasattr(self, 'chord_loading'):
+            return
+        self.chord_loading.setGeometry(self.chord_scroll.viewport().rect())
+        self.chord_loading_label.setText(message)
+        self.chord_loading.setVisible(bool(loading))
+        if hasattr(self, 'chord_loading_stop'):
+            self.chord_loading_stop.hide()
+        if loading:
+            self.chord_loading.raise_()
+
+    def eventFilter(self, obj, event):
+        # Wheel scrolling in the nearby L-shaped controls adjusts that axis.
+        # Elsewhere (especially over the note grid) standard scrolling remains.
+        if event.type() == event.Type.Wheel:
+            slider = None
+            if obj in getattr(self, '_height_wheel_targets', ()):
+                slider = self.grid_row_height
+            elif obj in getattr(self, '_zoom_wheel_targets', ()):
+                slider = self.grid_zoom
+            if slider is not None:
+                delta = event.angleDelta().y() or event.angleDelta().x()
+                if not delta:
+                    delta = event.pixelDelta().y() or event.pixelDelta().x()
+                    step = 1 if delta > 0 else -1
+                else:
+                    step = max(1, round(abs(delta) / 60)) * (1 if delta > 0 else -1)
+                if delta:
+                    slider.setValue(slider.value() + step)
+                event.accept()
+                return True
+        if (hasattr(self, 'chord_scroll') and
+                obj is self.chord_scroll.viewport() and
+                event.type() == event.Type.Resize):
+            if hasattr(self, 'chord_loading'):
+                self.chord_loading.setGeometry(obj.rect())
+        return super().eventFilter(obj, event)
+
+    def set_stage(self, stage):
+        """Main-thread update: no fabricated percentages for Demucs/AI."""
+        self.import_stage = stage
+        if 'analy' in stage.lower() or 'notes' in stage.lower():
+            self.set_chord_loading(True, stage)
+        self.progress.setFormat(stage)
+        if self.processing:
+            self.progress.setRange(0, 0)
+        self.status_message(stage)
+
     def set_busy(self, busy):
         self.processing = busy
-        self.load_url.setEnabled(not busy)
-        self.load_file.setEnabled(not busy)
-        self.progress.setRange(0, 0 if busy else 1)
-        if not busy:
+        if not busy and not self.analysis_running:
+            self.set_chord_loading(False)
+        for widget in (self.load_url, self.load_file, self.project_save,
+                       self.project_load, self.recent_projects, self.split_local,
+                       self.analyze_local):
+            widget.setEnabled(not busy)
+        if busy:
+            self.progress.setRange(0, 0)
+            self.progress.setFormat('Preparing import…')
+        else:
+            self.progress.setRange(0, 1)
             self.progress.setValue(1)
+            self.progress.setFormat('Ready')
+            self.split_local.setEnabled(self.source_audio is not None)
+            self.analyze_local.setEnabled(self.source_audio is not None)
+        self.reanalyze_button.setEnabled(True)
+        if not self.analysis_running:
+            self.reanalyze_button.setText('Re-analyze' if (self.stems or self.source_audio) else 'Analyze')
 
     def on_error(self, message):
+        self.analysis_running = False
+        self.cancel_analysis_button.hide()
+        self.set_chord_loading(False)
         self.set_busy(False)
         self.mixing = False
         self.status_message('Error — see details and rifflab-errors.log')
         QMessageBox.warning(self, 'RiffLab', message)
 
+    @staticmethod
+    def _supported_audio_path(path):
+        path = Path(path)
+        return path.is_file() and path.suffix.lower() in (
+            '.mp3', '.wav', '.flac', '.m4a', '.ogg')
+
+    def _drop_candidate(self, event):
+        data = event.mimeData()
+        if not data.hasUrls():
+            return None
+        for url in data.urls():
+            if not url.isLocalFile():
+                continue
+            path = Path(url.toLocalFile())
+            if self._supported_audio_path(path):
+                return path
+            if path.is_file() and path.suffix.lower() == '.riff':
+                return path
+        return None
+
+    def dragEnterEvent(self, event):
+        if self._drop_candidate(event):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if self._drop_candidate(event):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        candidate = self._drop_candidate(event)
+        if candidate is None:
+            event.ignore()
+            return
+        if self.processing or self.analysis_running:
+            self.status_message('Finish or stop the current analysis before importing.')
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        if candidate.suffix.lower() == '.riff':
+            self.load_project(candidate)
+        else:
+            self.tabs.setCurrentIndex(0)
+            self.load_local(candidate.resolve())
+
     def open_file(self):
+        if self.processing:
+            return
         path, _ = QFileDialog.getOpenFileName(self, 'Open Audio', '', 'Audio (*.mp3 *.wav *.flac *.m4a *.ogg)')
         if path:
             self.load_local(Path(path))
+
+    def paste_youtube_link(self):
+        """Ctrl+V accepts YouTube URLs AND existing local audio files."""
+        if not self._shortcut_allowed():
+            return
+        clipboard = QApplication.clipboard()
+        mime = clipboard.mimeData()
+        candidates = []
+        if mime.hasUrls():
+            for url in mime.urls():
+                if url.isLocalFile():
+                    candidates.append(Path(url.toLocalFile()))
+        raw = clipboard.text().strip().strip('"').strip("'")
+        if raw:
+            # Windows Explorer Copy as path, plain-text paths and file:// URLs.
+            if raw.startswith('file://'):
+                url = QUrl(raw)
+                if url.isLocalFile():
+                    candidates.append(Path(url.toLocalFile()))
+            else:
+                candidates.append(Path(raw))
+        for candidate in candidates:
+            if (candidate.is_file()
+                    and candidate.suffix.lower() in ('.mp3', '.wav', '.flac', '.m4a', '.ogg')):
+                if self.processing or self.analysis_running:
+                    self.status_message('Wait until the current import or analysis is finished.')
+                    return
+                self.tabs.setCurrentIndex(0)
+                self.load_local(candidate.resolve())
+                return
+        if valid_youtube_url(raw):
+            self.tabs.setCurrentIndex(2)
+            self.url.setText(raw)
+            self.url.setFocus()
+        else:
+            self.status_message('Ctrl+V: copy a local audio file or YouTube link.')
 
     def download_url(self):
         url = self.url.text().strip()
@@ -1954,12 +2678,21 @@ class Window(QMainWindow):
             return
         if self.processing:
             return
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Question)
+        confirm.setWindowTitle('Download audio?')
+        confirm.setText('Download and split audio from this YouTube link?')
+        confirm.setInformativeText(url)
+        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm.setDefaultButton(QMessageBox.Yes)
+        if confirm.exec() != QMessageBox.Yes:
+            return
         self.set_busy(True)
         threading.Thread(target=self._download, args=(url,), daemon=True).start()
 
     def _download(self, url):
         try:
-            self.signals.status.emit('Downloading audio…')
+            self.signals.stage.emit('1/3 · Downloading audio…')
             output = ROOT / 'downloads'
             output.mkdir(exist_ok=True)
             # Print the actual destination, never guess by modification time.
@@ -1974,6 +2707,12 @@ class Window(QMainWindow):
                 'js_runtimes': {'deno': {}},
                 'remote_components': ['ejs:github'],
             }
+            # yt-dlp/FFmpeg subprocesses must see the bundled tools on PATH,
+            # even when the app was launched from Explorer without a shell.
+            bundled_ffmpeg = ffmpeg_path()
+            if bundled_ffmpeg:
+                opts['ffmpeg_location'] = bundled_ffmpeg
+                os.environ['PATH'] = bundled_ffmpeg + os.pathsep + os.environ.get('PATH', '')
             with YoutubeDL(opts) as downloader:
                 info = downloader.extract_info(url, download=True)
                 video_id = re.sub(r'[^A-Za-z0-9_-]', '_', info['id'])
@@ -1992,7 +2731,7 @@ class Window(QMainWindow):
             wav = output / f'{video_id}.wav'
             if not wav.is_file():
                 raise RuntimeError('Download finished but no WAV file was found.')
-            self.signals.status.emit('Download complete. Separating stems…')
+            self.signals.stage.emit('2/3 · Separating stems…')
             self._split(wav)
         except Exception as exc:
             self.signals.error.emit(f'{exc}\n\nTechnical details saved in the RiffLab log.')
@@ -2006,8 +2745,12 @@ class Window(QMainWindow):
         self.song_metadata = dict(metadata)
         self.update_now_playing()
 
-    def load_local(self, path):
-        """Local files play immediately; AI analysis is optional and runs separately."""
+    def load_local(self, path, check_unsaved=True):
+        """Play immediately and automatically analyze a newly imported audio file."""
+        if self.processing or self.analysis_running:
+            return
+        if check_unsaved and not self._confirm_unsaved_changes():
+            return
         self.stop_live()
         self.source_audio = Path(path)
         self.load_waveform(path)
@@ -2023,6 +2766,7 @@ class Window(QMainWindow):
         self.display_chords = []
         self.display_times = []
         self.beat_times = []
+        self.section_overrides = {}
         self.player.stop()
         self.clear_loop()
         self.speed_generation += 1
@@ -2045,6 +2789,120 @@ class Window(QMainWindow):
         self.export.setEnabled(False)
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
+        self.set_busy(True)
+        self.set_stage('1/1 · Analyzing imported audio…')
+        self._start_analysis_ui()
+        threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+
+    def stop_analysis(self):
+        """Ask the running worker to exit; its completion unlocks the UI."""
+        if not self.analysis_running:
+            return
+        self.analysis_cancel.set()
+        self.status_message('Stopping analysis…')
+        self.cancel_analysis_button.setEnabled(False)
+        self.reanalyze_button.setText('Stopping…')
+        self.reanalyze_button.setEnabled(False)
+        self.chord_loading_label.setText('Stopping analysis…')
+        self.chord_loading_stop.setEnabled(False)
+
+    def _start_analysis_ui(self):
+        self.analysis_cancel = threading.Event()
+        self.analysis_running = True
+        self.cancel_analysis_button.setEnabled(True)
+        self.reanalyze_button.setText('■ Stop')
+        self.reanalyze_button.setEnabled(True)
+        self.chord_loading_stop.setEnabled(True)
+        self.chord_loading_stop.hide()
+
+    def toggle_analysis(self):
+        if self.analysis_running:
+            self.stop_analysis()
+        elif self.stems or self.source_audio:
+            self.reanalyze_current()
+        else:
+            self.status_message('Import a song before analyzing.')
+
+    def apply_complexity(self, value):
+        self.complexity_label.setText(f'{value}%')
+        # Preserve a full unmodified view at 100%; lower slider positions
+        # select only display filters. The AI timeline remains immutable.
+        if value >= 85:
+            guard, stability = 0, 0
+        elif value >= 65:
+            guard, stability = 1, 0
+        elif value >= 40:
+            guard, stability = 2, 1
+        elif value >= 20:
+            guard, stability = 3, 2
+        else:
+            guard, stability = 3, 4
+        self.noteguard.blockSignals(True)
+        self.sensitivity.blockSignals(True)
+        self.noteguard.setCurrentIndex(guard)
+        self.sensitivity.setValue(stability)
+        self.noteguard.blockSignals(False)
+        self.sensitivity.blockSignals(False)
+        self.rebuild_chords()
+
+    def apply_note_preset(self, index):
+        # These affect presentation only, never overwrite transcription.
+        settings = ((0, 0), (1, 0), (2, 1), (3, 3))
+        if index >= len(settings):
+            self.open_note_settings()
+            return
+        guard, stability = settings[index]
+        self.noteguard.blockSignals(True)
+        self.sensitivity.blockSignals(True)
+        self.noteguard.setCurrentIndex(guard)
+        self.sensitivity.setValue(stability)
+        self.noteguard.blockSignals(False)
+        self.sensitivity.blockSignals(False)
+        self.rebuild_chords()
+
+    def open_note_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Analysis & note display settings')
+        dialog.setMinimumWidth(350)
+        form = QFormLayout(dialog)
+        quality = QComboBox()
+        quality.addItems(['Fast', 'Balanced', 'Detailed'])
+        quality.setCurrentIndex(self.accuracy.currentIndex())
+        quality.setToolTip('Changes to accuracy take effect on the next analysis.')
+        guard = QComboBox()
+        guard.addItems(['Off', 'Light', 'Balanced', 'Strict'])
+        guard.setCurrentIndex(self.noteguard.currentIndex())
+        duration = QDoubleSpinBox()
+        duration.setRange(0.0, 2.0)
+        duration.setSingleStep(0.1)
+        duration.setDecimals(1)
+        duration.setSuffix(' seconds')
+        duration.setValue(self.sensitivity.value() * .1)
+        form.addRow('Analysis accuracy', quality)
+        form.addRow('Note verification', guard)
+        form.addRow('Minimum note length', duration)
+        explanation = QLabel('Verification and minimum length change only the grid. '
+                             'Accuracy requires a fresh analysis. Keep both filters '
+                             'off to inspect every detected note.')
+        explanation.setWordWrap(True)
+        form.addRow(explanation)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            self.accuracy.setCurrentIndex(quality.currentIndex())
+            self.noteguard.setCurrentIndex(guard.currentIndex())
+            self.sensitivity.setValue(round(duration.value() * 10))
+            self.note_preset.blockSignals(True)
+            self.note_preset.setCurrentIndex(4)
+            self.note_preset.blockSignals(False)
+            self.complexity_label.setText('Custom')
+            self.rebuild_chords()
+
+    def _accuracy_key(self):
+        """Stable worker/cache identifier independent of translated UI labels."""
+        return ('fast', 'balanced', 'detailed')[self.accuracy.currentIndex()]
 
     def reanalyze_current(self):
         if self.analysis_running:
@@ -2052,8 +2910,8 @@ class Window(QMainWindow):
         if not self.stems and self.source_audio is None:
             self.status_message('Open a song before re-analyzing.')
             return
-        self.analysis_running = True
-        self.reanalyze_button.setEnabled(False)
+        self._start_analysis_ui()
+        self.set_chord_loading(True, 'Re-analyzing notes…')
         self.analyze_local.setEnabled(False)
         self.status_message('Re-analyzing audio with ' + self.accuracy.currentText() + ' accuracy…')
         if self.stems and self.folder:
@@ -2064,9 +2922,12 @@ class Window(QMainWindow):
     def _reanalyze_stems(self):
         try:
             self._analyze_mode(force=True)
-            beats = json.loads(worker_command('beats', str(self.stems['drums'])))
+            beats = json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
             (self.folder / 'beats_drums_v2.json').write_text(json.dumps(beats), encoding='utf-8')
-            self.signals.beats.emit(beats)
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
             self.signals.error.emit(f'Re-analysis failed: {exc}')
             self._log_exception()
@@ -2076,7 +2937,8 @@ class Window(QMainWindow):
     def analyze_current(self):
         if self.source_audio is None or self.analysis_running:
             return
-        self.analysis_running = True
+        self._start_analysis_ui()
+        self.set_chord_loading(True)
         self.analyze_local.setEnabled(False)
         self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
         threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
@@ -2087,23 +2949,35 @@ class Window(QMainWindow):
             cache.mkdir(parents=True, exist_ok=True)
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes' if bass_mode else 'chords'}_v2_{self.accuracy.currentText().lower()}.json"
-            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path)))
+            chords_file = cache / f"{'bass_notes_v4' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
+            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
             if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
-            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self.accuracy.currentText().lower()))
+            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
             if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
-            self.signals.beats.emit(beats)
-            self.signals.chords.emit(chords)
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+                self.signals.chords.emit(chords)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
-            self.signals.error.emit(f'Analysis failed: {exc}\nInstall the AI dependencies if needed.')
+            self.signals.error.emit(f'Analysis failed: {exc}\nDetails: {ROOT / "rifflab-errors.log"}')
             self._log_exception()
         finally:
             self.signals.analysis_done.emit()
 
     def on_analysis_done(self):
+        was_cancelled = self.analysis_cancel.is_set()
         self.analysis_running = False
+        self.cancel_analysis_button.hide()
+        self.set_chord_loading(False)
+        if self.processing:
+            self.set_busy(False)
+            self.status_message('Analysis stopped.' if was_cancelled else 'Import complete — notes and stems ready.')
         self.analyze_local.setEnabled(self.source_audio is not None)
+        self.reanalyze_button.setText('Re-analyze' if (self.stems or self.source_audio) else 'Analyze')
         self.reanalyze_button.setEnabled(True)
+        if was_cancelled:
+            self.status_message('Analysis stopped. Existing audio remains available.')
 
     def reset_bpm(self):
         # Use the actual detected BPM, rather than a fixed 130 BPM default.
@@ -2185,6 +3059,8 @@ class Window(QMainWindow):
             self.status_message(f'Cannot switch playback speed: {exc}')
 
     def on_beats(self, data):
+        if self.analysis_cancel.is_set():
+            return
         self.beat_times = [float(t) for t in data.get('beats', [])]
         bpm = round(float(data.get('bpm', 130)))
         self.grid_bpm.blockSignals(True)
@@ -2218,7 +3094,7 @@ class Window(QMainWindow):
             self._log_exception()
 
     def _split(self, path):
-        self.signals.status.emit('Separating 4 stems with Demucs — first run can be slow…')
+        self.signals.stage.emit('2/3 · Separating 4 stems (Demucs)…')
         output = ROOT / 'separated'
         output.mkdir(exist_ok=True)
         worker_command('split', str(path), str(output))
@@ -2232,6 +3108,7 @@ class Window(QMainWindow):
         self.folder = Path(folder)
         self.source_audio = None
         self.beat_times = []
+        self.section_overrides = {}
         self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
         self.load_waveform(self.stems)
         self.chord_data = []
@@ -2246,7 +3123,8 @@ class Window(QMainWindow):
         self.export.setEnabled(True)
         for slider in self.volumes.values():
             slider.setEnabled(True)
-        self.set_busy(False)
+        self.set_stage('3/3 · Analyzing notes and beats…')
+        self.set_chord_loading(True, 'Analyzing stems, notes and beats…')
         self.split_local.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.clear_loop()
@@ -2258,6 +3136,7 @@ class Window(QMainWindow):
         self.grid_bpm.blockSignals(False)
         self.status_message('Stems ready — bass tracking enabled; switch to Chord Mode for harmony.')
         self.start_live()
+        self._start_analysis_ui()
         threading.Thread(target=self._analyze, daemon=True).start()
 
     def update_grid_mode_buttons(self, _index=None):
@@ -2268,46 +3147,64 @@ class Window(QMainWindow):
             button.blockSignals(False)
 
     def switch_analysis_mode(self, _index=None):
-        # Clear stale harmony labels immediately when switching to Bass Mode.
-        self.rebuild_chords()
-        if not self.stems or not self.folder:
-            if self.source_audio and self.source_audio.is_file():
-                threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+        if self.analysis_running:
+            self.status_message('Stop the current analysis before changing modes.')
             return
-        # Change the display without separating stems again.
-        self.status_message('Switching analysis mode…')
-        threading.Thread(target=self._analyze_mode, daemon=True).start()
+        if not self.stems and not self.source_audio:
+            self.rebuild_chords()
+            return
+        self._start_analysis_ui()
+        self.set_chord_loading(True, 'Analyzing selected mode…')
+        if self.stems and self.folder:
+            threading.Thread(target=self._switch_analysis_mode_worker, daemon=True).start()
+        elif self.source_audio and self.source_audio.is_file():
+            threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+
+    def _switch_analysis_mode_worker(self):
+        try:
+            self._analyze_mode()
+        finally:
+            self.signals.analysis_done.emit()
 
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_context_v4_{self.accuracy.currentText().lower()}.json'
-                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self.accuracy.currentText().lower()]
+                cache = self.folder / f'bass_context_v8_{self._accuracy_key()}.json'
+                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self._accuracy_key(), str(self.stems['drums'])]
             else:
-                cache = self.folder / f'chords_instruments_v5_{self.accuracy.currentText().lower()}.json'
-                task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self.accuracy.currentText().lower()]
+                cache = self.folder / f'chords_instruments_v5_{self._accuracy_key()}.json'
+                task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self._accuracy_key()]
             if cache.exists() and not force:
                 result = json.loads(cache.read_text(encoding='utf-8'))
             else:
-                result = json.loads(worker_command(task, *paths))
+                result = json.loads(worker_command(task, *paths, cancel_event=self.analysis_cancel))
                 cache.write_text(json.dumps(result), encoding='utf-8')
-            self.signals.chords.emit(result)
+            if not self.analysis_cancel.is_set():
+                self.signals.chords.emit(result)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
             self.signals.status.emit(f'Analysis failed: {exc}')
             self._log_exception()
 
     def _analyze(self):
         try:
+            self.signals.stage.emit('3/3 · Analyzing notes and beats…')
             self._analyze_mode()
             # Drums are used for beat detection, not for chord recognition.
             beats_cache = self.folder / 'beats_drums_v2.json'
-            beats = json.loads(beats_cache.read_text(encoding='utf-8')) if beats_cache.exists() else json.loads(worker_command('beats', str(self.stems['drums'])))
+            beats = json.loads(beats_cache.read_text(encoding='utf-8')) if beats_cache.exists() else json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
             if not beats_cache.exists():
                 beats_cache.write_text(json.dumps(beats), encoding='utf-8')
-            self.signals.beats.emit(beats)
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
-            self.signals.status.emit(f'Chord analysis failed: {exc}')
+            self.signals.error.emit(f'Chord analysis failed: {exc}')
             self._log_exception()
+        finally:
+            self.signals.analysis_done.emit()
 
     def auto_index_analyzed_song(self):
         """Add analyzed songs as saved projects, without opening a save dialog."""
@@ -2338,8 +3235,8 @@ class Window(QMainWindow):
             'in_ms': None, 'out_ms': None, 'loop': False,
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
-            'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
-            'zoom': self.grid_zoom.value(), 'lookahead_ms': self.chord_lookahead.value(),
+            'stability': self.sensitivity.value(), 'noteguard': self.noteguard.currentIndex(), 'transpose': self.transpose.value(),
+            'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
             'auto_scroll': self.follow.isChecked(),
             'levels': {name: self.volumes[name].value() for name in STEMS},
             'enabled': {name: self.checks[name].isChecked() for name in STEMS},
@@ -2357,7 +3254,11 @@ class Window(QMainWindow):
             self.status_message(f'Could not add song to Library: {exc}')
 
     def on_chords(self, chords):
+        self.set_chord_loading(False)
+        if self.analysis_cancel.is_set():
+            return
         self.chord_data = chords
+        self.waveform.set_note_events(chords)
         self.chord_times = [float(item[0]) for item in chords]
         self.rebuild_chords()
         self.auto_index_analyzed_song()
@@ -2452,7 +3353,7 @@ class Window(QMainWindow):
     def apply_mixer_levels(self):
         """Single realtime path for M, S and volume controls."""
         levels = self.get_levels()
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(levels)
         else:
             self.request_mix()
@@ -2510,19 +3411,15 @@ class Window(QMainWindow):
     def volume_changed(self, _value=None):
         for stem, slider in self.volumes.items():
             self.volume_labels[stem].setText(f'{slider.value()}%')
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(self.get_levels())
         else:
             self.mix_debounce.start(350)
 
     def transpose_changed(self, _value=None):
+        """Notation-only transpose: never restart, repitch or remix playback."""
         self.render_grid()
-        self.on_position(self.player.position())
-        if self.transpose.value() == 0 and self.stems:
-            self.start_live()
-        else:
-            self.stop_live()
-            self.mix_debounce.start(350)
+        self.on_position(self.live.position_ms if self.live else self.player.position())
 
     def transpose_chord(self, chord):
         match = re.fullmatch(r'([A-G])([#b]?)(.*)', chord)
@@ -2534,9 +3431,52 @@ class Window(QMainWindow):
                + self.transpose.value()) % 12
         return NOTES[idx] + suffix
 
+    @staticmethod
+    def verify_note_events(events, level, bass_mode):
+        """Remove isolated low-duration pitch glitches without inventing notes.
+
+        Keep the original events untouched for instant A/B comparison.
+        Preserve repeated same-note attacks and fast notes corroborated by
+        neighbouring events; never quantize the performance to a beat grid.
+        """
+        if level <= 0 or len(events) < 3:
+            return list(events)
+        minimum = (0, 0.085, 0.14, 0.22)[min(level, 3)]
+        # Full chords need longer evidence than individual bass attacks.
+        if not bass_mode:
+            minimum *= 1.5
+        result = [events[0]]
+        for i in range(1, len(events) - 1):
+            t, note = events[i]
+            prev_t, prev_note = events[i - 1]
+            next_t, next_note = events[i + 1]
+            duration = next_t - t
+            # An isolated A-B-A excursion is the clearest sign of a glitch.
+            isolated = prev_note == next_note and note != prev_note
+            # Short runs in fast passages can be intentional, especially bass.
+            fast_context = (t - prev_t < 0.24 and next_t - t < 0.24)
+            threshold = minimum * (0.65 if fast_context else 1.0)
+            if isolated and duration < threshold:
+                continue
+            # Strict mode can suppress a very short isolated change even
+            # without an A-B-A pattern, but protects dense bass riffs.
+            if level == 3 and not fast_context and duration < minimum * 0.45 and note != prev_note:
+                continue
+            result.append((t, note))
+        result.append(events[-1])
+        # Collapse identical adjacent pitch labels; retain separate bass
+        # attacks because repeated plucks are musically meaningful.
+        if not bass_mode:
+            compact = []
+            for t, note in result:
+                if not compact or compact[-1][1] != note:
+                    compact.append((t, note))
+            return compact
+        return result
+
     def rebuild_chords(self, _value=None):
         seconds = self.sensitivity.value() * 0.1
-        self.sensitivity_label.setText(f'{seconds:.1f} s')
+        self.sensitivity_label.setText(f'≥{seconds:.1f} s')
         if not self.chord_data:
             return
         # Never expose harmonic chord suffixes in Bass Mode, even for old
@@ -2545,34 +3485,48 @@ class Window(QMainWindow):
         raw = [(float(t), re.match(r'^[A-G](?:#|b)?', str(c)).group(0)
                 if bass_mode and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
                for t, c in self.chord_data]
-        # Events already mark detected harmonic changes; reject only fleeting events.
-        # Preserve the old dense-frame majority method for unsplit legacy analysis.
-        dense = len(raw) > 3 and (raw[-1][0] - raw[0][0]) / len(raw) < 0.25
-        if dense and seconds > 0:
-            half = seconds / 2
-            times = [t for t, _ in raw]
-            output, last = [], None
-            for t, _ in raw:
-                lo = bisect.bisect_left(times, t - half)
-                hi = bisect.bisect_right(times, t + half)
-                chord = Counter(c for _, c in raw[lo:hi]).most_common(1)[0][0]
-                if chord != last:
-                    output.append((t, chord)); last = chord
-        else:
-            output = []
-            for i, (t, chord) in enumerate(raw):
-                end = raw[i + 1][0] if i + 1 < len(raw) else float('inf')
-                if output and end - t < seconds:
-                    continue
-                if not output or chord != output[-1][1]:
-                    output.append((t, chord))
+        raw = self.verify_note_events(raw, self.noteguard.currentIndex(), bass_mode)
+        if bass_mode:
+            # A bass-root timeline has one event per root change, not per pluck.
+            root_changes = []
+            for t, note in raw:
+                if not root_changes or note != root_changes[-1][1]:
+                    root_changes.append((t, note))
+            raw = root_changes
+        # Show a *minimum-duration segment*, not an arbitrary skip of its
+        # starting event. Remove short runs in reverse so A-B-A returns to A.
+        # This is a display-only edit: original AI events stay untouched.
+        output = list(raw)
+        if seconds > 0 and len(output) > 1:
+            for _ in range(3):
+                changed = False
+                filtered = [output[0]]
+                for i in range(1, len(output)):
+                    t, note = output[i]
+                    end = output[i + 1][0] if i + 1 < len(output) else float('inf')
+                    if end - t < seconds and filtered:
+                        changed = True
+                        continue
+                    if note != filtered[-1][1]:
+                        filtered.append((t, note))
+                output = filtered
+                if not changed:
+                    break
+        # In Bass Mode a repeated attack on the current root is not a change.
+        if bass_mode:
+            collapsed = []
+            for t, note in output:
+                if not collapsed or collapsed[-1][1] != note:
+                    collapsed.append((t, note))
+            output = collapsed
         self.display_chords = output
+        self.refresh_tuning_advice()
         self.display_times = [t for t, _ in output]
         self.render_grid()
         self.on_position(self.live.position_ms if self.live else self.player.position())
 
     def request_mix(self, _checked=None):
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(self.get_levels())
             return
         if not self.stems:
@@ -2584,7 +3538,7 @@ class Window(QMainWindow):
         self.mix_counter += 1
         seq = self.mix_counter
         levels = self.get_levels()
-        transpose = self.transpose.value()
+        transpose = 0  # Grid transpose never changes the playback pitch.
         pos = self.player.position()
         playing = self.player.playbackState() == QMediaPlayer.PlayingState
         self.player.pause()
@@ -2722,7 +3676,7 @@ class Window(QMainWindow):
 
     def update_chord_indicator(self, ms):
         if not self.display_chords:
-            self.chord.setText('—')
+            self._set_current_chord('—')
             self.next_chords.setText('NEXT: —')
             return
         actual_time = max(0.0, ms / 1000.0)
@@ -2734,37 +3688,108 @@ class Window(QMainWindow):
             times = [cell[0] for cell in self.grid_cells]
             cell = bisect.bisect_right(times, preview_time) - 1
             if cell < 0:
-                self.chord.setText('—')
+                self._set_current_chord('—')
                 return
             cell_time = times[min(cell, len(times) - 1)]
             note_index = bisect.bisect_right(self.display_times, cell_time) - 1
             current = (self.transpose_chord(self.display_chords[note_index][1])
                        if note_index >= 0 else '—')
-            self.chord.setText(current)
+            self._set_current_chord(current)
             return
         idx = bisect.bisect_right(self.display_times, preview_time) - 1
-        self.chord.setText(self.transpose_chord(self.display_chords[idx][1])
+        self._set_current_chord(self.transpose_chord(self.display_chords[idx][1])
                            if idx >= 0 else '—')
 
+    def _note_accent(self, chord):
+        """Consistent pitch colors for the grid and current-note display."""
+        root = str(chord).replace('♯', '#').replace('♭', 'b')
+        root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
+        return {
+            'C': '#268ed1', 'C#': '#4286df', 'D': '#ce6385',
+            'D#': '#bd68b6', 'E': '#368fc2', 'F': '#8a70d2',
+            'F#': '#7165c8', 'G': '#a76be4', 'G#': '#bb6ad2',
+            'A': '#30bba8', 'A#': '#dc9556', 'B': '#c89b4e',
+        }.get(root, '#56748b')
+
+    def _set_current_chord(self, name):
+        """Match the current-note glass and horizontal accent to the grid."""
+        self.chord.setText(name)
+        accent = self._note_accent(name)
+        # Translucent blue glass: crisp top accent, no glow or neon shadow.
+        self.chord.setStyleSheet(
+            'font-size:23px;font-weight:750;color:#f4faff;'
+            'background-color:rgba(33,64,86,105);'
+            'border:1px solid rgba(165,205,230,80);'
+            f'border-top:3px solid {accent};'
+            'border-radius:7px;padding:4px;'
+        )
+
+    def _grid_note_font_px(self):
+        # Height is the primary legibility control; horizontal zoom makes
+        # smaller proportional changes. Keep large text on tall note rows.
+        height = self.grid_row_height.value()
+        width_factor = 0.88 + 0.12 * self.grid_zoom.value() / 100.0
+        return max(11, min(34, round((12 + (height - 24) * 0.25) * width_factor)))
+
+    def _chord_segment_style(self, index, active=False):
+        """Translucent blue-white glass with horizontal pitch-color accents."""
+        chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
+        accent = self._note_accent(chord)
+        beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
+        ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
+        # Alpha is deliberately low: let the actual app background show through.
+        background = 'rgba(91,151,186,100)' if active else 'rgba(49,93,123,56)'
+        foreground = '#ffffff' if active else '#e9f5fd'
+        # Top edge carries pitch information. No vertical color strips or glow.
+        border_top = f'3px solid {accent}' if active else f'2px solid {accent}'
+        return (
+            f'background-color:{background};'
+            'border:0px;'
+            f'border-top:{border_top};'
+            f'border-bottom:1px solid {"rgba(221,241,255,120)" if active else "rgba(173,211,233,45)"};'
+            f'border-left:{"1px solid rgba(190,223,240,65)" if beginning else "0px"};'
+            f'border-right:{"1px solid rgba(190,223,240,65)" if ending else "0px"};'
+            f'border-top-left-radius:{5 if beginning else 0}px;'
+            f'border-bottom-left-radius:{5 if beginning else 0}px;'
+            f'border-top-right-radius:{5 if ending else 0}px;'
+            f'border-bottom-right-radius:{5 if ending else 0}px;'
+            f'font-size:{self._grid_note_font_px()}px;'
+            f'font-weight:{"800" if active else ("650" if self.grid_buttons[index].text().strip() else "400")};'
+            f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
+            f'{max(3, round(5 * self.grid_zoom.value() / 100))}px;'
+            f'text-align:left;color:{foreground};'
+        )
+
     def apply_grid_zoom(self, zoom):
-        """Scale chord labels together with their cells and spacing."""
+        """Scale the flat chord timeline without altering beat interactions."""
         self.grid_zoom_label.setText(f'{zoom}%')
         scale = zoom / 100.0
-        for button in self.grid_buttons:
+        for i, button in enumerate(self.grid_buttons):
             button.setMinimumWidth(round(36 * scale))
-            button.setFixedHeight(round(38 * scale))
+            button.setFixedHeight(self.grid_row_height.value())
             font = button.font()
-            font.setPointSizeF(max(8.0, 11.0 * scale))
+            font.setPixelSize(self._grid_note_font_px())
             font.setBold(bool(button.text().strip()))
             button.setFont(font)
-            padding_y = max(1, round(3 * scale))
-            padding_x = max(2, round(5 * scale))
-            button.setStyleSheet(
-                'background:#223242;border:1px solid #344658;'
-                f'border-radius:{max(3, round(4 * scale))}px;'
-                f'text-align:left;padding:{padding_y}px {padding_x}px;'
-            )
-        self.chord_grid.setSpacing(max(2, round(4 * scale)))
+            button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
+            button.setFixedHeight(self.grid_row_height.value())
+        self.chord_grid.setHorizontalSpacing(0)
+        self.chord_grid.setVerticalSpacing(3)  # Keep rows tight; zoom changes cells, not gaps.
+
+    def apply_grid_row_height(self, height):
+        """Resize actual note blocks AND section rows, not just their font."""
+        self.grid_row_height_label.setText(str(height))
+        for i, button in enumerate(self.grid_buttons):
+            font = button.font()
+            font.setPixelSize(self._grid_note_font_px())
+            button.setFont(font)
+            button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
+            button.setFixedHeight(height)
+        for section in getattr(self, 'grid_section_buttons', ()):
+            section.setFixedHeight(height)
+        if hasattr(self, 'chord_grid'):
+            self.chord_grid.invalidate()
+            self.grid_host.updateGeometry()
 
     def on_position(self, ms):
         if not self.timeline.isSliderDown():
@@ -2785,6 +3810,7 @@ class Window(QMainWindow):
         self._waveform_source = key
         self.waveform.set_waveform([])
         self.waveform.set_position(0)
+        self.waveform.set_note_events([])
         def task():
             try:
                 peaks = extract_waveform_peaks(source)
@@ -2826,7 +3852,7 @@ class Window(QMainWindow):
         if filename:
             try:
                 self.status_message('Exporting WAV…')
-                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),self.transpose.value()), daemon=True).start()
+                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),0), daemon=True).start()
             except Exception as exc:
                 self.on_error(str(exc))
 
@@ -2886,6 +3912,23 @@ class Window(QMainWindow):
         counts = Counter(v[0] for v in matches.values())
         return {beat: info for beat, info in matches.items() if counts[info[0]] >= 2}
 
+    def infer_song_sections(self, beat_count):
+        """Display only user-confirmed sections; do not invent verse/chorus."""
+        rows = (beat_count + 15) // 16
+        return [self.section_overrides.get(row, '') for row in range(rows)]
+
+    def edit_section_label(self, row):
+        choices = ['Intro', 'Verse', 'Chorus', 'Pre-Chorus', 'Bridge',
+                   'Solo', 'Breakdown', 'Outro', 'Instrumental', 'Part A', 'Part B']
+        current = self.section_overrides.get(row, '')
+        label, ok = QInputDialog.getItem(self, 'Song section',
+                                          f'Section starting at bar {row * 4 + 1}:',
+                                          choices, max(0, choices.index(current)) if current in choices else 0,
+                                          True)
+        if ok and label.strip():
+            self.section_overrides[row] = label.strip()
+            self.render_grid()
+
     def render_grid(self, *_):
         """Four bars per row, four clickable beat cells per bar. Grid uses a fixed BPM estimate."""
         while self.chord_grid.count():
@@ -2894,6 +3937,8 @@ class Window(QMainWindow):
                 item.widget().deleteLater()
         self.grid_buttons = []
         self.grid_cells = []
+        self.grid_chord_names = []
+        self.grid_section_buttons = []
         bpm = self.grid_bpm.value()
         beat_length = 60.0 / bpm
         total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
@@ -2906,6 +3951,27 @@ class Window(QMainWindow):
             occurrences[letter] += 1
             pattern_labels[start] = (f'{letter}{occurrences[letter]}', confidence, group_idx)
         self.pattern_matches = pattern_labels
+        section_labels = self.infer_song_sections(beats)
+        section_colors = ('#139ed0', '#1886b9', '#087da9', '#2074a2')
+        # Section markers remain editable, but do not spam guessed Part A/B
+        # on every row. Show bar ranges until the user names a section.
+        current_section = 0
+        for section_row, section_label in enumerate(section_labels):
+            if section_label:
+                current_section = (current_section + 1) % len(section_colors)
+            accent = section_colors[current_section]
+            label = section_label or f'{section_row * 4 + 1}–{section_row * 4 + 4}'
+            section = QPushButton(label)
+            section.setToolTip('Click to name this section (Intro, Verse, Chorus, etc.)')
+            section.setFixedWidth(90)
+            section.setStyleSheet(
+                f'background:#152633;color:{"#f2faff" if section_label else "#728c9e"};'
+                f'border:0;border-left:{"4px" if section_label else "2px"} solid {accent};'
+                f'font-size:11px;font-weight:{"700" if section_label else "400"};'
+                'text-align:left;padding:3px 6px;')
+            section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
+            self.chord_grid.addWidget(section, section_row, 0)
+            self.grid_section_buttons.append(section)
         for beat_index in range(beats):
             t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
             bar = beat_index // 4
@@ -2922,7 +3988,8 @@ class Window(QMainWindow):
                 pattern_name, confidence, group = pattern
                 label = (pattern_name + '  ' + label).strip()
             button = QPushButton(label)
-            button.setMinimumHeight(30)
+            self.grid_chord_names.append(chord)
+            button.setMinimumHeight(24)
             border = '#344658'
             background = '#223242'
             if pattern:
@@ -2933,12 +4000,14 @@ class Window(QMainWindow):
             hint = (f' • repeated riff {pattern[0]} • similarity {pattern[1]:.0%}' if pattern else '')
             button.setToolTip(f'Bar {bar+1} • beat {beat+1} • {t:.1f}s{hint}')
             button.clicked.connect(lambda checked=False, seconds=t: self.seek_and_play(int(seconds*1000)))
-            self.chord_grid.addWidget(button, row, col)
+            self.chord_grid.addWidget(button, row, col + 1)
             self.grid_buttons.append(button)
             self.grid_cells.append((t,beat))
-        for col in range(16):
+        self.chord_grid.setColumnStretch(0, 0)
+        for col in range(1, 17):
             self.chord_grid.setColumnStretch(col, 1)
         self.apply_grid_zoom(self.grid_zoom.value())
+        self.apply_grid_row_height(self.grid_row_height.value())
         self.grid_active = -1
         self.grid_row = -1
         self.update_grid_position((self.live.position_ms if self.live else self.player.position())/1000)
@@ -2955,12 +4024,7 @@ class Window(QMainWindow):
             if j < 0 or j >= len(self.grid_buttons):
                 continue
             active = j == idx
-            first = self.grid_cells[j][1] == 0
-            self.grid_buttons[j].setStyleSheet(
-                f'background:{"#2878ad" if active else "#223242"};'
-                f'border:1px solid {"#7bd6ff" if active else "#526778" if first else "#344658"};'
-                'border-radius:3px;text-align:left;padding:2px 4px;'
-            )
+            self.grid_buttons[j].setStyleSheet(self._chord_segment_style(j, active))
         row = idx // 16
         if self.follow.isChecked() and row != self.grid_row:
             self.grid_row = row
@@ -2978,12 +4042,107 @@ class Window(QMainWindow):
         except Exception as exc:
             self.devices.addItem(f'No input: {exc}',None)
 
+    def refresh_tuning_advice(self):
+        """A tentative suggestion only; note names do not establish tuning."""
+        if not hasattr(self, 'tuning_advice'):
+            return
+        roots = []
+        for _, name in getattr(self, 'display_chords', []):
+            match = re.match(r'^([A-G](?:#|b)?)', str(name))
+            if match:
+                roots.append(match.group(1))
+        # Many notes written as sharps/flats can be a *key* instead of a
+        # down-tuned instrument. Therefore never infer or apply a tuning.
+        flat_family = {'Eb', 'Ab', 'Bb', 'Db', 'Gb', 'D#', 'G#', 'A#', 'C#', 'F#'}
+        is_flat_heavy = (len(roots) >= 8
+                         and sum(note in flat_family for note in roots) / len(roots) >= .6)
+        self._suggest_eb_tuning = bool(is_flat_heavy)
+        if is_flat_heavy:
+            self.tuning_advice.setText('Check Eb tuning  ↗')
+            self.tuning_advice.setToolTip(
+                'Many accidentals detected. This can be the musical key, NOT proof '
+                'of Eb tuning. Open the tuner to compare before deciding.')
+        else:
+            self.tuning_advice.setText('Tuning  ↗')
+            self.tuning_advice.setToolTip(
+                'Choose instrument tuning manually. Transpose affects notation only.')
+
+    def open_tuning_guide(self):
+        """Explain the difference; never auto-transpose or auto-retune."""
+        if getattr(self, '_suggest_eb_tuning', False):
+            response = QMessageBox.question(
+                self, 'Optional tuning suggestion',
+                'This song contains many sharp/flat note names. That can reflect '
+                'the musical key and does NOT confirm the recording uses Eb tuning.\\n\\n'
+                'Would you like to compare your instrument with Eb Standard? '
+                'This changes only the tuner preset, never the audio or transpose.',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if response == QMessageBox.Yes:
+                self.tuner_preset.setCurrentIndex(
+                    7 if self.tuner_preset.currentIndex() >= 6 else 2)
+        self.tuner_dialog.show()
+        self.tuner_dialog.raise_()
+        self.tuner_dialog.activateWindow()
+        self.status_message(
+            'Tuning is a manual instrument choice. Transpose changes notation only.')
+
+    def sync_mini_tuner_preset(self, _index=None):
+        if not hasattr(self, 'mini_tuner_preset'):
+            return
+        self.mini_tuner_preset.blockSignals(True)
+        self.mini_tuner_preset.setCurrentIndex(self.tuner_preset.currentIndex())
+        self.mini_tuner_preset.blockSignals(False)
+
+    def refresh_tuner_strings(self, _index=None):
+        """Per-string reference pitches (MIDI); don't guess a song's tuning."""
+        tunings = {
+            1: (40, 45, 50, 55, 59, 64),  # E A D G B E
+            2: (39, 44, 49, 54, 58, 63),  # Eb Ab Db Gb Bb Eb
+            3: (38, 43, 48, 53, 57, 62),  # D G C F A D
+            4: (38, 45, 50, 55, 59, 64),  # D A D G B E
+            5: (37, 44, 49, 54, 58, 63),  # C# G# C# F# A# D#
+            6: (28, 33, 38, 43),          # E A D G bass
+            7: (27, 32, 37, 42),
+            8: (26, 31, 36, 41),
+        }
+        self._tuning_targets = tunings.get(self.tuner_preset.currentIndex(), ())
+        self.tuner_string.blockSignals(True)
+        self.tuner_string.clear()
+        if not self._tuning_targets:
+            self.tuner_string.addItem('All notes', None)
+        else:
+            for index, midi in enumerate(self._tuning_targets):
+                self.tuner_string.addItem(
+                    f'{index + 1} · {NOTES[midi % 12]}{midi // 12 - 1}', midi)
+        self.tuner_string.blockSignals(False)
+        self.refresh_tuner_target()
+
+    def refresh_tuner_target(self, _index=None):
+        midi = self.tuner_string.currentData()
+        self._tuner_display_cents = None
+        if midi is None:
+            self.tuner_target.setText('Chromatic · no fixed target frequency')
+        else:
+            frequency = 440 * (2 ** ((midi - 69) / 12))
+            self.tuner_target.setText(
+                f'TARGET  {NOTES[midi % 12]}{midi // 12 - 1}  ·  {frequency:.2f} Hz'
+                '    —    tune until the needle reaches 0')
+        if hasattr(self, 'tuner_meter'):
+            self.tuner_meter.set_reading(0, False)
+
     def toggle_tuner(self):
         if self.tuner_stream is not None:
             self.tuner_stream.stop()
             self.tuner_stream.close()
             self.tuner_stream = None
+            self._tuner_display_cents = None
+            self.tuner_meter.set_reading(0, False)
+            self.tuner_note.setText('—')
+            self.tuner_details.setText('Tuner stopped')
             self.tuner_button.setText('Start Tuner')
+            self.mini_tuner_live.setText('● Off')
+            self.mini_tuner_note.setText('—  ·  Mic off')
+            self.mini_tuner_view.set_reading()
             return
         try:
             import sounddevice as sd
@@ -2998,6 +4157,7 @@ class Window(QMainWindow):
                 if self.tuner_level < .006:
                     return
                 x = x - np.mean(x)
+                self._tuner_waveform = tuple(float(v) for v in x[::max(1, len(x)//45)][:45])
                 n = len(x)
                 spec = np.fft.rfft(x,n=2*n)
                 corr = np.fft.irfft(spec*np.conj(spec))[:n]
@@ -3011,9 +4171,14 @@ class Window(QMainWindow):
                 if 40 <= freq <= 1000:
                     self.tuner_pitch = freq
                     self.tuner_last = time.monotonic()
-            self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=8192,callback=callback)
+            # 4096 frames (~93 ms at 44.1 kHz) updates more often than 8192.
+            # Autocorrelation still supports low bass notes down to 40 Hz.
+            self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=4096,callback=callback)
             self.tuner_stream.start()
+            self._tuner_display_cents = None
+            self.tuner_details.setText('Listening… · A4 = 440 Hz')
             self.tuner_button.setText('Stop Tuner')
+            self.mini_tuner_live.setText('● Live')
         except Exception as exc:
             self.tuner_stream = None
             QMessageBox.warning(self,'Tuner',str(exc))
@@ -3021,16 +4186,43 @@ class Window(QMainWindow):
     def update_tuner(self):
         if self.tuner_stream is None:
             return
-        if self.tuner_level < .006 or time.monotonic()-self.tuner_last > 1.2:
-            self.tuner_note.setText('Play one string…')
+        if self.tuner_level < .006 or time.monotonic()-self.tuner_last > .45:
+            self.tuner_note.setText('—')
+            self.tuner_details.setText('Play one string · A4 = 440 Hz')
+            self.tuner_meter.set_reading(0, False)
+            self.mini_tuner_note.setText('—  ·  Listening')
+            self.mini_tuner_view.set_reading()
+            self._tuner_display_cents = None
             return
-        f = self.tuner_pitch
-        if f <= 0:
+        frequency = self.tuner_pitch
+        if frequency <= 0:
             return
-        midi = round(69+12*math.log2(f/440))
-        cents = 1200*math.log2(f/(440*2**((midi-69)/12)))
-        self.tuner_note.setText(f'{NOTES[midi%12]}{midi//12-1}   {cents:+.1f} cents   ·   {f:.1f} Hz')
-        self.tuner_meter.setValue(max(-50,min(50,round(cents))))
+        detected = round(69 + 12 * math.log2(frequency / 440))
+        target = self.tuner_string.currentData()
+        # Guide against the selected open string rather than the closest
+        # chromatic note; this makes half-step and drop tuning usable.
+        reference = target if target is not None else detected
+        target_hz = 440 * 2 ** ((reference-69) / 12)
+        cents = 1200 * math.log2(frequency / target_hz)
+        if self._tuner_display_cents is None or abs(cents-self._tuner_display_cents) > 60:
+            self._tuner_display_cents = cents
+        else:
+            self._tuner_display_cents += .42 * (cents-self._tuner_display_cents)
+        smooth = self._tuner_display_cents
+        self.tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}')
+        in_tune = abs(smooth) <= 5 and (target is None or abs(cents) <= 8)
+        self.tuner_note.setStyleSheet(
+            'font-size:46px;font-weight:800;'
+            f'color:{"#69e7cb" if in_tune else "#eaf7ff"};'
+            'background-color:rgba(41,76,99,95);'
+            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
+        direction = ('IN TUNE' if in_tune else '↑ TUNE UP' if smooth < -5
+                     else '↓ TUNE DOWN' if smooth > 5 else 'ALMOST')
+        self.tuner_details.setText(
+            f'{smooth:+.1f} cents   ·   {frequency:.2f} Hz   ·   {direction}')
+        self.tuner_meter.set_reading(smooth)
+        self.mini_tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}  ·  {smooth:+.0f}¢')
+        self.mini_tuner_view.set_reading(smooth, True, self._tuner_waveform)
 
     def stop_live(self):
         if self.live:
@@ -3068,6 +4260,92 @@ class Window(QMainWindow):
         self.play.setToolTip('Pause' if playing else 'Play')
         self.play.setIcon(qta.icon('fa5s.pause' if playing else 'fa5s.play', color='white'))
 
+    def set_workspace_panel(self, name, shown):
+        panel = self._workspace_panels.get(name)
+        if panel is not None:
+            panel.setVisible(bool(shown))
+            if name in ('Mixer', 'Tuner') and hasattr(self, 'mixer_holder'):
+                keep_sidebar = any(
+                    self._workspace_actions[n].isChecked()
+                    for n in ('Mixer', 'Tuner') if n in self._workspace_actions)
+                self.mixer_holder.setVisible(keep_sidebar)
+            self.layout_settings.setValue('workspace_panel_' + name.replace(' ', '_'), bool(shown))
+
+    def _restore_workspace_preferences(self):
+        for name, action in self._workspace_actions.items():
+            stored = self.layout_settings.value('workspace_panel_' + name.replace(' ', '_'), True)
+            visible = str(stored).lower() not in ('false', '0', 'no')
+            action.setChecked(visible)
+            self.set_workspace_panel(name, visible)
+
+    def _workspace_state(self):
+        return {
+            'version': 1,
+            'panels': {name: action.isChecked() for name, action in self._workspace_actions.items()},
+            'grid_zoom': self.grid_zoom.value(),
+            'row_height': self.grid_row_height.value(),
+            'waveform_zoom': self.waveform.zoom,
+            'play_splitter': self.play_splitter.sizes(),
+            'export_splitter': self.export_splitter.sizes(),
+        }
+
+    def apply_workspace(self, data):
+        for name, shown in data.get('panels', {}).items():
+            if name in self._workspace_actions:
+                self._workspace_actions[name].setChecked(bool(shown))
+        self.grid_zoom.setValue(max(65, min(200, int(data.get('grid_zoom', 100)))))
+        self.grid_row_height.setValue(max(24, min(96, int(data.get('row_height', 38)))))
+        self.waveform.set_zoom(float(data.get('waveform_zoom', 1.0)))
+        self.layout_settings.setValue('waveform_zoom', self.waveform.zoom)
+        for splitter, key in ((self.play_splitter, 'play_splitter'),
+                              (self.export_splitter, 'export_splitter')):
+            values = data.get(key)
+            if isinstance(values, list) and len(values) == splitter.count():
+                splitter.setSizes([max(10, int(value)) for value in values])
+
+    def save_workspace_as(self):
+        directory = ROOT / 'workspaces'
+        directory.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getSaveFileName(
+            self, 'Save Workspace', str(directory / 'My Workspace.json'),
+            'RiffLab Workspace (*.json)')
+        if not path:
+            return
+        try:
+            destination = Path(path)
+            if destination.suffix.lower() != '.json':
+                destination = destination.with_suffix('.json')
+            destination.write_text(json.dumps(self._workspace_state(), indent=2), encoding='utf-8')
+            self.status_message('Workspace saved: ' + destination.name)
+        except OSError as exc:
+            QMessageBox.warning(self, 'Save Workspace', str(exc))
+
+    def load_workspace_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Load Workspace', str(ROOT / 'workspaces'), 'RiffLab Workspace (*.json)')
+        if not path:
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or data.get('version') != 1:
+                raise ValueError('Unsupported workspace format')
+            self.apply_workspace(data)
+            self.status_message('Workspace loaded: ' + Path(path).name)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, 'Load Workspace', str(exc))
+
+    def reset_workspace(self):
+        self.apply_workspace({
+            'panels': {name: True for name in self._workspace_panels},
+            'grid_zoom': 100, 'row_height': 38, 'waveform_zoom': 1.0,
+            'play_splitter': [205, 780], 'export_splitter': [300, 600]})
+        self.status_message('Default workspace restored.')
+
+    def change_waveform_zoom(self, direction):
+        factor = 1.5 if direction > 0 else 1 / 1.5
+        self.waveform.set_zoom(self.waveform.zoom * factor)
+        self.layout_settings.setValue('waveform_zoom', self.waveform.zoom)
+
     def restore_splitter(self, splitter, key):
         saved = self.layout_settings.value(key)
         if saved:
@@ -3076,7 +4354,79 @@ class Window(QMainWindow):
             except (TypeError, ValueError):
                 pass
 
+    def _has_unsaved_project_changes(self):
+        """Detect changed project data, not playback time or global zoom."""
+        if not self.stems and not self.source_audio:
+            return False
+        if not self.project_file or not Path(self.project_file).is_file():
+            return True
+        try:
+            data = json.loads(Path(self.project_file).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return True
+        values = {
+            'metadata': self.song_metadata,
+            'in_ms': self.loop_a_ms,
+            'out_ms': self.loop_b_ms,
+            'loop': self.loop_enabled,
+            'bpm': self.grid_bpm.value(),
+            'analysis_mode': self.analysis_mode.currentIndex(),
+            'accuracy': self.accuracy.currentIndex(),
+            'stability': self.sensitivity.value(),
+            'transpose': self.transpose.value(),
+            'lookahead_ms': self.chord_lookahead.value(),
+            'auto_scroll': self.follow.isChecked(),
+            'levels': {name: self.volumes[name].value() for name in STEMS},
+            'enabled': {name: self.checks[name].isChecked() for name in STEMS},
+            'solo': {name: self.solos[name].isChecked() for name in STEMS},
+            'section_overrides': {str(k): str(v) for k,v in self.section_overrides.items()},
+            'chord_data': [list(item) for item in self.chord_data],
+        }
+        for key, value in values.items():
+            old = data.get(key)
+            if key == 'section_overrides':
+                old = {str(k): str(v) for k,v in (old or {}).items()}
+            if old != value:
+                return True
+        return False
+
+    def _confirm_unsaved_changes(self):
+        """Save / discard / cancel, without destroying the current project."""
+        if not self._has_unsaved_project_changes():
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle('Unsaved changes')
+        box.setText('Save your project changes?')
+        box.setInformativeText(
+            'Your edits to notes, mixer, analysis settings or song details '
+            'will be lost if you discard them.')
+        box.setStandardButtons(
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        box.setDefaultButton(QMessageBox.Save)
+        answer = box.exec()
+        if answer == QMessageBox.Cancel:
+            return False
+        if answer == QMessageBox.Discard:
+            return True
+        if answer == QMessageBox.Save:
+            if self.processing or self.analysis_running:
+                QMessageBox.information(
+                    self, 'Analysis running',
+                    'Stop or finish the current analysis before saving.')
+                return False
+            return bool(self.save_project())
+        return False
+
     def closeEvent(self,event):
+        if not self._confirm_unsaved_changes():
+            event.ignore()
+            return
+
+        self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
+        self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
+        self.layout_settings.setValue('waveform_zoom', self.waveform.zoom)
+        self.layout_settings.setValue('window_geometry_v1', self.saveGeometry())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
         self.layout_settings.setValue('export_splitter_left_v2', self.export_splitter.saveState())
         self.stop_live()

@@ -118,85 +118,72 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
 
 
 def bass_notes(path, accuracy="balanced"):
-    """Onset-aware bass tracking: repeated plucks are separate events.
+    """Pitch-first bass transcription with continuity-aware decoding.
 
-    Combine CQT harmonic evidence, optional pYIN, transient detection and a
-    local confidence gate. Accuracy controls temporal and pitch resolution.
+    Root changes are inferred from time-local spectral evidence rather than
+    predetermined minimum durations. A legitimate one-fret transition can
+    survive even when it returns to the previous note within a beat.
     """
     import librosa
     import numpy as np
-    from scipy.ndimage import median_filter
+    from scipy.ndimage import gaussian_filter1d
 
     sr = 11025
     hop = {"fast": 512, "balanced": 256, "detailed": 256}.get(accuracy, 256)
     y, _ = librosa.load(path, sr=sr, mono=True)
     if len(y) < sr // 2:
         return []
-    fmin = librosa.note_to_hz('E1')
-    mag = np.abs(librosa.cqt(y, sr=sr, hop_length=hop, fmin=fmin,
-                             n_bins=48, bins_per_octave=12))
-    count = 30
-    strength = mag[:count].copy()
-    for offset, weight in ((12, .35), (19, .15), (24, .12)):
-        valid = min(count, mag.shape[0] - offset)
-        strength[:valid] += weight * mag[offset:offset + valid]
-    # The strongest upper harmonic is not necessarily the fundamental.
-    strength /= np.maximum(np.max(strength, axis=0, keepdims=True), 1e-8)
-    idx = np.argmax(strength, axis=0)
-    ordered = np.sort(strength, axis=0)
-    confidence = (ordered[-1] - ordered[-2]) / np.maximum(ordered[-1], 1e-8)
-    energy = np.max(mag, axis=0)
-    gate = energy > max(float(np.percentile(energy, 25)) * .5, 1e-6)
-    # pYIN is expensive: reserve it for Detailed, and only use voiced frames.
-    if accuracy == 'detailed':
-        try:
-            f0, voiced, _ = librosa.pyin(y, sr=sr, hop_length=hop,
-                                         fmin=fmin, fmax=librosa.note_to_hz('B3'))
-            n = min(len(idx), len(f0))
-            for i in range(n):
-                if voiced[i] and np.isfinite(f0[i]):
-                    pitch = int(round(librosa.hz_to_midi(f0[i]) - librosa.hz_to_midi(fmin)))
-                    if 0 <= pitch < count and (confidence[i] < .28 or abs(pitch-idx[i]) % 12 == 0):
-                        idx[i] = pitch
-        except Exception:
-            pass  # CQT remains the fallback.
-    idx = median_filter(idx, size={'fast': 7, 'balanced': 5, 'detailed': 3}.get(accuracy, 5))
-    pitch_classes = (idx + 4) % 12
-    # Onset strength catches repeated notes with unchanged pitch.
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
-    onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env,
-                        sr=sr, hop_length=hop, backtrack=False, units='frames')
-    # Ignore brief pitch flicker, but retain onset-marked repeated plucks.
-    min_gap = {'fast': .13, 'balanced': .10, 'detailed': .075}.get(accuracy, .10)
-    stable_frames = max(2, round({'fast': .09, 'balanced': .075,
-                                  'detailed': .055}.get(accuracy, .075) * sr / hop))
-    boundaries = {0}
-    for i in range(1, len(idx)):
-        if pitch_classes[i] != pitch_classes[i-1]:
-            end = min(len(idx), i + stable_frames)
-            if end-i == stable_frames and np.all(pitch_classes[i:end] == pitch_classes[i]):
-                boundaries.add(i)
-    for frame in onset_frames:
-        frame = int(frame)
-        if 0 < frame < len(idx) and gate[frame] and onset_env[min(frame, len(onset_env)-1)] > np.median(onset_env):
-            boundaries.add(frame)
-    boundaries = sorted(boundaries)
-    result = []
-    for j, start in enumerate(boundaries):
-        end = boundaries[j+1] if j+1 < len(boundaries) else len(idx)
-        if (end-start)*hop/sr < min_gap or np.mean(gate[start:end]) < .5:
+    # Start BELOW the open E so edge-bin spectral leakage does not bias
+    # E toward D#. Extend through B4 to preserve near-octave-boundary changes.
+    mag = np.abs(librosa.cqt(
+        y, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("C1"),
+        n_bins=48, bins_per_octave=12))
+    n = mag.shape[1]
+    if not n:
+        return []
+    evidence = np.zeros((12, n), dtype=np.float32)
+    for k in range(48):
+        weight = (.75 if k < 12 else 1.0 if k < 24
+                  else .80 if k < 36 else .15)
+        evidence[k % 12] += mag[k] * weight
+    sigma = max(1.0, .045 * sr / hop)
+    evidence = gaussian_filter1d(evidence, sigma=sigma, axis=1)
+    power = np.max(mag[:36], axis=0)
+    audible = power > max(float(np.percentile(power, 30)) * .24, 1e-6)
+    score = evidence / np.maximum(np.max(evidence, axis=0, keepdims=True), 1e-7)
+
+    # A twelve-state Viterbi path. Switching incurs a small fixed cost,
+    # *not* a minimum-note-length requirement. Short semitone changes can win
+    # if supported by their audio frames. No post-hoc A-B-A deletion.
+    stride = 2 if accuracy == "fast" else 1
+    frames = np.arange(0, n, stride)
+    emission = score[:, frames].T
+    active = audible[frames]
+    penalty = .14 if accuracy == "fast" else .09
+    back = np.zeros((len(frames), 12), dtype=np.int8)
+    dp = emission[0].copy()
+    for t in range(1, len(frames)):
+        if not active[t]:
+            back[t] = np.arange(12)
             continue
-        # Ignore the attack transient when estimating pitch.
-        a = min(end-1, start+max(1, int(.025*sr/hop)))
-        window = pitch_classes[a:end]
-        if not len(window):
+        transitions = np.broadcast_to(dp[:, None] - penalty, (12, 12)).copy()
+        np.fill_diagonal(transitions, dp)
+        back[t] = np.argmax(transitions, axis=0)
+        dp = transitions[back[t], np.arange(12)] + emission[t]
+    decoded = np.zeros(len(frames), dtype=np.int8)
+    decoded[-1] = np.argmax(dp)
+    for t in range(len(frames) - 1, 0, -1):
+        decoded[t - 1] = back[t, decoded[t]]
+
+    changes, previous = [], None
+    for frame, root in zip(frames, decoded):
+        if not audible[frame]:
             continue
-        counts = np.bincount(window, minlength=12)
-        note = NOTES[int(np.argmax(counts))]
-        if result and start*hop/sr-result[-1][0] < min_gap:
-            continue
-        result.append((round(start*hop/sr, 3), note))
-    return result
+        note = NOTES[int(root)]
+        if note != previous:
+            changes.append((round(float(frame * hop / sr), 3), note))
+            previous = note
+    return changes
 
 
 def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
@@ -288,25 +275,22 @@ def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
             result.append((t, note))
     return sorted(result, key=lambda x: x[0])
 
-def bass_context(bass_path, other_path, accuracy="balanced"):
-    """Bass-root-first notes, with guitar harmony as fallback during gaps.
+def bass_context(bass_path, other_path, accuracy="balanced", drums_path=None):
+    """Bass transcription is the authority for detected pitch transitions.
 
-    Bass detections are never replaced by guitar chord guesses. When no bass
-    detection is available at the beginning, the harmony root can fill it.
+    Other-stem harmonic chord roots may fall back only when the bass detector
+    returns no notes at all; beats/harmony must never veto a detected semitone.
     """
-    import bisect
     primary = bass_notes(bass_path, accuracy)
-    if not primary:
-        harmony = chords_instruments(other_path, bass_path, accuracy)
-        return [(t, chord_root(c)) for t, c in harmony]
-    # Retain bass-led riff articulation. The other stem supplies only context
-    # before the first confidently detected bass note.
-    if primary[0][0] > 0.4:
-        harmony = chords_instruments(other_path, bass_path, accuracy)
-        early = [(t, chord_root(c)) for t, c in harmony if t < primary[0][0]]
-        if early:
-            return early + primary
-    return pattern_assisted_notes(primary, bass_path, accuracy)
+    if primary:
+        return primary
+    harmony = chords_instruments(other_path, bass_path, accuracy)
+    result = []
+    for t, chord in harmony:
+        root = chord_root(chord)
+        if not result or root != result[-1][1]:
+            result.append((t, root))
+    return result
 
 
 def chord_root(name):

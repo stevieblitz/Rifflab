@@ -1,0 +1,82 @@
+name: Real RiffLab UI Screenshot
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/real-ui-screenshot.yml'
+      - 'app.py'
+      - 'realtime_audio.py'
+  workflow_dispatch:
+
+jobs:
+  screenshot:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install preview dependencies
+        run: python -m pip install -r requirements-preview.txt
+      - name: Capture running Qt application
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_LOGGING_RULES: '*.debug=false'
+        run: |
+          @'
+          import os
+          import sys
+          from pathlib import Path
+          from PySide6.QtWidgets import QApplication
+          from PySide6.QtCore import QTimer
+          from app import Window
+          app = QApplication(sys.argv)
+          window = Window()
+          window.resize(1440, 900)
+          window.show()
+          def capture():
+              app.processEvents()
+              target = Path('screenshots')
+              target.mkdir(exist_ok=True)
+              image = window.grab()
+              if image.isNull() or not image.save(str(target / 'rifflab-real-qt.png')):
+                  raise RuntimeError('Qt screenshot failed')
+              print('Captured actual Window widget:', image.size())
+              # Capture actual rendered Qt QMenu widgets, not a fabricated menu:
+              # QWidget.grab() omits separate popup surfaces on offscreen Qt.
+              # Composite grabs of the real menu widgets over the real window.
+              from PySide6.QtCore import QPoint
+              from PySide6.QtGui import QPainter
+              view = next(a.menu() for a in window.menuBar().actions()
+                          if a.text().replace('&', '') == 'View')
+              for kind in ('Workspace', 'Panels'):
+                  submenu = next(a.menu() for a in view.actions()
+                                 if a.menu() is not None and
+                                 a.text().replace('&', '') == kind)
+                  view.ensurePolished()
+                  submenu.ensurePolished()
+                  view.adjustSize()
+                  submenu.adjustSize()
+                  preview = window.grab()
+                  painter = QPainter(preview)
+                  view_pix = view.grab()
+                  submenu_pix = submenu.grab()
+                  painter.drawPixmap(QPoint(42, window.menuBar().height()), view_pix)
+                  painter.drawPixmap(QPoint(42 + view_pix.width() - 2,
+                                            window.menuBar().height() + (0 if kind == 'Workspace' else 24)),
+                                     submenu_pix)
+                  painter.end()
+                  if not preview.save(str(target / ('rifflab-view-' + kind.lower() + '.png'))):
+                      raise RuntimeError('Workspace menu screenshot failed')
+              app.quit()
+          QTimer.singleShot(2500, capture)
+          sys.exit(app.exec())
+          '@ | Set-Content -Encoding UTF8 capture_rifflab.py
+          python capture_rifflab.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rifflab-real-qt-screenshot
+          path: screenshots/*.png
+          if-no-files-found: warn
