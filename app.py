@@ -626,7 +626,7 @@ class Window(QMainWindow):
         window_icon = self.assets_dir / 'rifflab-window-icon.png'
         if window_icon.is_file():
             self.setWindowIcon(QIcon(str(window_icon)))
-        self.resize(1080, 690)
+        self.resize(1280, 800)
         self.layout_settings = QSettings('RiffLab', 'RiffLab')
         self.setMinimumSize(640, 430)
         self.setAcceptDrops(True)
@@ -697,7 +697,7 @@ class Window(QMainWindow):
         project_row = QHBoxLayout(project_header)
         project_row.setContentsMargins(8, 0, 8, 0)
         project_row.setSpacing(8)
-        project_header.setFixedHeight(42)
+        project_header.setFixedHeight(46)
         self.project_save = QPushButton('Save')
         self.project_save.setIcon(qta.icon('fa5s.save', color='#e5f4ff'))
         self.project_save.setToolTip('Save project (Ctrl+S)')
@@ -768,7 +768,7 @@ class Window(QMainWindow):
         self.tabs.setTabIcon(0, qta.icon('fa5s.play-circle', color='#7bd6ff'))
         self.tabs.setTabIcon(1, qta.icon('fa5s.book', color='#9bb7cb'))
         self.tabs.setTabIcon(2, qta.icon('fa5s.exchange-alt', color='#9bb7cb'))
-        self.tabs.setTabToolTip(0, 'Chord Grid / Play')
+        self.tabs.setTabToolTip(0, 'Note Timeline / Playback')
         self.tabs.setCurrentIndex(0)
         self.tabs.tabBar().setObjectName('mainTabBar')
         # Project controls have fixed widths, leaving the right-hand tabs visible.
@@ -1319,7 +1319,7 @@ class Window(QMainWindow):
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
-        self.grid_zoom.setFixedWidth(160)
+        self.grid_zoom.setFixedWidth(184)
         self.grid_zoom.setToolTip('Adjust note-block width by dragging or scrolling')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
@@ -1341,7 +1341,7 @@ class Window(QMainWindow):
         self.grid_row_height = QSlider(Qt.Vertical)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
-        self.grid_row_height.setFixedHeight(160)
+        self.grid_row_height.setFixedHeight(180)
         self.grid_row_height.setFixedWidth(26)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
@@ -1502,9 +1502,12 @@ class Window(QMainWindow):
         # Move the original tuner widget to its own page, without recreating controls.
         self.tuner_dialog.setWindowFlags(Qt.Widget)
         self.tuner_dialog.setMinimumWidth(0)
-        self.tabs.addTab(self.tuner_dialog, 'TUNER')
+        self.tabs.addTab(self.tuner_dialog, '')
+        tuner_index = self.tabs.indexOf(self.tuner_dialog)
+        self.tabs.setTabIcon(tuner_index, self.tuning_fork_icon())
+        self.tabs.setTabToolTip(tuner_index, 'Chromatic Tuner')
         layout = tuner_layout
-        layout.addWidget(QLabel('CHROMATIC TUNER  /  LINE 6 / WINDOWS INPUT'))
+        layout.addWidget(QLabel('CHROMATIC TUNER  /  AUDIO INPUT'))
         tuner_row = QHBoxLayout()
         self.devices = QComboBox()
         tuner_row.addWidget(self.devices, 1)
@@ -1612,7 +1615,7 @@ class Window(QMainWindow):
         outer.addWidget(self.progress)
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
-          QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:12px}
+          QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
           QLabel#makerCredit{font-size:10px;color:#71889b;background:transparent;padding-right:3px}
           ScrollingSongTitle#nowPlayingTitle{background:transparent;border:none}
           QWidget#projectHeader{background:#111923;border:none}
