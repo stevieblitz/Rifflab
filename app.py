@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush
 
-from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF
+from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF, QEvent
 import qtawesome as qta
 from PySide6.QtSvg import QSvgRenderer
 from realtime_audio import LiveStemPlayer
@@ -1115,6 +1115,7 @@ class Window(QMainWindow):
         layout.addLayout(controls, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
+        self.stem_panel = stem_panel
         stem_panel.setObjectName('playStemPanel')
         stem_panel.setMinimumWidth(165)
         stem_panel.setMaximumWidth(390)
@@ -1215,6 +1216,19 @@ class Window(QMainWindow):
             self.volume_labels[stem] = amount
             panel.addWidget(channel)
         panel.addStretch(0)
+        self.mixer_overlay = QWidget(stem_panel)
+        self.mixer_overlay.setStyleSheet('QWidget {background:rgba(18,27,38,185);border-radius:5px;}'
+                                          'QPushButton {background:#245c83;color:white;padding:12px;'
+                                          'border:1px solid #7bd6ff;border-radius:5px;font-weight:700;}')
+        overlay_layout = QVBoxLayout(self.mixer_overlay)
+        overlay_layout.addSpacing(75)
+        self.generate_stems = QPushButton('Generate Stems')
+        self.generate_stems.clicked.connect(self.generate_stems_now)
+        overlay_layout.addWidget(self.generate_stems)
+        overlay_layout.addWidget(QLabel('Separate audio to enable the mixer'))
+        overlay_layout.addStretch()
+        stem_panel.installEventFilter(self)
+        self.mixer_overlay.setGeometry(stem_panel.rect())
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
@@ -1240,8 +1254,10 @@ class Window(QMainWindow):
         self.tuner_dialog.setMinimumWidth(0)
         self.tuner_dialog.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         tuner_layout.setContentsMargins(6, 8, 6, 8)
-        mixer_holder_layout.addWidget(self.tuner_dialog, 0)
-        self.tuner_dialog.show()
+        # Tuner has its own tab; nothing docked below the stem mixer.
+        self.tuner_dialog.setWindowFlags(Qt.Widget)
+        self.tuner_dialog.setMinimumWidth(0)
+        self.tabs.addTab(self.tuner_dialog, 'TUNER')
         self.play_splitter.insertWidget(0, mixer_holder)
         self.play_splitter.setStretchFactor(0, 0)
         self.play_splitter.setStretchFactor(1, 1)
@@ -1292,6 +1308,10 @@ class Window(QMainWindow):
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
         footer.addWidget(self.status, 1)
+        self.stems_indicator = QLabel('●  STEMS OFF')
+        self.stems_indicator.setMinimumWidth(116)
+        footer.addWidget(self.stems_indicator)
+        self.update_stems_status()
         self.maker_credit = QLabel(
             'by <a href="https://github.com/stevieblitz/Rifflab" '
             'style="color:#7bd6ff;text-decoration:none;">Stevie Blitz</a>, powered by AI'
@@ -1317,7 +1337,8 @@ class Window(QMainWindow):
         tuner_corner_layout.setContentsMargins(0, 0, 3, 0)
         tuner_corner_layout.setSpacing(0)
         tuner_corner_layout.addWidget(self.tuner_quick_button)
-        self.tabs.setCornerWidget(tuner_corner, Qt.TopRightCorner)
+        # Dedicated tuner tab replaces the small floating tuner launcher.
+        self.tuner_quick_button.hide()
         outer.addLayout(footer)
         outer.addWidget(self.progress)
         self.setStyleSheet('''
@@ -1439,6 +1460,7 @@ class Window(QMainWindow):
         tuner_action.setChecked(False)
         tuner_action.toggled.connect(self.set_tuner_window_visible)
         self.tuner_view_action = tuner_action
+        self.tabs.currentChanged.connect(lambda _index: self._sync_tuner_menu())
         view_menu.addSeparator()
         workspace_menu = view_menu.addMenu('Workspace')
         workspace_menu.addAction('Save Workspace…', self.save_workspace_file)
@@ -1493,13 +1515,17 @@ class Window(QMainWindow):
                 self.play_splitter.setSizes([270, max(350, sum(sizes) - 270)])
         self.persist_workspace_preferences()
 
+    def _sync_tuner_menu(self):
+        checked = self.tabs.currentWidget() is self.tuner_dialog
+        self.tuner_view_action.blockSignals(True)
+        self.tuner_view_action.setChecked(checked)
+        self.tuner_view_action.blockSignals(False)
+
     def set_tuner_window_visible(self, visible):
         if visible:
-            self.tuner_dialog.show()
-            self.tuner_dialog.raise_()
-        else:
-            self.tuner_dialog.hide()
-        self.persist_workspace_preferences()
+            self.tabs.setCurrentWidget(self.tuner_dialog)
+        elif self.tabs.currentWidget() is self.tuner_dialog:
+            self.tabs.setCurrentIndex(0)
 
     def workspace_snapshot(self):
         return {
@@ -1579,11 +1605,7 @@ class Window(QMainWindow):
         self.status_message('Workspace reset.')
 
     def toggle_tuner_panel(self):
-        if self.tuner_dialog.isVisible():
-            self.tuner_dialog.hide()
-        else:
-            self.tuner_dialog.show()
-            self.tuner_dialog.raise_()
+        self.tabs.setCurrentWidget(self.tuner_dialog)
             self.tuner_dialog.activateWindow()
 
     def status_message(self, message):
@@ -2052,6 +2074,7 @@ class Window(QMainWindow):
             self.source_audio = None
             self.folder = folder
             self.stems = {name: folder / f'{name}.wav' for name in STEMS}
+            self.update_stems_status()
             self.load_waveform(self.stems)
             self.chord_data = []
             self.display_chords = []
@@ -2143,8 +2166,42 @@ class Window(QMainWindow):
             self.player.setPosition(pos)
         # Projects restore paused; the user decides when to resume.
 
+    def update_stems_status(self):
+        if not hasattr(self, 'stems_indicator'):
+            return
+        ready = bool(self.stems) and all(Path(self.stems[name]).is_file() for name in STEMS if name in self.stems) and len(self.stems) == len(STEMS)
+        building = bool(getattr(self, '_making_stems', False) and self.processing)
+        if ready:
+            label, color = '●  STEMS READY', '#6ccc9b'
+        elif building:
+            label, color = '●  CREATING', '#e6b36b'
+        else:
+            label, color = '●  STEMS OFF', '#8b9aab'
+        self.stems_indicator.setText(label)
+        self.stems_indicator.setStyleSheet(f'color:{color};font-weight:700;background:transparent;')
+        self.mixer_overlay.setVisible(not ready)
+        if not ready:
+            self.mixer_overlay.raise_()
+        self.generate_stems.setEnabled(not self.processing and self.source_audio is not None
+                                       and Path(self.source_audio).is_file())
+        self.generate_stems.setText('Generating Stems…' if building else 'Generate Stems')
+
+    def generate_stems_now(self):
+        if self.processing or self.stems or not self.source_audio:
+            return
+        if Path(self.source_audio).is_file():
+            self.start_split(Path(self.source_audio))
+
+    def eventFilter(self, watched, event):
+        if hasattr(self, 'mixer_overlay') and watched is self.stem_panel and event.type() == QEvent.Resize:
+            self.mixer_overlay.setGeometry(self.stem_panel.rect())
+            self.mixer_overlay.raise_()
+        return super().eventFilter(watched, event)
+
     def set_busy(self, busy):
         self.processing = busy
+        if hasattr(self, 'stems_indicator'):
+            self.update_stems_status()
         self.load_url.setEnabled(not busy)
         self.load_file.setEnabled(not busy)
         self.progress.setRange(0, 0 if busy else 1)
@@ -2152,6 +2209,7 @@ class Window(QMainWindow):
             self.progress.setValue(1)
 
     def on_error(self, message):
+        self._making_stems = False
         self.set_busy(False)
         self.mixing = False
         self.status_message('Error — see details and rifflab-errors.log')
@@ -2234,6 +2292,7 @@ class Window(QMainWindow):
         self.project_file = None
         self.stems = {}
         self.folder = None
+        self.update_stems_status()
         self.chord_data = []
         self.display_chords = []
         self.display_times = []
@@ -2260,6 +2319,7 @@ class Window(QMainWindow):
         self.export.setEnabled(False)
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
+        self.update_stems_status()
 
     def reanalyze_current(self):
         if self.analysis_running:
@@ -2422,6 +2482,7 @@ class Window(QMainWindow):
     def start_split(self, path):
         if self.processing:
             return
+        self._making_stems = True
         self.set_busy(True)
         threading.Thread(target=self._split_safe, args=(path,), daemon=True).start()
 
@@ -2448,6 +2509,8 @@ class Window(QMainWindow):
         self.source_audio = None
         self.beat_times = []
         self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
+        self._making_stems = False
+        self.update_stems_status()
         self.load_waveform(self.stems)
         self.chord_data = []
         self.chord_times = []
@@ -2462,6 +2525,7 @@ class Window(QMainWindow):
         for slider in self.volumes.values():
             slider.setEnabled(True)
         self.set_busy(False)
+        self.update_stems_status()
         self.split_local.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.clear_loop()
