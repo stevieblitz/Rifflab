@@ -2151,8 +2151,7 @@ class Window(QMainWindow):
         self.accuracy.setCurrentIndex(max(0, min(2, int(data.get('accuracy', 1)))))
         self.sensitivity.setValue(int(data.get('stability', 2)))
         self.transpose.setValue(int(data.get('transpose', 0)))
-        self.grid_zoom.setValue(int(data.get('zoom', 100)))
-        self.grid_row_height.setValue(int(data.get('row_height', 38)))
+        # Workstation zoom preferences survive loading and re-analysis.
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
         self.follow.setChecked(bool(data.get('auto_scroll', True)))
         self.chord_data = data.get('chord_data', [])
@@ -2456,9 +2455,13 @@ class Window(QMainWindow):
     def _reanalyze_stems(self):
         try:
             self._analyze_mode(force=True)
-            beats = json.loads(worker_command('beats', str(self.stems['drums'])))
+            beats = json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
             (self.folder / 'beats_drums_v2.json').write_text(json.dumps(beats), encoding='utf-8')
-            self.signals.beats.emit(beats)
+            if not self.analysis_cancel.is_set():
+                if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
             self.signals.error.emit(f'Re-analysis failed: {exc}')
             self._log_exception()
@@ -2481,12 +2484,15 @@ class Window(QMainWindow):
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
             chords_file = cache / f"{'bass_notes_v3' if bass_mode else 'chords_v2'}_{self.accuracy.currentText().lower()}.json"
-            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path)))
+            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
             if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
-            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self.accuracy.currentText().lower()))
+            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self.accuracy.currentText().lower(), cancel_event=self.analysis_cancel))
             if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
-            self.signals.beats.emit(beats)
-            self.signals.chords.emit(chords)
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+                self.signals.chords.emit(chords)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
             self.signals.error.emit(f'Analysis failed: {exc}\nDetails: {ROOT / "rifflab-errors.log"}')
             self._log_exception()
@@ -2586,6 +2592,8 @@ class Window(QMainWindow):
             self.status_message(f'Cannot switch playback speed: {exc}')
 
     def on_beats(self, data):
+        if self.analysis_cancel.is_set():
+            return
         self.beat_times = [float(t) for t in data.get('beats', [])]
         bpm = round(float(data.get('bpm', 130)))
         self.grid_bpm.blockSignals(True)
@@ -2671,17 +2679,24 @@ class Window(QMainWindow):
             button.blockSignals(False)
 
     def switch_analysis_mode(self, _index=None):
-        # Clear stale harmony labels immediately when switching to Bass Mode.
-        self.rebuild_chords()
-        if not self.stems or not self.folder:
-            if self.source_audio and self.source_audio.is_file():
-                self.set_chord_loading(True)
-                threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+        if self.analysis_running:
+            self.status_message('Stop de huidige analyse voordat je van modus wisselt.')
             return
-        # Change the display without separating stems again.
+        if not self.stems and not self.source_audio:
+            self.rebuild_chords()
+            return
+        self._start_analysis_ui()
         self.set_chord_loading(True, 'Analyzing selected mode…')
-        self.status_message('Switching analysis mode…')
-        threading.Thread(target=self._analyze_mode, daemon=True).start()
+        if self.stems and self.folder:
+            threading.Thread(target=self._switch_analysis_mode_worker, daemon=True).start()
+        elif self.source_audio and self.source_audio.is_file():
+            threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+
+    def _switch_analysis_mode_worker(self):
+        try:
+            self._analyze_mode()
+        finally:
+            self.signals.analysis_done.emit()
 
     def _analyze_mode(self, force=False):
         try:
@@ -2694,9 +2709,12 @@ class Window(QMainWindow):
             if cache.exists() and not force:
                 result = json.loads(cache.read_text(encoding='utf-8'))
             else:
-                result = json.loads(worker_command(task, *paths))
+                result = json.loads(worker_command(task, *paths, cancel_event=self.analysis_cancel))
                 cache.write_text(json.dumps(result), encoding='utf-8')
-            self.signals.chords.emit(result)
+            if not self.analysis_cancel.is_set():
+                self.signals.chords.emit(result)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
             self.signals.status.emit(f'Analysis failed: {exc}')
             self._log_exception()
@@ -2707,10 +2725,12 @@ class Window(QMainWindow):
             self._analyze_mode()
             # Drums are used for beat detection, not for chord recognition.
             beats_cache = self.folder / 'beats_drums_v2.json'
-            beats = json.loads(beats_cache.read_text(encoding='utf-8')) if beats_cache.exists() else json.loads(worker_command('beats', str(self.stems['drums'])))
+            beats = json.loads(beats_cache.read_text(encoding='utf-8')) if beats_cache.exists() else json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
             if not beats_cache.exists():
                 beats_cache.write_text(json.dumps(beats), encoding='utf-8')
             self.signals.beats.emit(beats)
+        except AnalysisCancelled:
+            pass
         except Exception as exc:
             self.signals.error.emit(f'Chord analysis failed: {exc}')
             self._log_exception()
@@ -2766,6 +2786,8 @@ class Window(QMainWindow):
 
     def on_chords(self, chords):
         self.set_chord_loading(False)
+        if self.analysis_cancel.is_set():
+            return
         self.chord_data = chords
         self.chord_times = [float(item[0]) for item in chords]
         self.rebuild_chords()
