@@ -560,7 +560,7 @@ class TunerMeter(QWidget):
         self.cents = 0.0
         self.signal_active = False
         self.setMinimumHeight(76)
-        self.setToolTip('Afwijking in cents: links te laag, rechts te hoog; midden is zuiver.')
+        self.setToolTip('Pitch deviation in cents: left is flat, right is sharp; center is in tune.')
 
     def set_reading(self, cents, active=True):
         self.cents = max(-50.0, min(50.0, float(cents)))
@@ -946,6 +946,7 @@ class Window(QMainWindow):
         self.analyze_local.setEnabled(False)
         self.analyze_local.clicked.connect(self.analyze_current)
         self.analyze_local.setIcon(qta.icon('fa5s.wave-square', color='white'))
+        self.analyze_local.hide()  # One shared Analyze / Stop control lives on PLAY
         local_row.addWidget(self.analyze_local)
         local_row.addStretch()
         import_layout.addLayout(local_row)
@@ -1274,6 +1275,7 @@ class Window(QMainWindow):
         self.chord_loading_stop = QPushButton('■ Stop Analyze')
         self.chord_loading_stop.setFixedWidth(165)
         self.chord_loading_stop.clicked.connect(self.stop_analysis)
+        self.chord_loading_stop.hide()  # Analyze/Stop lives in the main toolbar
         loading_layout.addWidget(self.chord_loading_stop, alignment=Qt.AlignHCenter)
         self.chord_loading.hide()
         self.chord_scroll.viewport().installEventFilter(self)
@@ -1568,6 +1570,9 @@ class Window(QMainWindow):
         layout.addWidget(QLabel('CHROMATIC TUNER  /  LINE 6 / WINDOWS INPUT'))
         tuner_row = QHBoxLayout()
         self.devices = QComboBox()
+        self.devices.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.devices.setMinimumContentsLength(16)
+        self.devices.setToolTip('Audio input device; open list for full name')
         tuner_row.addWidget(self.devices, 1)
         self.device_refresh = QPushButton('Refresh Inputs')
         self.device_refresh.setIcon(qta.icon('fa5s.sync-alt', color='white'))
@@ -1582,9 +1587,8 @@ class Window(QMainWindow):
         tuning_row = QHBoxLayout()
         self.tuner_preset = QComboBox()
         self.tuner_preset.addItems([
-            'Chromatic · free', 'Guitar · E Standard', 'Guitar · Eb / half step',
-            'Guitar · D Standard', 'Guitar · Drop D', 'Guitar · Drop C#',
-            'Bass · E Standard', 'Bass · Eb / half step', 'Bass · D Standard',
+            'Chromatic', 'Guitar E', 'Guitar Eb', 'Guitar D',
+            'Drop D', 'Drop C#', 'Bass E', 'Bass Eb', 'Bass D',
         ])
         self.tuner_preset.setToolTip(
             'Choose the instrument tuning and check each string against its target frequency and cent meter.')
@@ -1595,6 +1599,7 @@ class Window(QMainWindow):
         tuning_row.addWidget(self.tuner_preset, 2)
         self.tuner_string = QComboBox()
         self.tuner_string.setToolTip('Choose a string to tune against its reference frequency.')
+        self.tuner_string.setMinimumWidth(88)
         self.tuner_string.currentIndexChanged.connect(self.refresh_tuner_target)
         tuning_row.addWidget(self.tuner_string, 1)
         layout.addLayout(tuning_row)
@@ -2356,7 +2361,7 @@ class Window(QMainWindow):
         self.chord_loading_label.setText(message)
         self.chord_loading.setVisible(bool(loading))
         if hasattr(self, 'chord_loading_stop'):
-            self.chord_loading_stop.setVisible(bool(loading and self.analysis_running))
+            self.chord_loading_stop.hide()
         if loading:
             self.chord_loading.raise_()
 
@@ -2403,7 +2408,7 @@ class Window(QMainWindow):
             self.set_chord_loading(False)
         for widget in (self.load_url, self.load_file, self.project_save,
                        self.project_load, self.recent_projects, self.split_local,
-                       self.analyze_local, self.reanalyze_button):
+                       self.analyze_local):
             widget.setEnabled(not busy)
         if busy:
             self.progress.setRange(0, 0)
@@ -2414,8 +2419,9 @@ class Window(QMainWindow):
             self.progress.setFormat('Ready')
             self.split_local.setEnabled(self.source_audio is not None)
             self.analyze_local.setEnabled(self.source_audio is not None)
-            self.reanalyze_button.setEnabled(True)
-        self.reanalyze_button.setText('Re-analyze' if (self.stems or self.source_audio) else 'Analyze')
+        self.reanalyze_button.setEnabled(True)
+        if not self.analysis_running:
+            self.reanalyze_button.setText('Re-analyze' if (self.stems or self.source_audio) else 'Analyze')
 
     def on_error(self, message):
         self.analysis_running = False
@@ -2659,7 +2665,7 @@ class Window(QMainWindow):
         self.reanalyze_button.setText('■ Stop')
         self.reanalyze_button.setEnabled(True)
         self.chord_loading_stop.setEnabled(True)
-        self.chord_loading_stop.show()
+        self.chord_loading_stop.hide()
 
     def toggle_analysis(self):
         if self.analysis_running:
