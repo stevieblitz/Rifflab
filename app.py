@@ -25,7 +25,7 @@ from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
 )
 
 def loop_boundary_icon(which):
@@ -629,6 +629,7 @@ class Window(QMainWindow):
         self.resize(1080, 690)
         self.layout_settings = QSettings('RiffLab', 'RiffLab')
         self.setMinimumSize(640, 430)
+        self.setAcceptDrops(True)
         self.signals = Signals()
         self.signals.status.connect(self.status_message)
         self.signals.stage.connect(self.set_stage)
@@ -688,6 +689,7 @@ class Window(QMainWindow):
         self.init_library()
 
         main = QWidget()
+        main.setAcceptDrops(True)
         self.setCentralWidget(main)
         outer = QVBoxLayout(main)
         layout = outer
@@ -731,6 +733,12 @@ class Window(QMainWindow):
             ('O', lambda: self._shortcut_marker('b')),
             ('Ctrl+S', self.save_project), ('Ctrl+O', self.open_project),
             ('Ctrl+V', self.paste_youtube_link),
+            ('Ctrl+1', lambda: self.tabs.setCurrentIndex(0)),
+            ('Ctrl+2', lambda: self.tabs.setCurrentIndex(1)),
+            ('Ctrl+3', lambda: self.tabs.setCurrentIndex(2)),
+            ('Ctrl+Shift+O', self.open_file),
+            ('Ctrl+Shift+T', self.toggle_tuner_panel),
+            ('Ctrl+R', self.reanalyze_current),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.setContext(Qt.WindowShortcut)
@@ -833,6 +841,17 @@ class Window(QMainWindow):
         self.library_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.library_table.doubleClicked.connect(self.open_library_song)
+        self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
+        for sequence, callback in (
+            ('Return', self.open_library_song), ('Enter', self.open_library_song),
+            ('F2', self.edit_library_song), ('Delete', self.remove_library_song),
+            ('Ctrl+D', self.toggle_library_favorite),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self.library_table)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(callback)
+            self.shortcuts.append(shortcut)
         library_layout.addWidget(self.library_table, 1)
         self.library_summary = QLabel('Double-click a song to open its saved project.')
         self.library_summary.setObjectName('ioDescription')
@@ -1801,6 +1820,36 @@ class Window(QMainWindow):
         self.library_summary.setText(
             f'{len(rows)} songs  ·  Double-click to open a project  ·  Edit Details to set artist and tuning')
 
+    def show_library_context_menu(self, pos):
+        """Right-click actions for the song actually under the cursor."""
+        item = self.library_table.itemAt(pos)
+        if item is None:
+            return
+        self.library_table.selectRow(item.row())
+        path = self.selected_library_path()
+        if not path:
+            return
+        menu = QMenu(self.library_table)
+        open_action = menu.addAction('Open project')
+        details_action = menu.addAction('Edit song details')
+        favorite_action = menu.addAction('Toggle favorite')
+        menu.addSeparator()
+        copy_action = menu.addAction('Copy project path')
+        menu.addSeparator()
+        remove_action = menu.addAction('Remove from Library')
+        selected = menu.exec(self.library_table.viewport().mapToGlobal(pos))
+        if selected == open_action:
+            self.open_library_song()
+        elif selected == details_action:
+            self.edit_library_song()
+        elif selected == favorite_action:
+            self.toggle_library_favorite()
+        elif selected == copy_action:
+            QApplication.clipboard().setText(path)
+            self.status_message('Project path copied.')
+        elif selected == remove_action:
+            self.remove_library_song()
+
     def selected_library_path(self):
         row = self.library_table.currentRow()
         if row < 0:
@@ -2278,6 +2327,54 @@ class Window(QMainWindow):
         self.mixing = False
         self.status_message('Error — see details and rifflab-errors.log')
         QMessageBox.warning(self, 'RiffLab', message)
+
+    @staticmethod
+    def _supported_audio_path(path):
+        path = Path(path)
+        return path.is_file() and path.suffix.lower() in (
+            '.mp3', '.wav', '.flac', '.m4a', '.ogg')
+
+    def _drop_candidate(self, event):
+        data = event.mimeData()
+        if not data.hasUrls():
+            return None
+        for url in data.urls():
+            if not url.isLocalFile():
+                continue
+            path = Path(url.toLocalFile())
+            if self._supported_audio_path(path):
+                return path
+            if path.is_file() and path.suffix.lower() == '.riff':
+                return path
+        return None
+
+    def dragEnterEvent(self, event):
+        if self._drop_candidate(event):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if self._drop_candidate(event):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        candidate = self._drop_candidate(event)
+        if candidate is None:
+            event.ignore()
+            return
+        if self.processing or self.analysis_running:
+            self.status_message('Finish or stop the current analysis before importing.')
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        if candidate.suffix.lower() == '.riff':
+            self.load_project(candidate)
+        else:
+            self.tabs.setCurrentIndex(0)
+            self.load_local(candidate.resolve())
 
     def open_file(self):
         if self.processing:
