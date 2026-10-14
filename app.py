@@ -2706,10 +2706,9 @@ class Window(QMainWindow):
         self.export.setEnabled(False)
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
-        self.set_busy(True)
-        self.set_stage('1/1 · Analyzing imported audio…')
-        self._start_analysis_ui()
-        threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+        # Always separate first. Never analyze full-mix transients or vocals.
+        self.set_stage('1/3 · Preparing stem separation…')
+        self.start_split(self.source_audio)
 
     def stop_analysis(self):
         """Ask the running worker to exit; its completion unlocks the UI."""
@@ -2993,7 +2992,7 @@ class Window(QMainWindow):
         self.grid_bpm.blockSignals(True)
         self.grid_bpm.setValue(130)
         self.grid_bpm.blockSignals(False)
-        self.status_message('Stems ready — bass tracking enabled; switch to Chord Mode for harmony.')
+        self.status_message('Stems ready — Bass Mode analyzes the isolated bass stem only.')
         self.start_live()
         self._start_analysis_ui()
         threading.Thread(target=self._analyze, daemon=True).start()
@@ -3017,7 +3016,10 @@ class Window(QMainWindow):
         if self.stems and self.folder:
             threading.Thread(target=self._switch_analysis_mode_worker, daemon=True).start()
         elif self.source_audio and self.source_audio.is_file():
-            threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+            self.set_chord_loading(False)
+            self.analysis_running = False
+            self.status_message('Generate stems before analyzing notes.')
+            self.start_split(self.source_audio)
 
     def _switch_analysis_mode_worker(self):
         try:
@@ -3028,8 +3030,8 @@ class Window(QMainWindow):
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_context_v8_{self._accuracy_key()}.json'
-                task, paths = 'bass_context', [str(self.stems['bass']), str(self.stems['other']), self._accuracy_key(), str(self.stems['drums'])]
+                cache = self.folder / f'bass_stem_only_v1_{self._accuracy_key()}.json'
+                task, paths = 'bass_notes', [str(self.stems['bass']), self._accuracy_key()]
             else:
                 cache = self.folder / f'chords_instruments_v5_{self._accuracy_key()}.json'
                 task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self._accuracy_key()]
