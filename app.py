@@ -4119,6 +4119,87 @@ class Window(QMainWindow):
         self.play.setToolTip('Pause' if playing else 'Play')
         self.play.setIcon(qta.icon('fa5s.pause' if playing else 'fa5s.play', color='white'))
 
+    def set_workspace_panel(self, name, shown):
+        panel = self._workspace_panels.get(name)
+        if panel is not None:
+            panel.setVisible(bool(shown))
+            self.layout_settings.setValue('workspace_panel_' + name.replace(' ', '_'), bool(shown))
+
+    def _restore_workspace_preferences(self):
+        for name, action in self._workspace_actions.items():
+            stored = self.layout_settings.value('workspace_panel_' + name.replace(' ', '_'), True)
+            visible = str(stored).lower() not in ('false', '0', 'no')
+            action.setChecked(visible)
+            self.set_workspace_panel(name, visible)
+
+    def _workspace_state(self):
+        return {
+            'version': 1,
+            'panels': {name: action.isChecked() for name, action in self._workspace_actions.items()},
+            'grid_zoom': self.grid_zoom.value(),
+            'row_height': self.grid_row_height.value(),
+            'waveform_zoom': self.waveform.zoom,
+            'play_splitter': self.play_splitter.sizes(),
+            'export_splitter': self.export_splitter.sizes(),
+        }
+
+    def apply_workspace(self, data):
+        for name, shown in data.get('panels', {}).items():
+            if name in self._workspace_actions:
+                self._workspace_actions[name].setChecked(bool(shown))
+        self.grid_zoom.setValue(max(65, min(200, int(data.get('grid_zoom', 100)))))
+        self.grid_row_height.setValue(max(24, min(96, int(data.get('row_height', 38)))))
+        self.waveform.set_zoom(float(data.get('waveform_zoom', 1.0)))
+        self.layout_settings.setValue('waveform_zoom', self.waveform.zoom)
+        for splitter, key in ((self.play_splitter, 'play_splitter'),
+                              (self.export_splitter, 'export_splitter')):
+            values = data.get(key)
+            if isinstance(values, list) and len(values) == splitter.count():
+                splitter.setSizes([max(10, int(value)) for value in values])
+
+    def save_workspace_as(self):
+        directory = ROOT / 'workspaces'
+        directory.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getSaveFileName(
+            self, 'Save Workspace', str(directory / 'My Workspace.json'),
+            'RiffLab Workspace (*.json)')
+        if not path:
+            return
+        try:
+            destination = Path(path)
+            if destination.suffix.lower() != '.json':
+                destination = destination.with_suffix('.json')
+            destination.write_text(json.dumps(self._workspace_state(), indent=2), encoding='utf-8')
+            self.status_message('Workspace saved: ' + destination.name)
+        except OSError as exc:
+            QMessageBox.warning(self, 'Save Workspace', str(exc))
+
+    def load_workspace_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Load Workspace', str(ROOT / 'workspaces'), 'RiffLab Workspace (*.json)')
+        if not path:
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or data.get('version') != 1:
+                raise ValueError('Unsupported workspace format')
+            self.apply_workspace(data)
+            self.status_message('Workspace loaded: ' + Path(path).name)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, 'Load Workspace', str(exc))
+
+    def reset_workspace(self):
+        self.apply_workspace({
+            'panels': {name: True for name in self._workspace_panels},
+            'grid_zoom': 100, 'row_height': 38, 'waveform_zoom': 1.0,
+            'play_splitter': [205, 780], 'export_splitter': [300, 600]})
+        self.status_message('Default workspace restored.')
+
+    def change_waveform_zoom(self, direction):
+        factor = 1.5 if direction > 0 else 1 / 1.5
+        self.waveform.set_zoom(self.waveform.zoom * factor)
+        self.layout_settings.setValue('waveform_zoom', self.waveform.zoom)
+
     def restore_splitter(self, splitter, key):
         saved = self.layout_settings.value(key)
         if saved:
