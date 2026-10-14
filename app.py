@@ -789,19 +789,24 @@ class Window(QMainWindow):
         self.project_save.clicked.connect(self.save_project)
         self.project_save.setFixedWidth(92)
         project_row.addWidget(self.project_save)
+        self.project_save.hide()
         self.project_load = QPushButton('Open')
         self.project_load.setIcon(qta.icon('fa5s.folder-open', color='#e5f4ff'))
         self.project_load.setToolTip('Open a saved project (Ctrl+O)')
         self.project_load.clicked.connect(self.open_project)
         self.project_load.setFixedWidth(92)
         project_row.addWidget(self.project_load)
-        project_row.addWidget(QLabel('◷ Recent'))
+        self.project_load.hide()
+        recent_caption = QLabel('◷ Recent')
+        project_row.addWidget(recent_caption)
+        recent_caption.hide()
         self.recent_projects = QComboBox()
         self.recent_projects.setMinimumWidth(155)
         self.recent_projects.setToolTip('Quickly switch between saved songs')
         self.recent_projects.activated.connect(self.open_recent_project)
         self.recent_projects.setFixedWidth(200)
         project_row.addWidget(self.recent_projects)
+        self.recent_projects.hide()
         self.now_playing = ScrollingSongTitle()
         self.now_playing.setObjectName('nowPlayingTitle')
         self.now_playing.setFixedWidth(260)
@@ -842,6 +847,8 @@ class Window(QMainWindow):
         file_menu.addAction('Open Project…', self.open_project)
         file_menu.addAction('Import Audio…', self.open_file)
         file_menu.addAction('Save Project', self.save_project)
+        self.file_recent_menu = file_menu.addMenu('Recent Projects')
+        self.file_recent_menu.aboutToShow.connect(self.populate_file_recent)
         file_menu.addSeparator()
         file_menu.addAction('Exit', self.close)
         view_menu = self.menuBar().addMenu('View')
@@ -2313,6 +2320,22 @@ class Window(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, 'Save project', str(exc))
         return False
+
+    def populate_file_recent(self):
+        self.file_recent_menu.clear()
+        count = 0
+        for i in range(self.recent_projects.count()):
+            path = self.recent_projects.itemData(i)
+            if not path or not Path(path).is_file():
+                continue
+            label = self.recent_projects.itemText(i) or Path(path).stem
+            action = self.file_recent_menu.addAction(label)
+            action.setToolTip(str(path))
+            action.triggered.connect(lambda checked=False, value=str(path): self.load_project(value))
+            count += 1
+        if not count:
+            empty = self.file_recent_menu.addAction('No recent projects')
+            empty.setEnabled(False)
 
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open RiffLab Project',
