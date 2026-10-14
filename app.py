@@ -1200,8 +1200,8 @@ class Window(QMainWindow):
         self.chord_grid = QGridLayout(self.grid_host)
         self.chord_grid.setContentsMargins(4, 4, 4, 4)
         self.chord_grid.setHorizontalSpacing(0)
-        self.chord_grid.setVerticalSpacing(3)
-        self.chord_grid.setSpacing(3)
+        self.chord_grid.setVerticalSpacing(5)
+        self.chord_grid.setSpacing(5)
         self.chord_grid.setAlignment(Qt.AlignTop)
         self.chord_scroll.setWidget(self.grid_host)
         self.chord_loading = QWidget(self.chord_scroll.viewport())
@@ -1467,7 +1467,8 @@ class Window(QMainWindow):
             'QPushButton#generateStems{background:#276080;color:white;border:1px solid #7bd6ff;'
             'border-radius:5px;padding:12px;font-weight:700;}')
         overlay_layout = QVBoxLayout(self.mixer_overlay)
-        overlay_layout.setContentsMargins(12, 65, 12, 12)
+        overlay_layout.setContentsMargins(12, 12, 12, 12)
+        overlay_layout.addStretch(1)
         self.generate_stems_button = QPushButton('Generate Stems')
         self.generate_stems_button.setObjectName('generateStems')
         self.generate_stems_button.clicked.connect(self.generate_stems_clicked)
@@ -1609,6 +1610,7 @@ class Window(QMainWindow):
         self.tuner_quick_button.hide()
         outer.addLayout(footer)
         outer.addWidget(self.progress)
+        self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:12px}
           QLabel#makerCredit{font-size:10px;color:#71889b;background:transparent;padding-right:3px}
@@ -2463,6 +2465,8 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         self.processing = busy
+        if hasattr(self, 'progress'):
+            self.progress.setVisible(busy)
         if hasattr(self, 'stems_led'):
             self.refresh_stems_led()
         if not busy and not self.analysis_running:
@@ -3848,8 +3852,8 @@ class Window(QMainWindow):
                 measure.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 measure.setFixedHeight(16)
                 measure.setStyleSheet(
-                    'background:transparent;color:#8baec7;font-size:10px;'
-                    'border-left:2px solid #668da5;padding-left:5px;')
+                    'background:transparent;color:#a8c8dc;font-size:11px;font-weight:600;'
+                    'border-left:2px solid #8fc4e3;padding-left:7px;')
                 self.chord_grid.addWidget(measure,header_row,offset+1,1,
                                           min(4,beats-row_start-offset))
         # One real QWidget per sustained note, not sixteen separately styled
