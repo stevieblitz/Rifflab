@@ -2,14 +2,6 @@ name: Build RiffLab for Windows
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'app.py'
-      - 'ai_worker.py'
-      - 'realtime_audio.py'
-      - 'requirements-*.txt'
-      - '.github/workflows/windows-build.yml'
 
 # Keep only the latest Windows build for each branch.
 concurrency:
