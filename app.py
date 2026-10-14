@@ -1140,6 +1140,12 @@ class Window(QMainWindow):
         self.reset_mixer_button.clicked.connect(self.reset_mixer)
         mixer_header.addWidget(self.reset_mixer_button)
         panel.addLayout(mixer_header)
+        self.make_stems_button = QPushButton('Make Stems')
+        self.make_stems_button.setObjectName('makeStemsButton')
+        self.make_stems_button.setToolTip('Separate the current song into drums, bass, other and vocals')
+        self.make_stems_button.clicked.connect(self.make_stems)
+        self.make_stems_button.setEnabled(False)
+        panel.addWidget(self.make_stems_button)
         self.checks = {}
         self.solos = {}
         self.volumes = {}
@@ -1282,6 +1288,13 @@ class Window(QMainWindow):
         footer.setContentsMargins(4, 3, 4, 0)
         footer.setSpacing(10)
         footer.addWidget(self.status, 1)
+        self.stems_indicator = QLabel('●  STEMS OFF')
+        self.stems_indicator.setObjectName('stemsIndicator')
+        self.stems_indicator.setFixedWidth(126)
+        self.stems_indicator.setAlignment(Qt.AlignCenter)
+        self.stems_indicator.setToolTip('No separated stems available for the current song')
+        footer.addWidget(self.stems_indicator)
+        self.update_stems_indicator()
         self.maker_credit = QLabel(
             'by <a href="https://github.com/stevieblitz/Rifflab" '
             'style="color:#7bd6ff;text-decoration:none;">Stevie Blitz</a>, powered by AI'
@@ -2039,6 +2052,7 @@ class Window(QMainWindow):
             self.source_audio = None
             self.folder = folder
             self.stems = {name: folder / f'{name}.wav' for name in STEMS}
+            self.update_stems_indicator()
             self.load_waveform(self.stems)
             self.chord_data = []
             self.display_chords = []
@@ -2131,6 +2145,8 @@ class Window(QMainWindow):
 
     def set_busy(self, busy):
         self.processing = busy
+        if hasattr(self, 'make_stems_button'):
+            self.update_stems_indicator()
         self.load_url.setEnabled(not busy)
         self.load_file.setEnabled(not busy)
         self.progress.setRange(0, 0 if busy else 1)
@@ -2138,8 +2154,10 @@ class Window(QMainWindow):
             self.progress.setValue(1)
 
     def on_error(self, message):
+        self._creating_stems = False
         self.set_busy(False)
         self.mixing = False
+        self.update_stems_indicator()
         self.status_message('Error — see details and rifflab-errors.log')
         QMessageBox.warning(self, 'RiffLab', message)
 
@@ -2220,6 +2238,7 @@ class Window(QMainWindow):
         self.project_file = None
         self.stems = {}
         self.folder = None
+        self.update_stems_indicator()
         self.chord_data = []
         self.display_chords = []
         self.display_times = []
@@ -2246,6 +2265,7 @@ class Window(QMainWindow):
         self.export.setEnabled(False)
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
+        self.update_stems_indicator()
 
     def reanalyze_current(self):
         if self.analysis_running:
@@ -2405,9 +2425,41 @@ class Window(QMainWindow):
             except sqlite3.Error:
                 pass
 
+    def update_stems_indicator(self):
+        if not hasattr(self, 'stems_indicator'):
+            return
+        ready = bool(self.stems) and all(Path(self.stems.get(name, '')).is_file() for name in STEMS)
+        creating = bool(self.processing) and bool(getattr(self, '_creating_stems', False))
+        if ready:
+            text, color, tip = '●  STEMS READY', '#66d6a2', 'Four stems created; mixer controls are available'
+        elif creating:
+            text, color, tip = '●  CREATING', '#f3bb69', 'Separating audio into four stems…'
+        else:
+            text, color, tip = '●  STEMS OFF', '#8495a5', 'No stems yet — use Make Stems to enable the mixer'
+        self.stems_indicator.setText(text)
+        self.stems_indicator.setToolTip(tip)
+        self.stems_indicator.setStyleSheet(
+            f'color:{color};font-weight:700;font-size:11px;background:#172536;'
+            'border:1px solid #304659;border-radius:5px;padding:5px;')
+        if hasattr(self, 'make_stems_button'):
+            self.make_stems_button.setVisible(not ready)
+            self.make_stems_button.setEnabled(not self.processing and not ready and
+                                              self.source_audio is not None and Path(self.source_audio).is_file())
+            self.make_stems_button.setText('Creating Stems…' if creating else 'Make Stems')
+
+    def make_stems(self):
+        if self.processing or self.stems:
+            return
+        source = self.source_audio
+        if source is None or not Path(source).is_file():
+            self.status_message('Open an audio file before creating stems.')
+            return
+        self.start_split(Path(source))
+
     def start_split(self, path):
         if self.processing:
             return
+        self._creating_stems = True
         self.set_busy(True)
         threading.Thread(target=self._split_safe, args=(path,), daemon=True).start()
 
@@ -2429,11 +2481,13 @@ class Window(QMainWindow):
         self.signals.separated.emit(str(folder))
 
     def on_separated(self, folder):
+        self._creating_stems = False
         self.project_file = None
         self.folder = Path(folder)
         self.source_audio = None
         self.beat_times = []
         self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
+        self.update_stems_indicator()
         self.load_waveform(self.stems)
         self.chord_data = []
         self.chord_times = []
@@ -2448,6 +2502,7 @@ class Window(QMainWindow):
         for slider in self.volumes.values():
             slider.setEnabled(True)
         self.set_busy(False)
+        self.update_stems_indicator()
         self.split_local.setEnabled(False)
         self.analyze_local.setEnabled(False)
         self.clear_loop()
