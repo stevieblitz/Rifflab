@@ -3772,8 +3772,21 @@ class Window(QMainWindow):
                 f'font-size:11px;font-weight:{"700" if section_label else "400"};'
                 'text-align:left;padding:3px 6px;')
             section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
-            self.chord_grid.addWidget(section, section_row, 0)
+            self.chord_grid.addWidget(section, section_row * 2, 0, 2, 1)
             self.grid_section_buttons.append(section)
+        # Independent bar ruler: measure boundaries stay visible even when
+        # the note above/below is sustained across the bar boundary.
+        for row_start in range(0, beats, 16):
+            header_row = (row_start//16)*2
+            for offset in range(0, min(16, beats-row_start), 4):
+                measure = QLabel(f'{(row_start+offset)//4 + 1:02d}')
+                measure.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                measure.setFixedHeight(16)
+                measure.setStyleSheet(
+                    'background:transparent;color:#8baec7;font-size:10px;'
+                    'border-left:2px solid #668da5;padding-left:5px;')
+                self.chord_grid.addWidget(measure,header_row,offset+1,1,
+                                          min(4,beats-row_start-offset))
         for beat_index in range(beats):
             t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
             bar = beat_index // 4
@@ -3802,7 +3815,7 @@ class Window(QMainWindow):
             hint = (f' • repeated riff {pattern[0]} • similarity {pattern[1]:.0%}' if pattern else '')
             button.setToolTip(f'Bar {bar+1} • beat {beat+1} • {t:.1f}s{hint}')
             button.clicked.connect(lambda checked=False, seconds=t: self.seek_and_play(int(seconds*1000)))
-            self.chord_grid.addWidget(button, row, col + 1)
+            self.chord_grid.addWidget(button, row * 2 + 1, col + 1)
             self.grid_buttons.append(button)
             self.grid_cells.append((t,beat))
         self.chord_grid.setColumnStretch(0, 0)
