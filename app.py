@@ -1577,6 +1577,7 @@ class Window(QMainWindow):
         panel.addStretch(0)
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
+        self.mixer_holder = mixer_holder
         mixer_holder.setMinimumWidth(165)
         mixer_holder.setMaximumWidth(330)
         mixer_holder.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
@@ -2417,6 +2418,7 @@ class Window(QMainWindow):
         self.chord_lookahead.setValue(int(data.get('lookahead_ms', 150)))
         self.follow.setChecked(bool(data.get('auto_scroll', True)))
         self.chord_data = data.get('chord_data', [])
+        self.waveform.set_note_events(self.chord_data)
         self.chord_times = [float(item[0]) for item in self.chord_data]
         self.beat_times = [float(t) for t in data.get('beat_times', [])]
         self.rebuild_chords()
@@ -3725,6 +3727,7 @@ class Window(QMainWindow):
         self._waveform_source = key
         self.waveform.set_waveform([])
         self.waveform.set_position(0)
+        self.waveform.set_note_events([])
         def task():
             try:
                 peaks = extract_waveform_peaks(source)
@@ -4178,6 +4181,11 @@ class Window(QMainWindow):
         panel = self._workspace_panels.get(name)
         if panel is not None:
             panel.setVisible(bool(shown))
+            if name in ('Mixer', 'Tuner') and hasattr(self, 'mixer_holder'):
+                keep_sidebar = any(
+                    self._workspace_actions[n].isChecked()
+                    for n in ('Mixer', 'Tuner') if n in self._workspace_actions)
+                self.mixer_holder.setVisible(keep_sidebar)
             self.layout_settings.setValue('workspace_panel_' + name.replace(' ', '_'), bool(shown))
 
     def _restore_workspace_preferences(self):
