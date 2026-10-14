@@ -494,7 +494,7 @@ def worker_command(*args, cancel_event=None):
     else:
         worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
         if not worker.is_file():
-            raise RuntimeError(f'AI worker ontbreekt: {worker}. Bewaar de hele RiffLab map.')
+            raise RuntimeError(f'AI worker missing: {worker}. Keep the entire RiffLab folder together.')
         command_args = [str(worker), *map(str, args)]
         env = os.environ.copy()
         env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
@@ -829,9 +829,9 @@ class Window(QMainWindow):
         self.library_remove.clicked.connect(self.remove_library_song)
         library_toolbar.addWidget(self.library_remove)
         library_layout.addLayout(library_toolbar)
-        self.library_table = QTableWidget(0, 7)
+        self.library_table = QTableWidget(0, 8)
         self.library_table.setHorizontalHeaderLabels(
-            ['★', 'Song', 'Artist', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
+            ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
         self.library_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.library_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.library_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -839,6 +839,7 @@ class Window(QMainWindow):
         self.library_table.verticalHeader().hide()
         self.library_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.library_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         self.library_table.doubleClicked.connect(self.open_library_song)
         self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
@@ -1093,7 +1094,7 @@ class Window(QMainWindow):
         options.addWidget(self.reanalyze_button)
         self.cancel_analysis_button = QPushButton('Stop Analyze')
         self.cancel_analysis_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
-        self.cancel_analysis_button.setToolTip('Stop de lopende AI-analyse; laat de huidige song staan.')
+        self.cancel_analysis_button.setToolTip('Stop the running AI analysis while keeping the current song.')
         self.cancel_analysis_button.clicked.connect(self.stop_analysis)
         self.cancel_analysis_button.hide()
         options.addWidget(self.cancel_analysis_button)
@@ -1807,12 +1808,12 @@ class Window(QMainWindow):
         self.library_table.setRowCount(len(rows))
         for row_index, song in enumerate(rows):
             values = ('★' if song['favorite'] else '', song['title'], song['artist'],
-                      song['tuning'], f"{song['original_bpm']:g}",
+                      song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.UserRole, song['project_path'])
-                if col in (4, 5):
+                if col in (5, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.library_table.setItem(row_index, col, item)
         self.library_table.setSortingEnabled(False)
@@ -2151,6 +2152,8 @@ class Window(QMainWindow):
             QMessageBox.warning(self, 'Open project', f'Cannot load project:\n{exc}')
             self.refresh_recent_projects()
             return
+        if not self._confirm_unsaved_changes():
+            return
         self.speed_generation += 1  # invalidate previous tempo renders
         self.project_file = str(path)
         self.url.setText(str(data.get('youtube_url') or ''))
@@ -2177,7 +2180,7 @@ class Window(QMainWindow):
             self.analyze_local.setEnabled(False)
             self.start_live()
         else:
-            self.load_local(source)
+            self.load_local(source, check_unsaved=False)
         self._restore_project_settings(data)
         self.sync_all_export_mixer()
         self.project_file = str(path)
@@ -2408,7 +2411,7 @@ class Window(QMainWindow):
             if (candidate.is_file()
                     and candidate.suffix.lower() in ('.mp3', '.wav', '.flac', '.m4a', '.ogg')):
                 if self.processing or self.analysis_running:
-                    self.status_message('Wacht tot de huidige import of analyse stopt.')
+                    self.status_message('Wait until the current import or analysis is finished.')
                     return
                 self.tabs.setCurrentIndex(0)
                 self.load_local(candidate.resolve())
@@ -2418,7 +2421,7 @@ class Window(QMainWindow):
             self.url.setText(raw)
             self.url.setFocus()
         else:
-            self.status_message('Ctrl+V: kopieer een lokaal audiobestand of YouTube-link.')
+            self.status_message('Ctrl+V: copy a local audio file or YouTube link.')
 
     def download_url(self):
         url = self.url.text().strip()
@@ -2494,9 +2497,11 @@ class Window(QMainWindow):
         self.song_metadata = dict(metadata)
         self.update_now_playing()
 
-    def load_local(self, path):
+    def load_local(self, path, check_unsaved=True):
         """Play immediately and automatically analyze a newly imported audio file."""
-        if self.processing:
+        if self.processing or self.analysis_running:
+            return
+        if check_unsaved and not self._confirm_unsaved_changes():
             return
         self.stop_live()
         self.source_audio = Path(path)
@@ -2807,7 +2812,7 @@ class Window(QMainWindow):
 
     def switch_analysis_mode(self, _index=None):
         if self.analysis_running:
-            self.status_message('Stop de huidige analyse voordat je van modus wisselt.')
+            self.status_message('Stop the current analysis before changing modes.')
             return
         if not self.stems and not self.source_audio:
             self.rebuild_chords()
