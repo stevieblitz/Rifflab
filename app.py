@@ -798,6 +798,20 @@ class Window(QMainWindow):
         self.progress.setTextVisible(True)
         # One compact header row shared with the right-aligned navigation tabs.
         # Avoid an extra toolbar row and prevent expanding Save/Open buttons.
+        self._workspace_panels = {}
+        self._workspace_actions = {}
+        file_menu = self.menuBar().addMenu('File')
+        file_menu.addAction('Open Project…', self.open_project)
+        file_menu.addAction('Import Audio…', self.open_file)
+        file_menu.addAction('Save Project', self.save_project)
+        file_menu.addSeparator()
+        file_menu.addAction('Exit', self.close)
+        view_menu = self.menuBar().addMenu('View')
+        workspace_menu = view_menu.addMenu('Workspace')
+        workspace_menu.addAction('Save Workspace As…', self.save_workspace_as)
+        workspace_menu.addAction('Load Workspace…', self.load_workspace_dialog)
+        workspace_menu.addAction('Reset Default Layout', self.reset_workspace)
+        self.panels_menu = view_menu.addMenu('Panels')
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
         self.tabs.setCornerWidget(project_header, Qt.TopLeftCorner)
@@ -1112,10 +1126,12 @@ class Window(QMainWindow):
         self.chord.setFixedSize(100, 72)
         self._set_current_chord('—')
         waveform_row.addWidget(self.chord)
+        self._workspace_panels['Main Indicator'] = self.chord
         self.waveform = WaveformTimeline(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
         self.waveform.markerMoved.connect(self.move_loop_marker)
         waveform_row.addWidget(self.waveform, 1)
+        self._workspace_panels['Timeline'] = self.waveform
         layout.addLayout(waveform_row)
         self.next_chords = QLabel('NEXT: —')
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -1423,6 +1439,7 @@ class Window(QMainWindow):
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
+        self._workspace_panels['Mixer'] = stem_panel
         stem_panel.setMinimumWidth(165)
         stem_panel.setMaximumWidth(330)
         stem_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -1519,6 +1536,7 @@ class Window(QMainWindow):
         # Inline tuner deliberately shares the existing full tuner engine.
         mini = QWidget()
         mini.setObjectName('mixerTuner')
+        self._workspace_panels['Tuner'] = mini
         mini.setStyleSheet(
             'QWidget#mixerTuner{background:#172633;border:1px solid #304a5d;border-radius:5px}')
         mini_layout = QVBoxLayout(mini)
@@ -1556,6 +1574,13 @@ class Window(QMainWindow):
         self.mini_tuner_view = MiniTunerView()
         mini_layout.addWidget(self.mini_tuner_view)
         mixer_holder_layout.addWidget(mini, 0, Qt.AlignTop)
+        for name, panel_widget in self._workspace_panels.items():
+            action = self.panels_menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(True)
+            action.toggled.connect(lambda shown, key=name: self.set_workspace_panel(key, shown))
+            self._workspace_actions[name] = action
+        self._restore_workspace_preferences()
         mixer_holder_layout.addStretch(1)
         self.play_splitter.insertWidget(0, mixer_holder)
         self.play_splitter.setStretchFactor(0, 0)
