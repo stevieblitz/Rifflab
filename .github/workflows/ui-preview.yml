@@ -1,0 +1,80 @@
+name: RiffLab UI Preview (lightweight)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'assets/**'
+      - 'requirements-preview.txt'
+      - 'verify-ui.py'
+      - '.github/workflows/ui-preview.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rifflab-ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-preview.txt
+      - name: Install lightweight UI dependencies
+        run: python -m pip install -r requirements-preview.txt "pyinstaller>=6.10,<7"
+      - name: Check Python syntax and imports
+        shell: pwsh
+        run: |
+          python -m py_compile app.py ai_worker.py realtime_audio.py
+          python verify-ui.py
+      - name: Smoke-test GUI and capture screenshot
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          @'
+          import sys
+          from pathlib import Path
+          from PySide6.QtWidgets import QApplication
+          from PySide6.QtCore import QTimer
+          from app import Window
+          app = QApplication(sys.argv)
+          window = Window()
+          window.show()
+          app.processEvents()
+          assert window.menuBar().actions(), 'Application menubar missing'
+          assert window.findChild(type(window.tabs), 'mainTabs'), 'Main tabs missing'
+          assert Path('assets/rifflab-logo.svg').is_file(), 'Logo missing'
+          Path('preview').mkdir(exist_ok=True)
+          assert window.grab().save('preview/rifflab-ui.png'), 'Could not save UI screenshot'
+          window.close()
+          '@ | Set-Content smoke_preview.py
+          python smoke_preview.py
+      - name: Build lightweight UI executable
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name RiffLab-UI-Preview --add-data "assets/rifflab-logo.svg;assets" --collect-all qtawesome --collect-all yt_dlp app.py
+          if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
+          Compress-Archive -Path dist/RiffLab-UI-Preview/* -DestinationPath RiffLab-UI-Preview.zip -Force
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiffLab-UI-Screenshot
+          path: preview/rifflab-ui.png
+          retention-days: 14
+      - name: Upload lightweight preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiffLab-UI-Preview
+          path: RiffLab-UI-Preview.zip
+          retention-days: 14
