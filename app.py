@@ -818,7 +818,7 @@ class Window(QMainWindow):
             channel = QWidget()
             channel_layout = QVBoxLayout(channel)
             channel_layout.setContentsMargins(0, 0, 0, 0)
-            channel_layout.setSpacing(5)
+            channel_layout.setSpacing(9)
             heading = QHBoxLayout()
             stem_icon = QLabel()
             stem_icon.setPixmap(qta.icon(STEM_ICONS[stem], color='#91b6ce').pixmap(16, 16))
@@ -1107,11 +1107,11 @@ class Window(QMainWindow):
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
         stem_panel.setMinimumWidth(165)
-        stem_panel.setMaximumWidth(330)
-        stem_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        stem_panel.setMaximumWidth(390)
+        stem_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         panel = QVBoxLayout(stem_panel)
         panel.setContentsMargins(6, 4, 6, 4)
-        panel.setSpacing(9)
+        panel.setSpacing(16)
         if self.brand_asset.is_file():
             self.brand_logo = QLabel()
             self.brand_logo.setObjectName('riffLabBrand')
@@ -1208,17 +1208,34 @@ class Window(QMainWindow):
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
-        mixer_holder.setMaximumWidth(330)
+        mixer_holder.setMaximumWidth(390)
         mixer_holder.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         mixer_holder_layout = QVBoxLayout(mixer_holder)
         mixer_holder_layout.setContentsMargins(0, 0, 0, 0)
         mixer_holder_layout.setSpacing(0)
-        mixer_holder_layout.addWidget(stem_panel, 0, Qt.AlignTop)
-        mixer_holder_layout.addStretch(1)
+        # Only the mixer scrolls; the tuner remains docked to the bottom edge.
+        self.mixer_scroll = QScrollArea(mixer_holder)
+        self.mixer_scroll.setObjectName('mixerScroll')
+        self.mixer_scroll.setWidgetResizable(True)
+        self.mixer_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.mixer_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.mixer_scroll.setWidget(stem_panel)
+        self.mixer_scroll.setMinimumHeight(120)
+        mixer_holder_layout.addWidget(self.mixer_scroll, 1)
+        mixer_holder_layout.addSpacing(18)
+        # The tuner used to be a floating dialog. Dock that same functional
+        # widget below the scroll area, without duplicating its audio controls.
+        self.tuner_dialog.setWindowFlags(Qt.Widget)
+        self.tuner_dialog.setMinimumWidth(0)
+        self.tuner_dialog.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        tuner_layout.setContentsMargins(6, 8, 6, 8)
+        mixer_holder_layout.addWidget(self.tuner_dialog, 0)
+        self.tuner_dialog.show()
         self.play_splitter.insertWidget(0, mixer_holder)
         self.play_splitter.setStretchFactor(0, 0)
         self.play_splitter.setStretchFactor(1, 1)
-        self.play_splitter.setSizes([202, 780])
+        self.play_splitter.setSizes([270, 780])
         self.restore_splitter(self.play_splitter, 'play_splitter_grid_v3')
         # Mirror each control; both tabs edit the SAME live mixer state.
         self.connect_export_mixer()
@@ -1463,14 +1480,13 @@ class Window(QMainWindow):
         if visible and key == 'mixer':
             sizes = self.play_splitter.sizes()
             if sizes and sizes[0] < 100:
-                self.play_splitter.setSizes([220, max(350, sum(sizes) - 220)])
+                self.play_splitter.setSizes([270, max(350, sum(sizes) - 270)])
         self.persist_workspace_preferences()
 
     def set_tuner_window_visible(self, visible):
         if visible:
             self.tuner_dialog.show()
             self.tuner_dialog.raise_()
-            self.tuner_dialog.activateWindow()
         else:
             self.tuner_dialog.hide()
         self.persist_workspace_preferences()
@@ -1544,7 +1560,7 @@ class Window(QMainWindow):
     def reset_workspace(self):
         self.apply_workspace_snapshot({'version': 1,
             'panels': {key: True for key in self.workspace_actions},
-            'grid_zoom': 100, 'play_splitter': [220, 780], 'export_splitter': [240, 680]})
+            'grid_zoom': 100, 'play_splitter': [270, 780], 'export_splitter': [240, 680]})
         self.set_tuner_window_visible(False)
         self.tuner_view_action.setChecked(False)
         self.status_message('Workspace reset.')
