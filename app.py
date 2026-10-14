@@ -1470,6 +1470,28 @@ class Window(QMainWindow):
         self.tuner_button.clicked.connect(self.toggle_tuner)
         tuner_row.addWidget(self.tuner_button)
         layout.addLayout(tuner_row)
+        # Rocksmith-style guided tuning, alongside free chromatic mode.
+        tuning_row = QHBoxLayout()
+        self.tuner_preset = QComboBox()
+        self.tuner_preset.addItems([
+            'Chromatic · vrij', 'Guitar · E Standard', 'Guitar · Eb / half step',
+            'Guitar · D Standard', 'Guitar · Drop D', 'Guitar · Drop C#',
+            'Bass · E Standard', 'Bass · Eb / half step', 'Bass · D Standard',
+        ])
+        self.tuner_preset.setToolTip(
+            'Kies een stemming en controleer iedere snaar met de frequentie- en cent-meter.')
+        self.tuner_preset.currentIndexChanged.connect(self.refresh_tuner_strings)
+        tuning_row.addWidget(self.tuner_preset, 2)
+        self.tuner_string = QComboBox()
+        self.tuner_string.setToolTip('Kies een snaar om tegen de doelfrequentie te stemmen.')
+        self.tuner_string.currentIndexChanged.connect(self.refresh_tuner_target)
+        tuning_row.addWidget(self.tuner_string, 1)
+        layout.addLayout(tuning_row)
+        self.tuner_target = QLabel('Chromatic mode · kies een stemmingspreset voor begeleid stemmen')
+        self.tuner_target.setAlignment(Qt.AlignCenter)
+        self.tuner_target.setStyleSheet(
+            'font-size:13px;color:#a4d4f1;background:transparent;padding:4px;')
+        layout.addWidget(self.tuner_target)
         self.tuner_note = QLabel('—')
         self.tuner_note.setAlignment(Qt.AlignCenter)
         self.tuner_note.setMinimumHeight(78)
@@ -1485,6 +1507,7 @@ class Window(QMainWindow):
         self.tuner_meter = TunerMeter()
         layout.addWidget(self.tuner_meter)
         layout.addStretch(1)
+        self.refresh_tuner_strings()
         self.find_devices()
         self.tuner_timer = QTimer(self)
         self.tuner_timer.timeout.connect(self.update_tuner)
@@ -3575,6 +3598,43 @@ class Window(QMainWindow):
         except Exception as exc:
             self.devices.addItem(f'No input: {exc}',None)
 
+    def refresh_tuner_strings(self, _index=None):
+        """Per-string reference pitches (MIDI); don't guess a song's tuning."""
+        tunings = {
+            1: (40, 45, 50, 55, 59, 64),  # E A D G B E
+            2: (39, 44, 49, 54, 58, 63),  # Eb Ab Db Gb Bb Eb
+            3: (38, 43, 48, 53, 57, 62),  # D G C F A D
+            4: (38, 45, 50, 55, 59, 64),  # D A D G B E
+            5: (37, 44, 49, 54, 58, 63),  # C# G# C# F# A# D#
+            6: (28, 33, 38, 43),          # E A D G bass
+            7: (27, 32, 37, 42),
+            8: (26, 31, 36, 41),
+        }
+        self._tuning_targets = tunings.get(self.tuner_preset.currentIndex(), ())
+        self.tuner_string.blockSignals(True)
+        self.tuner_string.clear()
+        if not self._tuning_targets:
+            self.tuner_string.addItem('Alle noten', None)
+        else:
+            for index, midi in enumerate(self._tuning_targets):
+                self.tuner_string.addItem(
+                    f'{index + 1} · {NOTES[midi % 12]}{midi // 12 - 1}', midi)
+        self.tuner_string.blockSignals(False)
+        self.refresh_tuner_target()
+
+    def refresh_tuner_target(self, _index=None):
+        midi = self.tuner_string.currentData()
+        self._tuner_display_cents = None
+        if midi is None:
+            self.tuner_target.setText('Chromatic · geen vaste doelfrequentie')
+        else:
+            frequency = 440 * (2 ** ((midi - 69) / 12))
+            self.tuner_target.setText(
+                f'DOEL  {NOTES[midi % 12]}{midi // 12 - 1}  ·  {frequency:.2f} Hz'
+                '    —    stel af tot de naald op 0 staat')
+        if hasattr(self, 'tuner_meter'):
+            self.tuner_meter.set_reading(0, False)
+
     def toggle_tuner(self):
         if self.tuner_stream is not None:
             self.tuner_stream.stop()
@@ -3626,31 +3686,38 @@ class Window(QMainWindow):
     def update_tuner(self):
         if self.tuner_stream is None:
             return
-        # Faster silence reset; don't leave a stale tuning reading on screen.
-        if self.tuner_level < .006 or time.monotonic() - self.tuner_last > .45:
+        if self.tuner_level < .006 or time.monotonic()-self.tuner_last > .45:
             self.tuner_note.setText('—')
             self.tuner_details.setText('Speel één snaar · A4 = 440 Hz')
             self.tuner_meter.set_reading(0, False)
             self._tuner_display_cents = None
             return
-        freq = self.tuner_pitch
-        if freq <= 0:
+        frequency = self.tuner_pitch
+        if frequency <= 0:
             return
-        midi = round(69 + 12 * math.log2(freq / 440))
-        cents = 1200 * math.log2(freq / (440 * 2 ** ((midi - 69) / 12)))
-        if self._tuner_display_cents is None or abs(cents - self._tuner_display_cents) > 28:
+        detected = round(69 + 12 * math.log2(frequency / 440))
+        target = self.tuner_string.currentData()
+        # Guide against the selected open string rather than the closest
+        # chromatic note; this makes half-step and drop tuning usable.
+        reference = target if target is not None else detected
+        target_hz = 440 * 2 ** ((reference-69) / 12)
+        cents = 1200 * math.log2(frequency / target_hz)
+        if self._tuner_display_cents is None or abs(cents-self._tuner_display_cents) > 60:
             self._tuner_display_cents = cents
         else:
-            self._tuner_display_cents += .42 * (cents - self._tuner_display_cents)
+            self._tuner_display_cents += .42 * (cents-self._tuner_display_cents)
         smooth = self._tuner_display_cents
-        self.tuner_note.setText(f'{NOTES[midi % 12]}{midi // 12 - 1}')
+        self.tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}')
+        in_tune = abs(smooth) <= 5 and (target is None or abs(cents) <= 8)
         self.tuner_note.setStyleSheet(
             'font-size:46px;font-weight:800;'
-            f'color:{"#69e7cb" if abs(smooth) <= 5 else "#eaf7ff"};'
+            f'color:{"#69e7cb" if in_tune else "#eaf7ff"};'
             'background-color:rgba(41,76,99,95);'
             'border:1px solid rgba(150,201,229,75);border-radius:8px;')
-        self.tuner_details.setText(f'{smooth:+.1f} cents    ·    {freq:.1f} Hz'
-                                   + ('    ·    ZUIVER' if abs(smooth) <= 5 else ''))
+        direction = ('ZUIVER' if in_tune else '↑ STEM HOGER' if smooth < -5
+                     else '↓ STEM LAGER' if smooth > 5 else 'BIJNA')
+        self.tuner_details.setText(
+            f'{smooth:+.1f} cents   ·   {frequency:.2f} Hz   ·   {direction}')
         self.tuner_meter.set_reading(smooth)
 
     def stop_live(self):
