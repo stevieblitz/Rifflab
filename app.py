@@ -3629,33 +3629,32 @@ class Window(QMainWindow):
         )
 
     def apply_grid_zoom(self, zoom):
-        """Scale the flat chord timeline without altering beat interactions."""
+        """Horizontal zoom changes geometry only, never timing or pitch."""
         self.grid_zoom_label.setText(f'{zoom}%')
         scale = zoom / 100.0
-        for i, button in enumerate(self.grid_buttons):
-            button.setMinimumWidth(round(36 * scale))
+        for index,(end,button) in getattr(self,'grid_segments',{}).items():
+            button.setMinimumWidth(round(36*scale*(end-index)))
             button.setFixedHeight(self.grid_row_height.value())
             font = button.font()
             font.setPixelSize(self._grid_note_font_px())
             font.setBold(bool(button.text().strip()))
             button.setFont(font)
-            button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
-            button.setFixedHeight(self.grid_row_height.value())
+            button.setStyleSheet(self._chord_segment_style(index, self.grid_active>=index and self.grid_active<end))
         self.chord_grid.setHorizontalSpacing(0)
-        self.chord_grid.setVerticalSpacing(3)  # Keep rows tight; zoom changes cells, not gaps.
+        self.chord_grid.setVerticalSpacing(3)
 
     def apply_grid_row_height(self, height):
-        """Resize actual note blocks AND section rows, not just their font."""
+        """True vertical zoom of the continuous note bars."""
         self.grid_row_height_label.setText(str(height))
-        for i, button in enumerate(self.grid_buttons):
+        for index,(end,button) in getattr(self,'grid_segments',{}).items():
             font = button.font()
             font.setPixelSize(self._grid_note_font_px())
             button.setFont(font)
-            button.setStyleSheet(self._chord_segment_style(i, i == self.grid_active))
+            button.setStyleSheet(self._chord_segment_style(index, index<=self.grid_active<end))
             button.setFixedHeight(height)
-        for section in getattr(self, 'grid_section_buttons', ()):
-            section.setFixedHeight(height)
-        if hasattr(self, 'chord_grid'):
+        for section in getattr(self,'grid_section_buttons',()):
+            section.setFixedHeight(height+16)
+        if hasattr(self,'chord_grid'):
             self.chord_grid.invalidate()
             self.grid_host.updateGeometry()
 
