@@ -689,7 +689,6 @@ class Window(QMainWindow):
         self.init_library()
 
         main = QWidget()
-        main.setAcceptDrops(True)
         self.setCentralWidget(main)
         outer = QVBoxLayout(main)
         layout = outer
@@ -2117,8 +2116,10 @@ class Window(QMainWindow):
             self.remember_project(path)
             self.index_library_project(path, data)
             self.status_message(f'Project saved: {path.name}')
+            return True
         except OSError as exc:
             QMessageBox.warning(self, 'Save project', str(exc))
+        return False
 
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open RiffLab Project',
@@ -3908,7 +3909,75 @@ class Window(QMainWindow):
             except (TypeError, ValueError):
                 pass
 
+    def _has_unsaved_project_changes(self):
+        """Detect changed project data, not playback time or global zoom."""
+        if not self.stems and not self.source_audio:
+            return False
+        if not self.project_file or not Path(self.project_file).is_file():
+            return True
+        try:
+            data = json.loads(Path(self.project_file).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return True
+        values = {
+            'metadata': self.song_metadata,
+            'in_ms': self.loop_a_ms,
+            'out_ms': self.loop_b_ms,
+            'loop': self.loop_enabled,
+            'bpm': self.grid_bpm.value(),
+            'analysis_mode': self.analysis_mode.currentIndex(),
+            'accuracy': self.accuracy.currentIndex(),
+            'stability': self.sensitivity.value(),
+            'transpose': self.transpose.value(),
+            'lookahead_ms': self.chord_lookahead.value(),
+            'auto_scroll': self.follow.isChecked(),
+            'levels': {name: self.volumes[name].value() for name in STEMS},
+            'enabled': {name: self.checks[name].isChecked() for name in STEMS},
+            'solo': {name: self.solos[name].isChecked() for name in STEMS},
+            'section_overrides': {str(k): str(v) for k,v in self.section_overrides.items()},
+            'chord_data': [list(item) for item in self.chord_data],
+        }
+        for key, value in values.items():
+            old = data.get(key)
+            if key == 'section_overrides':
+                old = {str(k): str(v) for k,v in (old or {}).items()}
+            if old != value:
+                return True
+        return False
+
+    def _confirm_unsaved_changes(self):
+        """Save / discard / cancel, without destroying the current project."""
+        if not self._has_unsaved_project_changes():
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle('Unsaved changes')
+        box.setText('Save your project changes?')
+        box.setInformativeText(
+            'Your edits to notes, mixer, analysis settings or song details '
+            'will be lost if you discard them.')
+        box.setStandardButtons(
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        box.setDefaultButton(QMessageBox.Save)
+        answer = box.exec()
+        if answer == QMessageBox.Cancel:
+            return False
+        if answer == QMessageBox.Discard:
+            return True
+        if answer == QMessageBox.Save:
+            if self.processing or self.analysis_running:
+                QMessageBox.information(
+                    self, 'Analysis running',
+                    'Stop or finish the current analysis before saving.')
+                return False
+            return bool(self.save_project())
+        return False
+
     def closeEvent(self,event):
+        if not self._confirm_unsaved_changes():
+            event.ignore()
+            return
+
         self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
         self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
