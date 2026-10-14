@@ -1100,9 +1100,14 @@ class Window(QMainWindow):
         self.transpose.setRange(-12, 12)
         self.transpose.setValue(0)
         self.transpose.setSuffix(' st')
-        self.transpose.setToolTip('Verplaatst alleen de getoonde noten/akkoorden. Audiohoogte blijft ongewijzigd.')
+        self.transpose.setToolTip('Notation only: changes displayed notes/chords, never the audio pitch or the instrument tuning.')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
+        self.tuning_advice = QPushButton('Tuning guide  ↗')
+        self.tuning_advice.setToolTip(
+            'Open the tuner and choose a string tuning. Transpose does not retune audio.')
+        self.tuning_advice.clicked.connect(self.open_tuning_guide)
+        options.addWidget(self.tuning_advice)
         options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
         self.grid_bpm.setRange(40, 250)
@@ -1478,20 +1483,22 @@ class Window(QMainWindow):
         tuning_row = QHBoxLayout()
         self.tuner_preset = QComboBox()
         self.tuner_preset.addItems([
-            'Chromatic · vrij', 'Guitar · E Standard', 'Guitar · Eb / half step',
+            'Chromatic · free', 'Guitar · E Standard', 'Guitar · Eb / half step',
             'Guitar · D Standard', 'Guitar · Drop D', 'Guitar · Drop C#',
             'Bass · E Standard', 'Bass · Eb / half step', 'Bass · D Standard',
         ])
         self.tuner_preset.setToolTip(
-            'Kies een stemming en controleer iedere snaar met de frequentie- en cent-meter.')
+            'Choose the instrument tuning and check each string against its target frequency and cent meter.')
         self.tuner_preset.currentIndexChanged.connect(self.refresh_tuner_strings)
+        self.tuner_preset.currentIndexChanged.connect(
+            lambda index: self.layout_settings.setValue('preferred_tuning_preset', index))
         tuning_row.addWidget(self.tuner_preset, 2)
         self.tuner_string = QComboBox()
-        self.tuner_string.setToolTip('Kies een snaar om tegen de doelfrequentie te stemmen.')
+        self.tuner_string.setToolTip('Choose a string to tune against its reference frequency.')
         self.tuner_string.currentIndexChanged.connect(self.refresh_tuner_target)
         tuning_row.addWidget(self.tuner_string, 1)
         layout.addLayout(tuning_row)
-        self.tuner_target = QLabel('Chromatic mode · kies een stemmingspreset voor begeleid stemmen')
+        self.tuner_target = QLabel('Chromatic mode · select a tuning preset for guided tuning')
         self.tuner_target.setAlignment(Qt.AlignCenter)
         self.tuner_target.setStyleSheet(
             'font-size:13px;color:#a4d4f1;background:transparent;padding:4px;')
@@ -1504,13 +1511,15 @@ class Window(QMainWindow):
             'background-color:rgba(41,76,99,95);'
             'border:1px solid rgba(150,201,229,75);border-radius:8px;')
         layout.addWidget(self.tuner_note)
-        self.tuner_details = QLabel('Speel één snaar · A4 = 440 Hz')
+        self.tuner_details = QLabel('Play one string · A4 = 440 Hz')
         self.tuner_details.setAlignment(Qt.AlignCenter)
         self.tuner_details.setStyleSheet('font-size:14px;color:#aac8db;')
         layout.addWidget(self.tuner_details)
         self.tuner_meter = TunerMeter()
         layout.addWidget(self.tuner_meter)
         layout.addStretch(1)
+        saved_tuning = int(self.layout_settings.value('preferred_tuning_preset', 0))
+        self.tuner_preset.setCurrentIndex(max(0, min(8, saved_tuning)))
         self.refresh_tuner_strings()
         self.find_devices()
         self.tuner_timer = QTimer(self)
@@ -3602,6 +3611,14 @@ class Window(QMainWindow):
         except Exception as exc:
             self.devices.addItem(f'No input: {exc}',None)
 
+    def open_tuning_guide(self):
+        """Explain the difference; never auto-transpose or auto-retune."""
+        self.tuner_dialog.show()
+        self.tuner_dialog.raise_()
+        self.tuner_dialog.activateWindow()
+        self.status_message(
+            'Tuning is an instrument setup choice. Transpose only changes the displayed notation.')
+
     def refresh_tuner_strings(self, _index=None):
         """Per-string reference pitches (MIDI); don't guess a song's tuning."""
         tunings = {
@@ -3618,7 +3635,7 @@ class Window(QMainWindow):
         self.tuner_string.blockSignals(True)
         self.tuner_string.clear()
         if not self._tuning_targets:
-            self.tuner_string.addItem('Alle noten', None)
+            self.tuner_string.addItem('All notes', None)
         else:
             for index, midi in enumerate(self._tuning_targets):
                 self.tuner_string.addItem(
@@ -3630,12 +3647,12 @@ class Window(QMainWindow):
         midi = self.tuner_string.currentData()
         self._tuner_display_cents = None
         if midi is None:
-            self.tuner_target.setText('Chromatic · geen vaste doelfrequentie')
+            self.tuner_target.setText('Chromatic · no fixed target frequency')
         else:
             frequency = 440 * (2 ** ((midi - 69) / 12))
             self.tuner_target.setText(
-                f'DOEL  {NOTES[midi % 12]}{midi // 12 - 1}  ·  {frequency:.2f} Hz'
-                '    —    stel af tot de naald op 0 staat')
+                f'TARGET  {NOTES[midi % 12]}{midi // 12 - 1}  ·  {frequency:.2f} Hz'
+                '    —    tune until the needle reaches 0')
         if hasattr(self, 'tuner_meter'):
             self.tuner_meter.set_reading(0, False)
 
@@ -3647,7 +3664,7 @@ class Window(QMainWindow):
             self._tuner_display_cents = None
             self.tuner_meter.set_reading(0, False)
             self.tuner_note.setText('—')
-            self.tuner_details.setText('Tuner gestopt')
+            self.tuner_details.setText('Tuner stopped')
             self.tuner_button.setText('Start Tuner')
             return
         try:
@@ -3681,7 +3698,7 @@ class Window(QMainWindow):
             self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=4096,callback=callback)
             self.tuner_stream.start()
             self._tuner_display_cents = None
-            self.tuner_details.setText('Luistert… · A4 = 440 Hz')
+            self.tuner_details.setText('Listening… · A4 = 440 Hz')
             self.tuner_button.setText('Stop Tuner')
         except Exception as exc:
             self.tuner_stream = None
@@ -3692,7 +3709,7 @@ class Window(QMainWindow):
             return
         if self.tuner_level < .006 or time.monotonic()-self.tuner_last > .45:
             self.tuner_note.setText('—')
-            self.tuner_details.setText('Speel één snaar · A4 = 440 Hz')
+            self.tuner_details.setText('Play one string · A4 = 440 Hz')
             self.tuner_meter.set_reading(0, False)
             self._tuner_display_cents = None
             return
@@ -3718,8 +3735,8 @@ class Window(QMainWindow):
             f'color:{"#69e7cb" if in_tune else "#eaf7ff"};'
             'background-color:rgba(41,76,99,95);'
             'border:1px solid rgba(150,201,229,75);border-radius:8px;')
-        direction = ('ZUIVER' if in_tune else '↑ STEM HOGER' if smooth < -5
-                     else '↓ STEM LAGER' if smooth > 5 else 'BIJNA')
+        direction = ('IN TUNE' if in_tune else '↑ TUNE UP' if smooth < -5
+                     else '↓ TUNE DOWN' if smooth > 5 else 'ALMOST')
         self.tuner_details.setText(
             f'{smooth:+.1f} cents   ·   {frequency:.2f} Hz   ·   {direction}')
         self.tuner_meter.set_reading(smooth)
