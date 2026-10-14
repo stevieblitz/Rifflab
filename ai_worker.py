@@ -118,79 +118,72 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
 
 
 def bass_notes(path, accuracy="balanced"):
-    """Root Engine v3: preserve genuine semitone steps and repeated-root stability.
+    """Pitch-first bass transcription with continuity-aware decoding.
 
-    Track fundamentals within the bass register before collapsing octaves.
-    Earlier versions summed harmonics as competing pitch classes, smoothed
-    for 0.28 s, and discarded real E-F-E steps. Here harmonics only
-    corroborate each candidate fundamental; a short, consistent pitch
-    change is retained. One event is emitted per changed pitch class.
+    Root changes are inferred from time-local spectral evidence rather than
+    predetermined minimum durations. A legitimate one-fret transition can
+    survive even when it returns to the previous note within a beat.
     """
     import librosa
     import numpy as np
     from scipy.ndimage import gaussian_filter1d
 
     sr = 11025
-    hop = 512 if accuracy == "fast" else 256
+    hop = {"fast": 512, "balanced": 256, "detailed": 256}.get(accuracy, 256)
     y, _ = librosa.load(path, sr=sr, mono=True)
-    if len(y) < int(sr * .2):
+    if len(y) < sr // 2:
         return []
-    # Use C1 as the low guard band; E1 must not sit on the CQT boundary.
-    magnitude = np.abs(librosa.cqt(
+    # Start BELOW the open E so edge-bin spectral leakage does not bias
+    # E toward D#. Extend through B4 to preserve near-octave-boundary changes.
+    mag = np.abs(librosa.cqt(
         y, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("C1"),
-        n_bins=60, bins_per_octave=12))
-    count = magnitude.shape[1]
-    if count == 0:
+        n_bins=48, bins_per_octave=12))
+    n = mag.shape[1]
+    if not n:
         return []
+    evidence = np.zeros((12, n), dtype=np.float32)
+    for k in range(48):
+        weight = (.75 if k < 12 else 1.0 if k < 24
+                  else .80 if k < 36 else .15)
+        evidence[k % 12] += mag[k] * weight
+    sigma = max(1.0, .045 * sr / hop)
+    evidence = gaussian_filter1d(evidence, sigma=sigma, axis=1)
+    power = np.max(mag[:36], axis=0)
+    audible = power > max(float(np.percentile(power, 30)) * .24, 1e-6)
+    score = evidence / np.maximum(np.max(evidence, axis=0, keepdims=True), 1e-7)
 
-    bins = np.arange(4, 40)  # E1 through B3 candidate fundamentals
-    energy = magnitude[bins].copy()
-    # Partials corroborate THEIR own fundamental instead of becoming
-    # independent candidate notes.
-    energy += .28 * magnitude[bins + 12]
-    energy += .12 * magnitude[np.minimum(bins + 19, 59)]
-    energy *= np.where(bins < 16, 1., np.where(bins < 28, .75, .5))[:, None]
-    energy = gaussian_filter1d(
-        energy, sigma=max(.6, .04 * sr / hop), axis=1)
-    pitch_evidence = np.zeros((12, count), dtype=np.float32)
-    for pitch_class in range(12):
-        pitch_evidence[pitch_class] = np.max(
-            energy[bins % 12 == pitch_class], axis=0)
-    best = np.argmax(pitch_evidence, axis=0)
-    peaks = pitch_evidence.max(axis=0)
-    minimum_energy = max(float(np.percentile(peaks, 25)) * .18, 1e-7)
-
-    # 120 ms confirmation suppresses isolated pick transients without
-    # suppressing ordinary 200-350 ms one-fret bass steps.
-    confirmation = max(2, int(.12 * sr / hop))
-    current, candidate, candidate_start = None, None, 0
-    decoded = []
-    for frame, pitch in enumerate(best):
-        if peaks[frame] < minimum_energy:
-            decoded.append(current)
+    # A twelve-state Viterbi path. Switching incurs a small fixed cost,
+    # *not* a minimum-note-length requirement. Short semitone changes can win
+    # if supported by their audio frames. No post-hoc A-B-A deletion.
+    stride = 2 if accuracy == "fast" else 1
+    frames = np.arange(0, n, stride)
+    emission = score[:, frames].T
+    active = audible[frames]
+    penalty = .14 if accuracy == "fast" else .09
+    back = np.zeros((len(frames), 12), dtype=np.int8)
+    dp = emission[0].copy()
+    for t in range(1, len(frames)):
+        if not active[t]:
+            back[t] = np.arange(12)
             continue
-        pitch = int(pitch)
-        if current is None:
-            if candidate != pitch:
-                candidate, candidate_start = pitch, frame
-            elif frame - candidate_start >= max(2, confirmation // 2):
-                current = pitch
-        elif pitch != current:
-            if candidate != pitch:
-                candidate, candidate_start = pitch, frame
-            elif frame - candidate_start >= confirmation:
-                current = pitch
-        else:
-            candidate = None
-        decoded.append(current)
+        transitions = np.broadcast_to(dp[:, None] - penalty, (12, 12)).copy()
+        np.fill_diagonal(transitions, dp)
+        back[t] = np.argmax(transitions, axis=0)
+        dp = transitions[back[t], np.arange(12)] + emission[t]
+    decoded = np.zeros(len(frames), dtype=np.int8)
+    decoded[-1] = np.argmax(dp)
+    for t in range(len(frames) - 1, 0, -1):
+        decoded[t - 1] = back[t, decoded[t]]
 
-    result = []
-    for frame, pitch in enumerate(decoded):
-        if pitch is not None and (not result or result[-1][1] != NOTES[pitch]):
-            result.append((
-                round(max(0., (frame - confirmation) * hop / sr), 3),
-                NOTES[pitch]))
-    return result
+    changes, previous = [], None
+    for frame, root in zip(frames, decoded):
+        if not audible[frame]:
+            continue
+        note = NOTES[int(root)]
+        if note != previous:
+            changes.append((round(float(frame * hop / sr), 3), note))
+            previous = note
+    return changes
 
 
 def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
@@ -283,18 +276,21 @@ def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
     return sorted(result, key=lambda x: x[0])
 
 def bass_context(bass_path, other_path, accuracy="balanced", drums_path=None):
-    """Root Engine v3: bass-root changes must not be vetoed by chord/beat models.
+    """Bass transcription is the authority for detected pitch transitions.
 
-    Harmony and beats are separate analyses, not hard admission requirements
-    for bass notes. The older AND gate deleted genuine chromatic notes.
+    Other-stem harmonic chord roots may fall back only when the bass detector
+    returns no notes at all; beats/harmony must never veto a detected semitone.
     """
     primary = bass_notes(bass_path, accuracy)
     if primary:
         return primary
-    # Only use harmony when bass extraction provides no usable evidence.
-    # This is a lower-confidence fallback, not a source of additional notes.
-    return [(t, chord_root(chord))
-            for t, chord in chords_instruments(other_path, bass_path, accuracy)]
+    harmony = chords_instruments(other_path, bass_path, accuracy)
+    result = []
+    for t, chord in harmony:
+        root = chord_root(chord)
+        if not result or root != result[-1][1]:
+            result.append((t, root))
+    return result
 
 
 def chord_root(name):
