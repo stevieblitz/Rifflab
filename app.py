@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush
 
-from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF
+from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF, QEvent
 import qtawesome as qta
 from PySide6.QtSvg import QSvgRenderer
 from realtime_audio import LiveStemPlayer
@@ -1140,12 +1140,6 @@ class Window(QMainWindow):
         self.reset_mixer_button.clicked.connect(self.reset_mixer)
         mixer_header.addWidget(self.reset_mixer_button)
         panel.addLayout(mixer_header)
-        self.make_stems_button = QPushButton('Make Stems')
-        self.make_stems_button.setObjectName('makeStemsButton')
-        self.make_stems_button.setToolTip('Separate the current song into drums, bass, other and vocals')
-        self.make_stems_button.clicked.connect(self.make_stems)
-        self.make_stems_button.setEnabled(False)
-        panel.addWidget(self.make_stems_button)
         self.checks = {}
         self.solos = {}
         self.volumes = {}
@@ -1211,6 +1205,31 @@ class Window(QMainWindow):
             self.volume_labels[stem] = amount
             panel.addWidget(channel)
         panel.addStretch(0)
+        # Overlay stays on top of the existing mixer, rather than moving controls.
+        self.mixer_overlay = QWidget(stem_panel)
+        self.mixer_overlay.setObjectName('mixerUnavailableOverlay')
+        self.mixer_overlay.setStyleSheet(
+            'QWidget#mixerUnavailableOverlay {background:rgba(15,24,35,190);border-radius:7px;}'
+            'QPushButton#makeStemsButton {background:#285578;color:#f2faff;'
+            'border:1px solid #7bd6ff;border-radius:6px;padding:12px 18px;font-weight:700;}'
+            'QPushButton#makeStemsButton:hover {background:#33749c;}'
+            'QPushButton#makeStemsButton:disabled {background:#26394a;color:#a7b7c4;border-color:#466075;}')
+        overlay_layout = QVBoxLayout(self.mixer_overlay)
+        overlay_layout.setContentsMargins(12, 76, 12, 12)
+        self.make_stems_button = QPushButton('Generate Stems')
+        self.make_stems_button.setObjectName('makeStemsButton')
+        self.make_stems_button.setToolTip('Separate the current song into drums, bass, other and vocals')
+        self.make_stems_button.clicked.connect(self.make_stems)
+        overlay_layout.addWidget(self.make_stems_button)
+        self.mixer_overlay_hint = QLabel('Generate stems to unlock the mixer')
+        self.mixer_overlay_hint.setAlignment(Qt.AlignCenter)
+        self.mixer_overlay_hint.setWordWrap(True)
+        self.mixer_overlay_hint.setStyleSheet('background:transparent;color:#aec4d6;font-size:11px')
+        overlay_layout.addWidget(self.mixer_overlay_hint)
+        overlay_layout.addStretch(1)
+        stem_panel.installEventFilter(self)
+        self.mixer_overlay.setGeometry(stem_panel.rect())
+        self.mixer_overlay.raise_()
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
@@ -2425,6 +2444,14 @@ class Window(QMainWindow):
             except sqlite3.Error:
                 pass
 
+    def eventFilter(self, watched, event):
+        if (hasattr(self, 'mixer_overlay') and
+                watched is self.mixer_overlay.parentWidget() and
+                event.type() == QEvent.Resize):
+            self.mixer_overlay.setGeometry(watched.rect())
+            self.mixer_overlay.raise_()
+        return super().eventFilter(watched, event)
+
     def update_stems_indicator(self):
         if not hasattr(self, 'stems_indicator'):
             return
@@ -2442,10 +2469,15 @@ class Window(QMainWindow):
             f'color:{color};font-weight:700;font-size:11px;background:#172536;'
             'border:1px solid #304659;border-radius:5px;padding:5px;')
         if hasattr(self, 'make_stems_button'):
-            self.make_stems_button.setVisible(not ready)
+            self.mixer_overlay.setVisible(not ready)
+            self.mixer_overlay.raise_()
             self.make_stems_button.setEnabled(not self.processing and not ready and
                                               self.source_audio is not None and Path(self.source_audio).is_file())
-            self.make_stems_button.setText('Creating Stems…' if creating else 'Make Stems')
+            self.make_stems_button.setText('Generating Stems…' if creating else 'Generate Stems')
+            self.mixer_overlay_hint.setText(
+                'Separating audio — please wait…' if creating else
+                'Open a song first' if self.source_audio is None else
+                'Generate stems to unlock the mixer')
 
     def make_stems(self):
         if self.processing or self.stems:
