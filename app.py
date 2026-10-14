@@ -129,17 +129,45 @@ class WaveformTimeline(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.peaks = []
+        self.zoom = 1.0
+        self.note_events = []
         self.duration_ms = 0
         self.position_ms = 0
         self.dragging = False
         self.marker_drag = None
         self.in_ms = None
         self.out_ms = None
-        self.setMinimumHeight(72)
-        self.setMaximumHeight(100)
+        self.setMinimumHeight(88)
+        self.setMaximumHeight(110)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip('Click or drag to seek; chord grid follows playback')
+
+    def set_zoom(self, value):
+        self.zoom = max(1.0, min(8.0, float(value)))
+        self.update()
+
+    def set_note_events(self, events):
+        # These are verified note event timestamps, NOT confidence scores.
+        self.note_events = [(float(t), str(name)) for t, name in events]
+        self.update()
+
+    def _window_bounds(self):
+        if self.duration_ms <= 0 or self.zoom <= 1:
+            return 0.0, float(self.duration_ms)
+        span = self.duration_ms / self.zoom
+        start = max(0.0, min(float(self.position_ms) - span / 2,
+                              self.duration_ms - span))
+        return start, start + span
+
+    def _time_x(self, ms):
+        start, end = self._window_bounds()
+        return round((float(ms) - start) / max(1.0, end-start) * (self.width()-1))
+
+    def _x_time(self, x):
+        start, end = self._window_bounds()
+        fraction = max(0.0, min(1.0, float(x)/max(1, self.width()-1)))
+        return int(start + fraction * (end-start))
 
     def set_waveform(self, peaks):
         self.peaks = list(peaks)
@@ -159,7 +187,7 @@ class WaveformTimeline(QWidget):
         self.update()
 
     def _marker_x(self, ms):
-        return round(max(0, min(self.duration_ms, ms)) / max(1, self.duration_ms) * (self.width()-1))
+        return self._time_x(max(0, min(self.duration_ms, ms)))
 
     def _marker_at(self, x):
         if not self.duration_ms:
@@ -174,7 +202,7 @@ class WaveformTimeline(QWidget):
     def _move_marker(self, x):
         if self.marker_drag is None or not self.duration_ms:
             return
-        ms = round(max(0.0, min(1.0, x/max(1, self.width()-1))) * self.duration_ms)
+        ms = self._x_time(x)
         if self.marker_drag == 'a':
             self.in_ms = ms
         else:
@@ -185,8 +213,7 @@ class WaveformTimeline(QWidget):
     def _seek_from_x(self, x):
         if self.duration_ms <= 0:
             return
-        fraction = max(0.0, min(1.0, x / max(1, self.width()-1)))
-        position = round(fraction * self.duration_ms)
+        position = self._x_time(x)
         self.set_position(position)
         self.seekRequested.emit(position)
 
