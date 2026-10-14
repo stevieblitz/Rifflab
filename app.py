@@ -3853,37 +3853,37 @@ class Window(QMainWindow):
                     'border-left:2px solid #668da5;padding-left:5px;')
                 self.chord_grid.addWidget(measure,header_row,offset+1,1,
                                           min(4,beats-row_start-offset))
+        # One real QWidget per sustained note, not sixteen separately styled
+        # beat buttons. Retain beat-index mapping for existing transport logic.
+        labels = []
         for beat_index in range(beats):
             t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
-            bar = beat_index // 4
-            beat = beat_index % 4
-            row = bar // 4
-            col = (bar % 4) * 4 + beat
             idx = bisect.bisect_right(self.display_times, t) - 1
-            chord = self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—'
-            prev_idx = bisect.bisect_right(self.display_times, max(0,t-beat_length)) - 1
-            previous = self.transpose_chord(self.display_chords[prev_idx][1]) if prev_idx >= 0 else '—'
-            label = chord if chord != previous or (beat_index == 0 and chord != '—') else ''
-            pattern = pattern_labels.get(beat_index)
-            if pattern:
-                pattern_name, confidence, group = pattern
-                label = (pattern_name + '  ' + label).strip()
-            button = QPushButton(label)
-            self.grid_chord_names.append(chord)
-            button.setMinimumHeight(24)
-            border = '#344658'
-            background = '#223242'
-            if pattern:
-                border = '#478bc1' if group % 2 == 0 else '#b17baf'
-                background = '#293f54' if group % 2 == 0 else '#3b3045'
-            button.setStyleSheet(f'background:{background};border:1px solid {border};border-radius:3px;text-align:left;padding:2px 4px;')
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            hint = (f' • repeated riff {pattern[0]} • similarity {pattern[1]:.0%}' if pattern else '')
-            button.setToolTip(f'Bar {bar+1} • beat {beat+1} • {t:.1f}s{hint}')
-            button.clicked.connect(lambda checked=False, seconds=t: self.seek_and_play(int(seconds*1000)))
-            self.chord_grid.addWidget(button, row * 2 + 1, col + 1)
-            self.grid_buttons.append(button)
-            self.grid_cells.append((t,beat))
+            labels.append(self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—')
+        self.grid_chord_names = labels
+        self.grid_cells = [(self.beat_times[i] if self.beat_times else i * beat_length, i % 4)
+                           for i in range(beats)]
+        self.grid_buttons = [None] * beats
+        self.grid_segments = {}
+        for start in range(0, beats, 16):
+            end = min(start + 16, beats)
+            i = start
+            while i < end:
+                chord = labels[i]
+                j = i + 1
+                while j < end and labels[j] == chord:
+                    j += 1
+                t = self.grid_cells[i][0]
+                button = QPushButton('' if chord == '—' else chord)
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                button.setToolTip(f'{chord} · {t:.2f}s · {j-i} beats')
+                button.clicked.connect(lambda checked=False, seconds=t:
+                                       self.seek_and_play(int(seconds * 1000)))
+                self.chord_grid.addWidget(button, (start//16)*2+1, i-start+1, 1, j-i)
+                self.grid_segments[i] = (j, button)
+                for k in range(i,j):
+                    self.grid_buttons[k] = button
+                i = j
         self.chord_grid.setColumnStretch(0, 0)
         for col in range(1, 17):
             self.chord_grid.setColumnStretch(col, 1)
@@ -3894,48 +3894,45 @@ class Window(QMainWindow):
         self.update_grid_position((self.live.position_ms if self.live else self.player.position())/1000)
 
     def update_note_fill(self):
-        """Animate the accent-colored progress continuously with audio time."""
-        if not self.grid_buttons:
-            return
-        position_ms = self.live.position_ms if self.live else self.player.position()
-        self.update_grid_position(position_ms / 1000.0)
+        """Smooth playback fill based on absolute audio time; no pitch processing."""
+        if self.grid_buttons:
+            ms = self.live.position_ms if self.live else self.player.position()
+            self.update_grid_position(ms / 1000.0)
 
     def update_grid_position(self, seconds):
         if not self.grid_buttons:
             return
         idx = max(0, min(len(self.grid_buttons)-1,
-             bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times
-             else int(seconds*self.grid_bpm.value()/60.0)))
-        old = self.grid_active
-        if idx != old:
+            bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times
+            else int(seconds*self.grid_bpm.value()/60.0)))
+        old_idx = self.grid_active
+        current = self.grid_buttons[idx]
+        old = self.grid_buttons[old_idx] if 0 <= old_idx < len(self.grid_buttons) else None
+        if old is not None and old is not current:
             self._note_progress = {}
-            self.grid_active = idx
-            for j in (old, idx):
-                if 0 <= j < len(self.grid_buttons):
-                    self.grid_buttons[j].setStyleSheet(self._chord_segment_style(j,j==idx))
-        # Continuous fractional position inside the CURRENT beat (not TAK/TAK).
-        start_time = self.grid_cells[idx][0]
-        if idx+1 < len(self.grid_cells):
-            end_time = self.grid_cells[idx+1][0]
-        else:
-            end_time = start_time + 60.0/max(1,self.grid_bpm.value())
-        fraction = max(0.0,min(1.0,(seconds-start_time)/max(0.001,end_time-start_time)))
-        # Already played beat cells of an uninterrupted note remain filled.
-        self._note_progress[idx] = fraction
-        if idx > 0 and self.grid_chord_names[idx-1] == self.grid_chord_names[idx]:
-            run_start = idx
-            while run_start>0 and run_start%16 != 0 and self.grid_chord_names[run_start-1] == self.grid_chord_names[idx]:
-                run_start-=1
-            for previous in range(run_start,idx):
-                self._note_progress[previous]=1.0
-                self.grid_buttons[previous].setStyleSheet(self._chord_segment_style(previous,True))
-        self.grid_buttons[idx].setStyleSheet(self._chord_segment_style(idx,True))
-        row = idx // 16
+            old.setStyleSheet(self._chord_segment_style(old_idx, False))
+        self.grid_active = idx
+        # Find beginning/end of the merged note widget in this row.
+        run_start = idx
+        while run_start > (idx//16)*16 and self.grid_buttons[run_start-1] is current:
+            run_start -= 1
+        run_end = idx+1
+        while run_end < min(((idx//16)+1)*16,len(self.grid_buttons)) and self.grid_buttons[run_end] is current:
+            run_end += 1
+        start_sec = self.grid_cells[run_start][0]
+        end_sec = (self.grid_cells[run_end][0] if run_end < len(self.grid_cells)
+                   else self.grid_cells[-1][0] + 60.0/max(1,self.grid_bpm.value()))
+        progress = max(0.0,min(1.0,(seconds-start_sec)/max(0.001,end_sec-start_sec)))
+        # Keep the layout static; only paint progress, no per-beat recoloring.
+        last = self._note_progress.get(run_start, -1.0)
+        if old is not current or abs(last-progress) >= 0.004:
+            self._note_progress[run_start] = progress
+            current.setStyleSheet(self._chord_segment_style(run_start, True))
+        row = idx//16
         if self.follow.isChecked() and row != self.grid_row:
             self.grid_row = row
             scrollbar = self.chord_scroll.verticalScrollBar()
-            widget = self.grid_buttons[min(row*16,len(self.grid_buttons)-1)]
-            scrollbar.setValue(max(0,widget.y()-int(self.chord_scroll.viewport().height()*.25)))
+            scrollbar.setValue(max(0, current.y()-int(self.chord_scroll.viewport().height()*.25)))
 
 
     def find_devices(self):
