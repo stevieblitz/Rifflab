@@ -118,85 +118,89 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
 
 
 def bass_notes(path, accuracy="balanced"):
-    """Onset-aware bass tracking: repeated plucks are separate events.
+    """Find stable bass *roots*, not every pluck or short passing note.
 
-    Combine CQT harmonic evidence, optional pYIN, transient detection and a
-    local confidence gate. Accuracy controls temporal and pitch resolution.
+    Use low-register harmonic evidence with temporal consensus and hysteresis.
+    Emitting only genuine changes avoids the note confetti in fast punk bass
+    parts. This function intentionally does not reconstruct individual attacks.
     """
     import librosa
     import numpy as np
-    from scipy.ndimage import median_filter
+    from scipy.ndimage import uniform_filter1d
 
     sr = 11025
     hop = {"fast": 512, "balanced": 256, "detailed": 256}.get(accuracy, 256)
     y, _ = librosa.load(path, sr=sr, mono=True)
     if len(y) < sr // 2:
         return []
-    fmin = librosa.note_to_hz('E1')
-    mag = np.abs(librosa.cqt(y, sr=sr, hop_length=hop, fmin=fmin,
-                             n_bins=48, bins_per_octave=12))
-    count = 30
-    strength = mag[:count].copy()
-    for offset, weight in ((12, .35), (19, .15), (24, .12)):
-        valid = min(count, mag.shape[0] - offset)
-        strength[:valid] += weight * mag[offset:offset + valid]
-    # The strongest upper harmonic is not necessarily the fundamental.
-    strength /= np.maximum(np.max(strength, axis=0, keepdims=True), 1e-8)
-    idx = np.argmax(strength, axis=0)
-    ordered = np.sort(strength, axis=0)
-    confidence = (ordered[-1] - ordered[-2]) / np.maximum(ordered[-1], 1e-8)
-    energy = np.max(mag, axis=0)
-    gate = energy > max(float(np.percentile(energy, 25)) * .5, 1e-6)
-    # pYIN is expensive: reserve it for Detailed, and only use voiced frames.
-    if accuracy == 'detailed':
-        try:
-            f0, voiced, _ = librosa.pyin(y, sr=sr, hop_length=hop,
-                                         fmin=fmin, fmax=librosa.note_to_hz('B3'))
-            n = min(len(idx), len(f0))
-            for i in range(n):
-                if voiced[i] and np.isfinite(f0[i]):
-                    pitch = int(round(librosa.hz_to_midi(f0[i]) - librosa.hz_to_midi(fmin)))
-                    if 0 <= pitch < count and (confidence[i] < .28 or abs(pitch-idx[i]) % 12 == 0):
-                        idx[i] = pitch
-        except Exception:
-            pass  # CQT remains the fallback.
-    idx = median_filter(idx, size={'fast': 7, 'balanced': 5, 'detailed': 3}.get(accuracy, 5))
-    pitch_classes = (idx + 4) % 12
-    # Onset strength catches repeated notes with unchanged pitch.
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
-    onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env,
-                        sr=sr, hop_length=hop, backtrack=False, units='frames')
-    # Ignore brief pitch flicker, but retain onset-marked repeated plucks.
-    min_gap = {'fast': .13, 'balanced': .10, 'detailed': .075}.get(accuracy, .10)
-    stable_frames = max(2, round({'fast': .09, 'balanced': .075,
-                                  'detailed': .055}.get(accuracy, .075) * sr / hop))
-    boundaries = {0}
-    for i in range(1, len(idx)):
-        if pitch_classes[i] != pitch_classes[i-1]:
-            end = min(len(idx), i + stable_frames)
-            if end-i == stable_frames and np.all(pitch_classes[i:end] == pitch_classes[i]):
-                boundaries.add(i)
-    for frame in onset_frames:
-        frame = int(frame)
-        if 0 < frame < len(idx) and gate[frame] and onset_env[min(frame, len(onset_env)-1)] > np.median(onset_env):
-            boundaries.add(frame)
-    boundaries = sorted(boundaries)
+    # E1..D#4: prioritize fundamental/low harmonics rather than bright picks.
+    mag = np.abs(librosa.cqt(
+        y, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("E1"),
+        n_bins=36, bins_per_octave=12))
+    n = mag.shape[1]
+    if n == 0:
+        return []
+    evidence = np.zeros((12, n), dtype=np.float32)
+    for k in range(36):
+        pitch_class = (k + 4) % 12
+        octave_weight = (1.0 if k < 12 else 0.52 if k < 24 else 0.22)
+        evidence[pitch_class] += mag[k] * octave_weight
+    # Frame-energy gate guards against assigning notes to silence.
+    power = np.max(mag[:24], axis=0)
+    audible = power > max(float(np.percentile(power, 30)) * .32, 1e-5)
+    # Smooth *energy for each pitch* (not integer note IDs). A quick transient
+    # cannot force a change unless the new root wins for long enough.
+    width = max(3, round(.19 * sr / hop))
+    evidence = uniform_filter1d(evidence, size=width, axis=1, mode="nearest")
+    dominance = np.argmax(evidence, axis=0)
+    # Low energy gaps hold the previous note instead of spawning new events.
     result = []
-    for j, start in enumerate(boundaries):
-        end = boundaries[j+1] if j+1 < len(boundaries) else len(idx)
-        if (end-start)*hop/sr < min_gap or np.mean(gate[start:end]) < .5:
+    current = None
+    candidate = None
+    candidate_start = 0
+    hold_frames = max(3, round(.28 * sr / hop))
+    for frame, root in enumerate(dominance):
+        if not audible[frame]:
+            candidate = None
             continue
-        # Ignore the attack transient when estimating pitch.
-        a = min(end-1, start+max(1, int(.025*sr/hop)))
-        window = pitch_classes[a:end]
-        if not len(window):
+        root = int(root)
+        if current is None:
+            if candidate != root:
+                candidate, candidate_start = root, frame
+            elif frame - candidate_start >= hold_frames:
+                current = root
+                result.append((round(candidate_start * hop / sr, 3), NOTES[root]))
+                candidate = None
             continue
-        counts = np.bincount(window, minlength=12)
-        note = NOTES[int(np.argmax(counts))]
-        if result and start*hop/sr-result[-1][0] < min_gap:
+        if root == current:
+            candidate = None
             continue
-        result.append((round(start*hop/sr, 3), note))
-    return result
+        if candidate != root:
+            candidate, candidate_start = root, frame
+            continue
+        # Require sustained evidence and a clear lead over the old root.
+        if frame - candidate_start < hold_frames:
+            continue
+        new_strength = float(np.mean(evidence[root, candidate_start:frame+1]))
+        old_strength = float(np.mean(evidence[current, candidate_start:frame+1]))
+        if new_strength < old_strength * 1.12:
+            continue
+        current = root
+        result.append((round(candidate_start * hop / sr, 3), NOTES[root]))
+        candidate = None
+
+    # In an A-B-A root progression, a very short B is usually an ornament or
+    # pitch-estimation error. Retain short B when it is not surrounded by A.
+    cleaned = []
+    for i, event in enumerate(result):
+        if (0 < i < len(result)-1
+                and result[i-1][1] == result[i+1][1]
+                and result[i-1][1] != event[1]
+                and result[i+1][0] - event[0] < .60):
+            continue
+        if not cleaned or cleaned[-1][1] != event[1]:
+            cleaned.append(event)
+    return cleaned
 
 
 def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
@@ -306,7 +310,8 @@ def bass_context(bass_path, other_path, accuracy="balanced"):
         early = [(t, chord_root(c)) for t, c in harmony if t < primary[0][0]]
         if early:
             return early + primary
-    return pattern_assisted_notes(primary, bass_path, accuracy)
+    # A root-only view must never insert speculative notes from repeated riffs.
+    return primary
 
 
 def chord_root(name):
