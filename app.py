@@ -1170,6 +1170,19 @@ class Window(QMainWindow):
         self.waveform.markerMoved.connect(self.move_loop_marker)
         waveform_row.addWidget(self.waveform, 1)
         self._workspace_panels['Timeline'] = self.waveform
+        self.waveform.set_zoom(float(self.layout_settings.value('waveform_zoom', 1.0)))
+        wave_zoom_controls = QVBoxLayout()
+        wave_zoom_controls.setSpacing(4)
+        wave_zoom_controls.setContentsMargins(0, 0, 0, 0)
+        wave_zoom_in = QPushButton('+')
+        wave_zoom_out = QPushButton('−')
+        for control in (wave_zoom_in, wave_zoom_out):
+            control.setFixedSize(25, 25)
+            control.setToolTip('Waveform time zoom, independent of note grid zoom')
+            wave_zoom_controls.addWidget(control)
+        wave_zoom_in.clicked.connect(lambda: self.change_waveform_zoom(1))
+        wave_zoom_out.clicked.connect(lambda: self.change_waveform_zoom(-1))
+        waveform_row.addLayout(wave_zoom_controls)
         layout.addLayout(waveform_row)
         self.next_chords = QLabel('NEXT: —')
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -1812,6 +1825,9 @@ class Window(QMainWindow):
           QProgressBar{max-height:4px;background:#202d3b;border:0}
           QProgressBar::chunk{background:#7bd6ff}
         ''')
+        saved_geometry = self.layout_settings.value('window_geometry_v1')
+        if saved_geometry:
+            self.restoreGeometry(saved_geometry)
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
     def toggle_tuner_panel(self):
@@ -3157,6 +3173,7 @@ class Window(QMainWindow):
         if self.analysis_cancel.is_set():
             return
         self.chord_data = chords
+        self.waveform.set_note_events(chords)
         self.chord_times = [float(item[0]) for item in chords]
         self.rebuild_chords()
         self.auto_index_analyzed_song()
@@ -4317,6 +4334,8 @@ class Window(QMainWindow):
 
         self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
         self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
+        self.layout_settings.setValue('waveform_zoom', self.waveform.zoom)
+        self.layout_settings.setValue('window_geometry_v1', self.saveGeometry())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
         self.layout_settings.setValue('export_splitter_left_v2', self.export_splitter.saveState())
         self.stop_live()
