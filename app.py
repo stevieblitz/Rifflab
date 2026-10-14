@@ -525,8 +525,52 @@ def worker_command(*args):
 
 
 def mix_to_file(stem_paths, levels, transpose, output):
+    # Transpose is notation-only. Preserve original audio pitch in every mix/export.
     worker_command('mix', str(output), json.dumps({name: str(stem_paths[name]) for name in STEMS}),
-                   json.dumps(levels), str(transpose))
+                   json.dumps(levels), '0')
+
+
+class TunerMeter(QWidget):
+    """Read-only, high-contrast tuning needle: center is in tune (0 cents)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.cents = 0.0
+        self.signal_active = False
+        self.setMinimumHeight(76)
+        self.setToolTip('Afwijking in cents: links te laag, rechts te hoog; midden is zuiver.')
+
+    def set_reading(self, cents, active=True):
+        self.cents = max(-50.0, min(50.0, float(cents)))
+        self.signal_active = bool(active)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        width = self.width()
+        left, right = 27, max(28, width - 27)
+        middle = (left + right) / 2
+        y = 38
+        painter.setPen(QPen(QColor('#38566c'), 3))
+        painter.drawLine(left, y, right, y)
+        for cent in range(-50, 51, 10):
+            x = round(middle + cent * (right-left) / 100)
+            is_center = cent == 0
+            painter.setPen(QPen(QColor('#66d2c1' if is_center else '#54778e'),
+                                2 if is_center else 1))
+            painter.drawLine(x, y - (14 if is_center else 7),
+                             x, y + (14 if is_center else 7))
+        painter.setPen(QColor('#98b9ce'))
+        painter.drawText(left-8, 70, '-50')
+        painter.drawText(round(middle)-5, 70, '0')
+        painter.drawText(right-17, 70, '+50')
+        if self.signal_active:
+            x = round(middle + self.cents * (right-left) / 100)
+            color = QColor('#51dec1' if abs(self.cents) <= 5 else '#f2ba66')
+            painter.setPen(QPen(color, 3))
+            painter.drawLine(x, y-21, x, y+21)
+        painter.end()
 
 
 class Signals(QObject):
@@ -610,6 +654,7 @@ class Window(QMainWindow):
         self.tuner_pitch = 0.0
         self.tuner_level = 0.0
         self.tuner_last = 0.0
+        self._tuner_display_cents = None
         self.project_file = None
         self._pending_project = None
         self.library_db = ROOT / "library.sqlite3"
@@ -1022,6 +1067,7 @@ class Window(QMainWindow):
         self.transpose.setRange(-12, 12)
         self.transpose.setValue(0)
         self.transpose.setSuffix(' st')
+        self.transpose.setToolTip('Verplaatst alleen de getoonde noten/akkoorden. Audiohoogte blijft ongewijzigd.')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
         options.addWidget(QLabel('♩ BPM'))
@@ -1387,19 +1433,25 @@ class Window(QMainWindow):
         self.tuner_button.clicked.connect(self.toggle_tuner)
         tuner_row.addWidget(self.tuner_button)
         layout.addLayout(tuner_row)
-        self.tuner_note = QLabel('—  ·  waiting for input')
+        self.tuner_note = QLabel('—')
         self.tuner_note.setAlignment(Qt.AlignCenter)
-        self.tuner_note.setStyleSheet('font-size:24px;font-weight:700;color:#7bd6ff')
+        self.tuner_note.setMinimumHeight(78)
+        self.tuner_note.setStyleSheet(
+            'font-size:46px;font-weight:800;color:#eaf7ff;'
+            'background-color:rgba(41,76,99,95);'
+            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
         layout.addWidget(self.tuner_note)
-        self.tuner_meter = QSlider(Qt.Horizontal)
-        self.tuner_meter.setRange(-50,50)
-        self.tuner_meter.setEnabled(False)
+        self.tuner_details = QLabel('Speel één snaar · A4 = 440 Hz')
+        self.tuner_details.setAlignment(Qt.AlignCenter)
+        self.tuner_details.setStyleSheet('font-size:14px;color:#aac8db;')
+        layout.addWidget(self.tuner_details)
+        self.tuner_meter = TunerMeter()
         layout.addWidget(self.tuner_meter)
         layout.addStretch(1)
         self.find_devices()
         self.tuner_timer = QTimer(self)
         self.tuner_timer.timeout.connect(self.update_tuner)
-        self.tuner_timer.start(120)
+        self.tuner_timer.start(50)  # Responsive needle; ~20 UI updates per second.
         self.render_grid()
         self.mix_debounce = QTimer(self)
         self.mix_debounce.setSingleShot(True)
@@ -2713,7 +2765,7 @@ class Window(QMainWindow):
     def apply_mixer_levels(self):
         """Single realtime path for M, S and volume controls."""
         levels = self.get_levels()
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(levels)
         else:
             self.request_mix()
@@ -2771,19 +2823,15 @@ class Window(QMainWindow):
     def volume_changed(self, _value=None):
         for stem, slider in self.volumes.items():
             self.volume_labels[stem].setText(f'{slider.value()}%')
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(self.get_levels())
         else:
             self.mix_debounce.start(350)
 
     def transpose_changed(self, _value=None):
+        """Notation-only transpose: never restart, repitch or remix playback."""
         self.render_grid()
-        self.on_position(self.player.position())
-        if self.transpose.value() == 0 and self.stems:
-            self.start_live()
-        else:
-            self.stop_live()
-            self.mix_debounce.start(350)
+        self.on_position(self.live.position_ms if self.live else self.player.position())
 
     def transpose_chord(self, chord):
         match = re.fullmatch(r'([A-G])([#b]?)(.*)', chord)
@@ -2879,7 +2927,7 @@ class Window(QMainWindow):
         self.on_position(self.live.position_ms if self.live else self.player.position())
 
     def request_mix(self, _checked=None):
-        if self.live and self.transpose.value() == 0:
+        if self.live:
             self.live.set_levels(self.get_levels())
             return
         if not self.stems:
@@ -2891,7 +2939,7 @@ class Window(QMainWindow):
         self.mix_counter += 1
         seq = self.mix_counter
         levels = self.get_levels()
-        transpose = self.transpose.value()
+        transpose = 0  # Grid transpose never changes the playback pitch.
         pos = self.player.position()
         playing = self.player.playbackState() == QMediaPlayer.PlayingState
         self.player.pause()
@@ -3204,7 +3252,7 @@ class Window(QMainWindow):
         if filename:
             try:
                 self.status_message('Exporting WAV…')
-                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),self.transpose.value()), daemon=True).start()
+                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),0), daemon=True).start()
             except Exception as exc:
                 self.on_error(str(exc))
 
@@ -3399,6 +3447,10 @@ class Window(QMainWindow):
             self.tuner_stream.stop()
             self.tuner_stream.close()
             self.tuner_stream = None
+            self._tuner_display_cents = None
+            self.tuner_meter.set_reading(0, False)
+            self.tuner_note.setText('—')
+            self.tuner_details.setText('Tuner gestopt')
             self.tuner_button.setText('Start Tuner')
             return
         try:
@@ -3427,8 +3479,12 @@ class Window(QMainWindow):
                 if 40 <= freq <= 1000:
                     self.tuner_pitch = freq
                     self.tuner_last = time.monotonic()
-            self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=8192,callback=callback)
+            # 4096 frames (~93 ms at 44.1 kHz) updates more often than 8192.
+            # Autocorrelation still supports low bass notes down to 40 Hz.
+            self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=4096,callback=callback)
             self.tuner_stream.start()
+            self._tuner_display_cents = None
+            self.tuner_details.setText('Luistert… · A4 = 440 Hz')
             self.tuner_button.setText('Stop Tuner')
         except Exception as exc:
             self.tuner_stream = None
@@ -3437,16 +3493,32 @@ class Window(QMainWindow):
     def update_tuner(self):
         if self.tuner_stream is None:
             return
-        if self.tuner_level < .006 or time.monotonic()-self.tuner_last > 1.2:
-            self.tuner_note.setText('Play one string…')
+        # Faster silence reset; don't leave a stale tuning reading on screen.
+        if self.tuner_level < .006 or time.monotonic() - self.tuner_last > .45:
+            self.tuner_note.setText('—')
+            self.tuner_details.setText('Speel één snaar · A4 = 440 Hz')
+            self.tuner_meter.set_reading(0, False)
+            self._tuner_display_cents = None
             return
-        f = self.tuner_pitch
-        if f <= 0:
+        freq = self.tuner_pitch
+        if freq <= 0:
             return
-        midi = round(69+12*math.log2(f/440))
-        cents = 1200*math.log2(f/(440*2**((midi-69)/12)))
-        self.tuner_note.setText(f'{NOTES[midi%12]}{midi//12-1}   {cents:+.1f} cents   ·   {f:.1f} Hz')
-        self.tuner_meter.setValue(max(-50,min(50,round(cents))))
+        midi = round(69 + 12 * math.log2(freq / 440))
+        cents = 1200 * math.log2(freq / (440 * 2 ** ((midi - 69) / 12)))
+        if self._tuner_display_cents is None or abs(cents - self._tuner_display_cents) > 28:
+            self._tuner_display_cents = cents
+        else:
+            self._tuner_display_cents += .42 * (cents - self._tuner_display_cents)
+        smooth = self._tuner_display_cents
+        self.tuner_note.setText(f'{NOTES[midi % 12]}{midi // 12 - 1}')
+        self.tuner_note.setStyleSheet(
+            'font-size:46px;font-weight:800;'
+            f'color:{"#69e7cb" if abs(smooth) <= 5 else "#eaf7ff"};'
+            'background-color:rgba(41,76,99,95);'
+            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
+        self.tuner_details.setText(f'{smooth:+.1f} cents    ·    {freq:.1f} Hz'
+                                   + ('    ·    ZUIVER' if abs(smooth) <= 5 else ''))
+        self.tuner_meter.set_reading(smooth)
 
     def stop_live(self):
         if self.live:
