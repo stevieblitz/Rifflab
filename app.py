@@ -1717,6 +1717,19 @@ class Window(QMainWindow):
         self.view_tuner_action = view.addAction('Tuner')
         self.view_tuner_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.tuner_dialog))
         view.addSeparator()
+        workspace = view.addMenu('Workspace')
+        workspace.addAction('Save Workspace…', self.save_workspace_as)
+        workspace.addAction('Load Workspace…', self.load_workspace_from)
+        workspace.addAction('Reset Workspace', self.reset_workspace)
+        view.addSeparator()
+        self.view_timeline_action = view.addAction('Timeline')
+        self.view_timeline_action.setCheckable(True)
+        self.view_timeline_action.setChecked(True)
+        self.view_timeline_action.toggled.connect(self.chord_scroll.setVisible)
+        self.view_indicator_action = view.addAction('Main Indicator')
+        self.view_indicator_action.setCheckable(True)
+        self.view_indicator_action.setChecked(True)
+        self.view_indicator_action.toggled.connect(self.chord.setVisible)
         view.addAction('Reset Mixer Layout', self.reset_mixer_layout)
         view.addAction('Show PLAY', lambda: self.tabs.setCurrentIndex(0))
         view.addAction('Show Library', lambda: self.tabs.setCurrentIndex(1))
@@ -1738,6 +1751,59 @@ class Window(QMainWindow):
         if not menu.actions():
             action = menu.addAction('No recent projects')
             action.setEnabled(False)
+
+    def workspace_state(self):
+        return {
+            'splitter': list(self.play_splitter.sizes()),
+            'grid_zoom': self.grid_zoom.value(),
+            'grid_height': self.grid_row_height.value(),
+            'mixer_visible': self.play_splitter.widget(0).isVisible(),
+            'timeline_visible': self.chord_scroll.isVisible(),
+            'indicator_visible': self.chord.isVisible(),
+            'active_tab': self.tabs.currentIndex(),
+        }
+
+    def apply_workspace_state(self, state):
+        if not isinstance(state, dict):
+            raise ValueError('Invalid workspace')
+        for key, slider in [('grid_zoom',self.grid_zoom),('grid_height',self.grid_row_height)]:
+            if key in state:
+                slider.setValue(max(slider.minimum(),min(slider.maximum(),int(state[key]))))
+        sizes = state.get('splitter')
+        if isinstance(sizes, list) and len(sizes) == self.play_splitter.count():
+            self.play_splitter.setSizes([max(1,int(n)) for n in sizes])
+        for key, action in [('mixer_visible',self.view_mixer_action),
+                            ('timeline_visible',self.view_timeline_action),
+                            ('indicator_visible',self.view_indicator_action)]:
+            if key in state:
+                action.setChecked(bool(state[key]))
+        tab = int(state.get('active_tab',0))
+        if 0 <= tab < self.tabs.count():
+            self.tabs.setCurrentIndex(tab)
+
+    def save_workspace_as(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,'Save RiffLab Workspace','RiffLab-workspace.json','Workspace (*.json)')
+        if path:
+            Path(path).write_text(json.dumps(self.workspace_state(),indent=2),encoding='utf-8')
+            self.status_message('Workspace saved.')
+
+    def load_workspace_from(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,'Load RiffLab Workspace','','Workspace (*.json)')
+        if path:
+            try:
+                self.apply_workspace_state(json.loads(Path(path).read_text(encoding='utf-8')))
+                self.status_message('Workspace loaded.')
+            except (ValueError,TypeError,OSError) as exc:
+                QMessageBox.warning(self,'Workspace',str(exc))
+
+    def reset_workspace(self):
+        self.apply_workspace_state({'grid_zoom':100,'grid_height':38,
+                                    'splitter':[270,780],'mixer_visible':True,
+                                    'timeline_visible':True,'indicator_visible':True,
+                                    'active_tab':0})
+        self.status_message('Workspace reset.')
 
     def reset_mixer_layout(self):
         self.play_splitter.widget(0).show()
