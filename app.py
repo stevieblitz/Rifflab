@@ -1258,6 +1258,11 @@ class Window(QMainWindow):
         self.audio = QAudioOutput(self)
         self.player.setAudioOutput(self.audio)
         self.player.positionChanged.connect(self.on_position)
+        # Repaint a fluid in-note progress fill independently of coarse beat changes.
+        self.note_fill_timer = QTimer(self)
+        self.note_fill_timer.setInterval(33)
+        self.note_fill_timer.timeout.connect(self.update_note_fill)
+        self.note_fill_timer.start()
         self.player.durationChanged.connect(self.on_duration)
         self.player.mediaStatusChanged.connect(self.on_media_status)
         # Keep the transport geometrically centered, regardless of the right-side loop status.
@@ -3521,7 +3526,21 @@ class Window(QMainWindow):
         beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
         ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
         # Alpha is deliberately low: let the actual app background show through.
-        background = 'rgba(91,151,186,100)' if active else 'rgba(49,93,123,56)'
+        progress = (getattr(self, '_note_progress', {}).get(index, 0.0) if active else 0.0)
+        # Fill smoothly from left to right; avoid stepwise flashes between beats.
+        ratio = max(0.0, min(1.0, float(progress)))
+        pct = ratio
+        if 0.001 < pct < 0.999:
+            accent_fill = QColor(accent)
+            filled = f'rgba({accent_fill.red()},{accent_fill.green()},{accent_fill.blue()},170)'
+            background = ('qlineargradient(x1:0,y1:0,x2:1,y2:0,'
+                          f'stop:0 {filled},stop:{max(0.0,pct-0.002):.4f} {filled},'
+                          f'stop:{min(1.0,pct+0.002):.4f} rgba(49,93,123,56),'
+                          'stop:1 rgba(49,93,123,56))')
+        elif pct >= 0.999:
+            background = accent
+        else:
+            background = 'rgba(49,93,123,56)'
         foreground = '#ffffff' if active else '#e9f5fd'
         # Top edge carries pitch information. No vertical color strips or glow.
         border_top = f'3px solid {accent}' if active else f'2px solid {accent}'
@@ -3719,6 +3738,7 @@ class Window(QMainWindow):
                 item.widget().deleteLater()
         self.grid_buttons = []
         self.grid_cells = []
+        self._note_progress = {}
         self.grid_chord_names = []
         self.grid_section_buttons = []
         bpm = self.grid_bpm.value()
@@ -3794,25 +3814,50 @@ class Window(QMainWindow):
         self.grid_row = -1
         self.update_grid_position((self.live.position_ms if self.live else self.player.position())/1000)
 
+    def update_note_fill(self):
+        """Animate the accent-colored progress continuously with audio time."""
+        if not self.grid_buttons:
+            return
+        position_ms = self.live.position_ms if self.live else self.player.position()
+        self.update_grid_position(position_ms / 1000.0)
+
     def update_grid_position(self, seconds):
         if not self.grid_buttons:
             return
-        idx = max(0,min(len(self.grid_buttons)-1, bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times else int(seconds * self.grid_bpm.value()/60)))
-        if idx == self.grid_active:
-            return
+        idx = max(0, min(len(self.grid_buttons)-1,
+             bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times
+             else int(seconds*self.grid_bpm.value()/60.0)))
         old = self.grid_active
-        self.grid_active = idx
-        for j in (old,idx):
-            if j < 0 or j >= len(self.grid_buttons):
-                continue
-            active = j == idx
-            self.grid_buttons[j].setStyleSheet(self._chord_segment_style(j, active))
+        if idx != old:
+            self._note_progress = {}
+            self.grid_active = idx
+            for j in (old, idx):
+                if 0 <= j < len(self.grid_buttons):
+                    self.grid_buttons[j].setStyleSheet(self._chord_segment_style(j,j==idx))
+        # Continuous fractional position inside the CURRENT beat (not TAK/TAK).
+        start_time = self.grid_cells[idx][0]
+        if idx+1 < len(self.grid_cells):
+            end_time = self.grid_cells[idx+1][0]
+        else:
+            end_time = start_time + 60.0/max(1,self.grid_bpm.value())
+        fraction = max(0.0,min(1.0,(seconds-start_time)/max(0.001,end_time-start_time)))
+        # Already played beat cells of an uninterrupted note remain filled.
+        self._note_progress[idx] = fraction
+        if idx > 0 and self.grid_chord_names[idx-1] == self.grid_chord_names[idx]:
+            run_start = idx
+            while run_start>0 and run_start%16 != 0 and self.grid_chord_names[run_start-1] == self.grid_chord_names[idx]:
+                run_start-=1
+            for previous in range(run_start,idx):
+                self._note_progress[previous]=1.0
+                self.grid_buttons[previous].setStyleSheet(self._chord_segment_style(previous,True))
+        self.grid_buttons[idx].setStyleSheet(self._chord_segment_style(idx,True))
         row = idx // 16
         if self.follow.isChecked() and row != self.grid_row:
             self.grid_row = row
-            bar = self.chord_scroll.verticalScrollBar()
-            button = self.grid_buttons[min(row*16,len(self.grid_buttons)-1)]
-            bar.setValue(max(0,button.y()-int(self.chord_scroll.viewport().height()*.25)))
+            scrollbar = self.chord_scroll.verticalScrollBar()
+            widget = self.grid_buttons[min(row*16,len(self.grid_buttons)-1)]
+            scrollbar.setValue(max(0,widget.y()-int(self.chord_scroll.viewport().height()*.25)))
+
 
     def find_devices(self):
         self.devices.clear()
