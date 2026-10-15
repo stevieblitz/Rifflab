@@ -1731,6 +1731,40 @@ class Window(QMainWindow):
         self.setup_developer_menus()
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
+    def compare_chords_with_reference(self):
+        """Compare the current AI chord timeline against a timestamped reference."""
+        if self.analysis_mode.currentIndex() == 0:
+            QMessageBox.information(self, 'Chord comparison',
+                                    'Switch to Chord Mode and analyze the song before comparing chord accuracy.')
+            return
+        if not self.chord_data:
+            QMessageBox.information(self, 'Chord comparison',
+                                    'Analyze a song in Chord Mode first.')
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Choose reference CSV (time,chord)', str(ROOT),
+            'CSV reference (*.csv)')
+        if not path:
+            return
+        try:
+            from chord_comparison import parse_csv, compare, save_report
+            reference = parse_csv(path)
+            predictions = [(float(t), str(note)) for t, note in self.chord_data]
+            duration = self._duration / 1000.0 if self._duration > 0 else None
+            report = compare(predictions, reference, end_seconds=duration)
+            target = str(Path(path).with_name(Path(path).stem + '-rifflab-comparison.csv'))
+            save_report(target, report)
+            QMessageBox.information(
+                self, 'Chord comparison',
+                f"Exact chord agreement: {report['exact_percent']}%\\n"
+                f"Root-note agreement: {report['root_percent']}%\\n"
+                f"Compared: {report['compared_seconds']} seconds\\n"
+                f"Disagreement intervals: {len(report['intervals'])}\\n\\n"
+                f"Detailed CSV report saved to:\\n{target}\\n\\n"
+                "Reference chords are user-supplied, not fetched from Chordify.")
+        except (OSError, ValueError, IndexError) as exc:
+            QMessageBox.warning(self, 'Chord comparison failed', str(exc))
+
     def setup_developer_menus(self):
         bar = self.menuBar()
         bar.setNativeMenuBar(False)
@@ -1750,6 +1784,7 @@ class Window(QMainWindow):
         file_menu.addAction('Import Audio…', self.open_file)
         file_menu.addAction('Import / Export', lambda: self.tabs.setCurrentIndex(2))
         file_menu.addAction('Export WAV…', self.export_mix)
+        file_menu.addAction('Compare Chords with Reference CSV…', self.compare_chords_with_reference)
         file_menu.addSeparator()
         file_menu.addAction('Exit', self.close)
         view = bar.addMenu('&View')
