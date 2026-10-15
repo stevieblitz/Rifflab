@@ -4311,6 +4311,20 @@ if __name__ == '__main__':
     print('RIFFLAB_BOOT: Window construction', file=sys.stderr, flush=True)
     window = Window()
     print('RIFFLAB_BOOT: Window constructed', file=sys.stderr, flush=True)
+    # Diagnostic-only startup modes. Normal RiffLab behavior is unchanged.
+    diag_mode = os.environ.get('RIFFLAB_DIAG_MODE', '')
+    if diag_mode == 'hide-children':
+        for child in window.findChildren(QWidget):
+            if child is not window:
+                child.hide()
+        print('RIFFLAB_DIAG: all child widgets hidden', file=sys.stderr, flush=True)
+    elif diag_mode == 'no-central-widget':
+        central = window.takeCentralWidget()
+        if central is not None:
+            central.hide()
+            # Keep the original widget alive; Qt ownership has been detached.
+            window._diagnostic_detached_central = central
+        print('RIFFLAB_DIAG: central widget detached', file=sys.stderr, flush=True)
     print('RIFFLAB_BOOT: Window show() begin', file=sys.stderr, flush=True)
     window.show()
     print('RIFFLAB_BOOT: Window shown; entering event loop', file=sys.stderr, flush=True)
