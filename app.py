@@ -4304,7 +4304,13 @@ class Window(QMainWindow):
 
 
 if __name__ == '__main__':
+    # Flush checkpoints to stderr: native crashes bypass Python exceptions.
+    print('RIFFLAB_BOOT: QApplication', file=sys.stderr, flush=True)
     app = QApplication(sys.argv)
+    print('RIFFLAB_BOOT: QApplication ready', file=sys.stderr, flush=True)
+    print('RIFFLAB_BOOT: Window construction', file=sys.stderr, flush=True)
     window = Window()
+    print('RIFFLAB_BOOT: Window constructed', file=sys.stderr, flush=True)
     window.show()
+    print('RIFFLAB_BOOT: Window shown; entering event loop', file=sys.stderr, flush=True)
     sys.exit(app.exec())
