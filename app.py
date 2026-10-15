@@ -21,6 +21,7 @@ from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPe
 from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF
 import qtawesome as qta
 from PySide6.QtSvg import QSvgRenderer
+from autocue_widget import AutocueWidget
 from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -1246,6 +1247,11 @@ class Window(QMainWindow):
         grid_header.addWidget(self.chord_mode_button)
         grid_column.addLayout(grid_header)
         self.update_grid_mode_buttons()
+        self.cue_toggle = QPushButton('Autocue')
+        self.cue_toggle.setCheckable(True)
+        self.cue_toggle.setChecked(True)
+        self.cue_toggle.setToolTip('Switch between continuous autocue and classic grid')
+        grid_header.addWidget(self.cue_toggle)
         self.chord_scroll = QScrollArea()
         self.chord_scroll.setWidgetResizable(True)
         self.chord_scroll.setMinimumHeight(160)
@@ -1293,7 +1299,12 @@ class Window(QMainWindow):
         grid_content_row = QHBoxLayout()
         grid_content_row.setContentsMargins(0, 0, 0, 0)
         grid_content_row.setSpacing(6)
+        self.autocue = AutocueWidget()
+        self.autocue.seekRequested.connect(self.seek_waveform)
         grid_content_row.addWidget(self.chord_scroll, 1)
+        grid_content_row.addWidget(self.autocue, 1)
+        self.chord_scroll.hide()
+        self.cue_toggle.toggled.connect(lambda enabled: (self.autocue.setVisible(enabled), self.chord_scroll.setVisible(not enabled)))
         grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
         grid_host_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -3427,6 +3438,8 @@ class Window(QMainWindow):
                     collapsed.append((t, note))
             output = collapsed
         self.display_chords = output
+        if hasattr(self, 'autocue'):
+            self.autocue.set_events(output, self._duration / 1000)
         self.refresh_tuning_advice()
         self.display_times = [t for t, _ in output]
         self.render_grid()
@@ -3719,6 +3732,7 @@ class Window(QMainWindow):
                                 f'{self._duration // 60000:02d}:{(self._duration // 1000) % 60:02d}')
         self.update_chord_indicator(ms)
         self.update_grid_position(ms / 1000)
+        self.autocue.set_position(ms / 1000)
 
     def load_waveform(self, source):
         if isinstance(source, dict):
@@ -3964,6 +3978,8 @@ class Window(QMainWindow):
             self._note_progress = {}
             old.setStyleSheet(self._chord_segment_style(old_idx, False))
         self.grid_active = idx
+        if hasattr(self, 'autocue'):
+            self.autocue.set_follow(self.follow.isChecked())
         # Find beginning/end of the merged note widget in this row.
         run_start = idx
         while run_start > (idx//16)*16 and self.grid_buttons[run_start-1] is current:
