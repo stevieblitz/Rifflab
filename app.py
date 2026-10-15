@@ -498,8 +498,9 @@ def worker_command(*args, cancel_event=None):
         worker = next((candidate for candidate in (portable, shared) if candidate.is_file()), None)
         if worker is None:
             raise RuntimeError(
-                'AI Engine is not installed. Install RiffLab AI Engine once to enable '
-                'new bass/chord analysis and stem separation. Existing saved analyses remain available.')
+                'AI Engine ontbreekt. Download de AI Engine eenmalig via de officiële '
+                'RiffLab-release en installeer die in %LOCALAPPDATA%\\RiffLab\\AI. '
+                'De interface blijft bruikbaar zonder de engine.')
         command_args = [str(worker), *map(str, args)]
         env = os.environ.copy()
         env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
