@@ -4312,7 +4312,12 @@ class Window(QMainWindow):
 if __name__ == '__main__':
     # Flush checkpoints to stderr: native crashes bypass Python exceptions.
     print('RIFFLAB_BOOT: QApplication', file=sys.stderr, flush=True)
+    # Use Qt's cross-platform widget renderer instead of the Windows native
+    # style path, which was faulting while painting the tabbed main window.
+    # Keeps all functional widgets and tabs enabled.
     app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+    print('RIFFLAB_BOOT: Qt Fusion widget style active', file=sys.stderr, flush=True)
     print('RIFFLAB_BOOT: QApplication ready', file=sys.stderr, flush=True)
     print('RIFFLAB_BOOT: Window construction', file=sys.stderr, flush=True)
     window = Window()
