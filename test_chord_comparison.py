@@ -11,6 +11,18 @@ class ChordComparisonTests(unittest.TestCase):
         self.assertEqual(normalize('Cmaj7'), ('C','maj'))
         self.assertEqual(normalize('Am'), ('A','min'))
 
+    def test_isophonics_harte_notation(self):
+        self.assertEqual(normalize('E:maj'), ('E', 'maj'))
+        self.assertEqual(normalize('D:min'), ('D', 'min'))
+        self.assertEqual(normalize('F#:min7/b3'), ('F#', 'min'))
+
+    def test_isophonics_lab_timings(self):
+        from chord_comparison import parse_isophonics_lab
+        reference = parse_isophonics_lab(
+            '0.000 1.255 N\n1.255 4.210 E:maj\n4.210 6.450 A:maj\n'
+        )
+        self.assertEqual(reference, [(0.0, 'N'), (1.255, 'E:maj'), (4.21, 'A:maj')])
+
     def test_perfect_reference(self):
         events = [(0, 'C'), (2, 'Am'), (4, 'F'), (6, 'G')]
         result = compare(events, events, end_seconds=8)
