@@ -4331,6 +4331,17 @@ if __name__ == '__main__':
         print(f'RIFFLAB_DIAG: {side} half hidden ({len(hidden)}/{len(children)}): '
               + ', '.join(type(x).__name__ + ':' + x.objectName() for x in hidden),
               file=sys.stderr, flush=True)
+    elif diag_mode.startswith('tab-'):
+        tabs = window.findChild(QTabWidget, 'mainTabs')
+        if tabs is None:
+            print('RIFFLAB_DIAG: mainTabs not found', file=sys.stderr, flush=True)
+        else:
+            index = int(diag_mode.split('-')[1])
+            print('RIFFLAB_DIAG: tabs count=' + str(tabs.count()) +
+                  '; testing index=' + str(index) +
+                  '; names=' + ', '.join(tabs.tabText(i) for i in range(tabs.count())),
+                  file=sys.stderr, flush=True)
+            tabs.setCurrentIndex(index)
     elif diag_mode == 'no-central-widget':
         central = window.takeCentralWidget()
         if central is not None:
