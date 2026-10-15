@@ -208,7 +208,7 @@ jobs:
           $exe = (Resolve-Path 'dist/RiffLab/RiffLab.exe').Path
           $env:QT_QPA_PLATFORM = 'windows'
           $env:PYTHONFAULTHANDLER = '1'
-          foreach ($mode in @('hide-children', 'no-central-widget')) {
+          foreach ($mode in @('hide-children', 'no-central-widget', 'bisect-first', 'bisect-second')) {
             Write-Host "=== DIAGNOSTIC MODE: $mode ==="
             $env:RIFFLAB_DIAG_MODE = $mode
             $out = Join-Path $env:RUNNER_TEMP "riff-$mode-stdout.txt"
