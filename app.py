@@ -492,9 +492,14 @@ def worker_command(*args, cancel_event=None):
         command_args = [sys.executable, str(Path(__file__).resolve().parent / 'ai_worker.py'), *map(str, args)]
         env = None
     else:
-        worker = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
-        if not worker.is_file():
-            raise RuntimeError(f'AI worker missing: {worker}. Keep the entire RiffLab folder together.')
+        # Prefer the portable worker, then a separately installed shared AI engine.
+        portable = Path(sys.executable).resolve().parent / 'RiffLabAI' / 'RiffLabAI.exe'
+        shared = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'RiffLab' / 'AI' / 'RiffLabAI.exe'
+        worker = next((candidate for candidate in (portable, shared) if candidate.is_file()), None)
+        if worker is None:
+            raise RuntimeError(
+                'AI Engine is not installed. Install RiffLab AI Engine once to enable '
+                'new bass/chord analysis and stem separation. Existing saved analyses remain available.')
         command_args = [str(worker), *map(str, args)]
         env = os.environ.copy()
         env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
