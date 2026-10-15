@@ -17,6 +17,7 @@ on:
       - 'BUILD_COMPACT.txt'
       - 'autocue.py'
       - 'autocue_widget.py'
+      - 'qtawesome_runtime_hook.py'
       - 'test_autocue.py'
 
 concurrency:
@@ -129,6 +130,13 @@ jobs:
                   raise RuntimeError(f'Empty QtAwesome font: {path}')
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'QtAwesome resource check failed' }
+
+      - name: Confirm runtime hook exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'qtawesome_runtime_hook.py')) { throw 'Missing qtawesome_runtime_hook.py in checkout' }
+          python -m py_compile qtawesome_runtime_hook.py
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime hook syntax error' }
 
       - name: Build UI executable
         shell: pwsh
