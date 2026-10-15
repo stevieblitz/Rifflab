@@ -1,0 +1,54 @@
+name: Build RiffLab AI Engine for Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/complexity-slider-test]
+    paths:
+      - 'ai_worker.py'
+      - '.github/workflows/windows-ai-engine.yml'
+permissions:
+  contents: read
+jobs:
+  engine:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Install full AI engine dependencies
+        run: python -m pip install -r requirements-full.txt "pyinstaller>=6.10,<7"
+      - name: Build separate AI Engine
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLabAI --collect-all demucs --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all soundfile --collect-all numba --collect-all scipy --collect-all sklearn --collect-all soxr ai_worker.py
+          if ($LASTEXITCODE -ne 0) { throw 'AI Engine build failed' }
+      - name: Test packaged AI Engine
+        shell: pwsh
+        run: |
+          @'
+          import math, wave, struct
+          with wave.open('test-analysis.wav', 'wb') as f:
+              f.setnchannels(1)
+              f.setsampwidth(2)
+              f.setframerate(11025)
+              for i in range(22050):
+                  f.writeframesraw(struct.pack('<h', int(5000 * math.sin(2 * math.pi * 220 * i / 11025))))
+          '@ | python -
+          foreach ($task in @('beats','bass_notes')) {
+            $argsForTask = if ($task -eq 'beats') { @('beats','test-analysis.wav') } else { @('bass_notes','test-analysis.wav','balanced') }
+            $result = & dist/RiffLabAI/RiffLabAI.exe @argsForTask 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "AI Engine $task failed: $result" }
+            $json = ($result | Out-String).Trim() | ConvertFrom-Json -ErrorAction Stop
+          }
+      - name: Package AI Engine once
+        shell: pwsh
+        run: |
+          Compress-Archive -Path 'dist/RiffLabAI/*' -DestinationPath 'RiffLab-AI-Engine.zip' -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RiffLab-AI-Engine
+          path: RiffLab-AI-Engine.zip
+          retention-days: 30
