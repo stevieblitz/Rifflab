@@ -2800,6 +2800,10 @@ class Window(QMainWindow):
         if not self.stems and self.source_audio is None:
             self.status_message('Open a song before re-analyzing.')
             return
+        if not (self.stems and self.folder):
+            self.status_message('Separating stems first: Bass Mode never analyzes the original mix.')
+            self.start_split(Path(self.source_audio))
+            return
         self._start_analysis_ui()
         self.set_chord_loading(True, 'Re-analyzing notes…')
         self.reanalyze_button.setEnabled(False)
@@ -2828,33 +2832,15 @@ class Window(QMainWindow):
     def analyze_current(self):
         if self.source_audio is None or self.analysis_running:
             return
-        self._start_analysis_ui()
-        self.set_chord_loading(True)
-        self.analyze_local.setEnabled(False)
-        self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
-        threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+        self.status_message('Separating stems first — Bass Mode listens to the isolated bass only.')
+        self.start_split(Path(self.source_audio))
 
     def _analyze_source(self, path, force=False):
-        try:
-            cache = ROOT / 'analysis' / (path.stem + '_' + str(path.stat().st_size))
-            cache.mkdir(parents=True, exist_ok=True)
-            beats_file = cache / 'beats.json'
-            bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes_v4' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
-            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
-            if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
-            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
-            if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
-            if not self.analysis_cancel.is_set():
-                self.signals.beats.emit(beats)
-                self.signals.chords.emit(chords)
-        except AnalysisCancelled:
-            pass
-        except Exception as exc:
-            self.signals.error.emit(f'Analysis failed: {exc}\nDetails: {ROOT / "rifflab-errors.log"}')
-            self._log_exception()
-        finally:
-            self.signals.analysis_done.emit()
+        # Safety guard: never infer bass notes from a full mix containing
+        # vocals, guitar or drum attacks. Stem separation is mandatory.
+        self.signals.error.emit(
+            'Analysis requires separated stems. Use Split to isolate bass first.')
+        self.signals.analysis_done.emit()
 
     def on_analysis_done(self):
         was_cancelled = self.analysis_cancel.is_set()
