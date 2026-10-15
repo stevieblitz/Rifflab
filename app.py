@@ -1645,14 +1645,10 @@ class Window(QMainWindow):
         self.tuner_quick_button.setToolTip('Chromatic Tuner')
         self.tuner_quick_button.setAccessibleName('Open Chromatic Tuner')
         self.tuner_quick_button.clicked.connect(self.toggle_tuner_panel)
-        # Put the tuning fork on the tab row, aligned to the far right.
-        tuner_corner = QWidget()
-        tuner_corner_layout = QHBoxLayout(tuner_corner)
-        tuner_corner_layout.setContentsMargins(0, 0, 3, 0)
-        tuner_corner_layout.setSpacing(0)
-        tuner_corner_layout.addWidget(self.tuner_quick_button)
-        # The tuner now lives on its own tab; keep the original icon assets.
-        self.tuner_quick_button.hide()
+        # Add the tuning fork to a persistent layout. Previously it belonged
+        # to an unreferenced tuner_corner widget, deleted by Qt before the
+        # deferred sizing callback ran (libshiboken: QPushButton deleted).
+        footer.addWidget(self.tuner_quick_button, 0)
         outer.addLayout(footer)
         outer.addWidget(self.progress)
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
