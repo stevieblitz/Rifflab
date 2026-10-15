@@ -1,4 +1,5 @@
 name: Build RiffLab Compact for Windows
+# Build request: updated compact UI and visible advanced controls.
 
 # One Windows build per branch. New commits cancel obsolete queued/running
 # builds; avoid duplicate push + pull_request builds for the same revision.
