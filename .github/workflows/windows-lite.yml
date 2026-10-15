@@ -200,6 +200,40 @@ jobs:
               print('WARNING: All startup smoke tests failed; uploading diagnostic build anyway.', flush=True)
           '@ | python -
 
+      - name: Capture native Windows crash dump
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $dumpDir = Join-Path $env:GITHUB_WORKSPACE 'crash-diagnostics'
+          New-Item -ItemType Directory -Force $dumpDir | Out-Null
+          $reg = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\RiffLab.exe'
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name DumpFolder -PropertyType ExpandString -Value $dumpDir -Force | Out-Null
+          New-ItemProperty -Path $reg -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          New-ItemProperty -Path $reg -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
+          $env:QT_QPA_PLATFORM = 'windows'
+          $env:PYTHONFAULTHANDLER = '1'
+          $exe = (Resolve-Path 'dist/RiffLab/RiffLab.exe').Path
+          "Launching $exe" | Out-File "$dumpDir/diagnostic.txt"
+          $p = Start-Process -FilePath $exe -PassThru -Wait -RedirectStandardOutput "$dumpDir/stdout.txt" -RedirectStandardError "$dumpDir/stderr.txt"
+          "Exit code: $($p.ExitCode)" | Tee-Object -FilePath "$dumpDir/diagnostic.txt" -Append
+          Start-Sleep -Seconds 5
+          Get-ChildItem $dumpDir | Select-Object Name,Length | Format-Table | Out-String | Tee-Object -FilePath "$dumpDir/diagnostic.txt" -Append
+          if (!(Get-ChildItem $dumpDir -Filter '*.dmp' -ErrorAction SilentlyContinue)) {
+            'No Windows Error Reporting dump was produced.' | Tee-Object -FilePath "$dumpDir/diagnostic.txt" -Append
+          }
+          Remove-Item -Path $reg -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Upload native crash diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiffLab-native-crash-${{ github.run_number }}
+          path: crash-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Package small UI download
         shell: pwsh
         run: |
