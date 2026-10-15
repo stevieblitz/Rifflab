@@ -4355,6 +4355,17 @@ if __name__ == '__main__':
         print(f'RIFFLAB_DIAG: {side} half hidden ({len(hidden)}/{len(children)}): '
               + ', '.join(type(x).__name__ + ':' + x.objectName() for x in hidden),
               file=sys.stderr, flush=True)
+    elif diag_mode.startswith('only-tab-'):
+        tabs = window.findChild(QTabWidget, 'mainTabs')
+        index = int(diag_mode.removeprefix('only-tab-'))
+        if tabs is not None:
+            # Explicitly suppress every other page's native painting rather
+            # than merely changing selected tab (which does not isolate it).
+            for i in range(tabs.count()):
+                tabs.widget(i).setVisible(i == index)
+            tabs.setCurrentIndex(index)
+            print('RIFFLAB_DIAG: only visible tab=' + str(index) +
+                  ' (' + tabs.tabText(index) + ')', file=sys.stderr, flush=True)
     elif diag_mode.startswith('tab-'):
         tabs = window.findChild(QTabWidget, 'mainTabs')
         if tabs is None:
