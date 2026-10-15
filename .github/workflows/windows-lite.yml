@@ -133,13 +133,13 @@ jobs:
                              (64,64), (128,128), (256,256)])
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: minimal
+          QT_QPA_PLATFORM: offscreen
           PYTHONFAULTHANDLER: '1'
         run: |
           @'
@@ -147,6 +147,7 @@ jobs:
           exe = os.path.abspath('dist/RiffLab/RiffLab.exe')
           env = os.environ.copy()
           env['QT_DEBUG_PLUGINS'] = '1'
+          env['PYTHONFAULTHANDLER'] = '1'
           proc = subprocess.Popen([exe], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
           try:
               time.sleep(8)
@@ -176,6 +177,16 @@ jobs:
           2. Install the AI Engine separately once to enable new stem separation and bass/chord analysis.
           3. Keep all files in this folder together.
           '@ | Set-Content "$root/START-HERE.txt"
+          @'
+          @echo off
+          cd /d "%~dp0"
+          set PYTHONFAULTHANDLER=1
+          RiffLab.exe > startup-log.txt 2>&1
+          echo.
+          echo RiffLab exit code: %errorlevel%
+          echo Startup log: %~dp0startup-log.txt
+          pause
+          '@ | Set-Content "$root/START-DEBUG.bat"
           Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Compact-${{ github.run_number }}.zip -Force
 
       - name: Report actual download size and largest bundled files
