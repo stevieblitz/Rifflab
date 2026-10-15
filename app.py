@@ -1674,13 +1674,11 @@ class Window(QMainWindow):
         self.tuner_quick_button.setToolTip('Chromatic Tuner')
         self.tuner_quick_button.setAccessibleName('Open Chromatic Tuner')
         self.tuner_quick_button.clicked.connect(self.toggle_tuner_panel)
-        # Put the tuning fork on the tab row, aligned to the far right.
-        tuner_corner = QWidget()
-        tuner_corner_layout = QHBoxLayout(tuner_corner)
-        tuner_corner_layout.setContentsMargins(0, 0, 3, 0)
-        tuner_corner_layout.setSpacing(0)
-        tuner_corner_layout.addWidget(self.tuner_quick_button)
-        # The tuner now lives on its own tab; keep the original icon assets.
+        # Keep the tuner button owned by a persistent parent.
+        # The old local tuner_corner was never inserted into the UI; Qt destroyed
+        # it (and its child QPushButton), leaving the deferred resize callback
+        # accessing a deleted native object on first event-loop iteration.
+        self.tuner_quick_button.setParent(self.tabs)
         self.tuner_quick_button.hide()
         outer.addLayout(footer)
         outer.addWidget(self.progress)
@@ -1928,7 +1926,11 @@ class Window(QMainWindow):
         tab_bar = self.tabs.tabBar()
         height = tab_bar.tabRect(0).height() if tab_bar.count() else 44
         height = max(36, height)
-        self.tuner_quick_button.setFixedSize(height, height)
+        # This button is intentionally hidden; avoid native calls on a
+        # widget that may have been disposed during shutdown.
+        from shiboken6 import isValid
+        if isValid(self.tuner_quick_button):
+            self.tuner_quick_button.setFixedSize(height, height)
 
     @staticmethod
     def tuning_fork_icon():
