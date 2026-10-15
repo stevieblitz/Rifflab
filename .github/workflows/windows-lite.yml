@@ -202,6 +202,7 @@ jobs:
           '@ | python -
 
       - name: Isolate Qt window show crash
+        if: always()
         shell: pwsh
         continue-on-error: true
         run: |
@@ -226,6 +227,7 @@ jobs:
           }
 
       - name: Capture native Windows crash with ProcDump
+        if: always()
         shell: pwsh
         continue-on-error: true
         run: |
