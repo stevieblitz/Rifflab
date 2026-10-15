@@ -218,9 +218,14 @@ jobs:
           @echo off
           cd /d "%~dp0"
           set PYTHONFAULTHANDLER=1
-          RiffLab.exe > startup-log.txt 2>&1
+          echo Starting RiffLab... > startup-log.txt
+          echo Diagnostic launch started: %date% %time%
+          RiffLab.exe >> startup-log.txt 2>&1
+          set "EXITCODE=%errorlevel%"
+          echo Exit code: %EXITCODE% >> startup-log.txt
+          echo Exit code: %EXITCODE%
+          type startup-log.txt
           echo.
-          echo RiffLab exit code: %errorlevel%
           echo Startup log: %~dp0startup-log.txt
           pause
           '@ | Set-Content "$root/START-DEBUG.bat"
