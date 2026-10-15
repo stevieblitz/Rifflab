@@ -31,6 +31,59 @@ def chords(path, accuracy="balanced"):
 
 
 
+def _reinforce_repeated_harmony(chroma, emission, seconds_per_frame):
+    """Conservative motif consensus: reuse harmonic evidence in repeated phrases.
+
+    Matching requires four consecutive chroma slices to agree, so a shared
+    single chord does not qualify as the same riff. Never invent chord classes:
+    only blend the original model's measured likelihoods at corresponding
+    positions, and only for distant, very similar phrases.
+    """
+    import numpy as np
+    n = len(emission)
+    if n < 70:
+        return emission
+    phrase = max(12, round(3.0 / seconds_per_frame))
+    step = max(6, phrase // 2)
+    starts = np.arange(0, n - phrase, step, dtype=int)
+    if len(starts) > 650:
+        starts = starts[np.linspace(0, len(starts) - 1, 650, dtype=int)]
+    features = []
+    for start in starts:
+        blocks = np.array_split(chroma[:, start:start + phrase], 4, axis=1)
+        vector = np.concatenate([np.mean(block, axis=1) for block in blocks])
+        vector /= max(float(np.linalg.norm(vector)), 1e-8)
+        features.append(vector)
+    features = np.asarray(features)
+    similarities = features @ features.T
+    output = emission.copy()
+    reinforcement = np.zeros_like(emission)
+    weights = np.zeros(n, dtype=float)
+    distance = max(phrase * 2, round(8.0 / seconds_per_frame))
+    for i, start in enumerate(starts):
+        candidates = np.where(
+            (similarities[i] >= 0.955) &
+            (np.abs(starts - start) >= distance)
+        )[0]
+        if len(candidates) == 0:
+            continue
+        best = sorted(candidates, key=lambda j: similarities[i, j], reverse=True)[:3]
+        for j in best:
+            donor = int(starts[j])
+            count = min(phrase, n - start, n - donor)
+            if count <= 0:
+                continue
+            reinforcement[start:start+count] += emission[donor:donor+count]
+            weights[start:start+count] += 1
+    matched = weights > 0
+    if np.any(matched):
+        average = reinforcement[matched] / weights[matched, None]
+        # Low blend strength: recurring phrases aid consistency but cannot
+        # override strong, locally measured chord changes.
+        output[matched] = 0.78 * emission[matched] + 0.22 * average
+    return output
+
+
 def chords_instruments(other_path, bass_path, accuracy="balanced"):
     """Change-aware harmony tracking. No vocal or drum audio enters the chord model.
 
@@ -40,7 +93,7 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
     """
     import librosa
     import numpy as np
-    from scipy.ndimage import median_filter, gaussian_filter1d
+    from scipy.ndimage import gaussian_filter1d
 
     sr, hop = 11025, 512
     other, _ = librosa.load(other_path, sr=sr, mono=True)
@@ -88,6 +141,8 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
     stride = {'fast': 5, 'balanced': 3, 'detailed': 2}.get(accuracy, 3)
     frames = np.arange(0, n, stride)
     emission = scores[:, frames].T
+    emission = _reinforce_repeated_harmony(h[:, frames], emission,
+                                           stride * hop / sr)
     change = novelty[frames]
     states = emission.shape[1]
     back = np.zeros((len(frames), states), dtype=np.int16)
@@ -104,8 +159,25 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
     decoded[-1] = np.argmax(dp)
     for t in range(len(frames)-1, 0, -1):
         decoded[t-1] = back[t, decoded[t]]
-    # Suppress brief spurious labels; keep genuine changes at their timestamps.
-    decoded = median_filter(decoded, size={'fast': 7, 'balanced': 5, 'detailed': 3}.get(accuracy, 5), mode='nearest')
+    # Chord identities are categorical, not numbers: a numerical median can
+    # output an unrelated chord between two others. Smooth short runs only
+    # when neighboring spans agree AND local audio prefers that neighbor.
+    minimum = {'fast': 4, 'balanced': 4, 'detailed': 3}.get(accuracy, 4)
+    runs = []
+    begin = 0
+    for idx in range(1, len(decoded) + 1):
+        if idx == len(decoded) or decoded[idx] != decoded[begin]:
+            runs.append((begin, idx, int(decoded[begin])))
+            begin = idx
+    for ri in range(1, len(runs)-1):
+        start, end, chord_id = runs[ri]
+        before = runs[ri-1][2]
+        after = runs[ri+1][2]
+        if end - start >= minimum or before != after:
+            continue
+        # Only suppress a flicker if the audio supports the surrounding chord.
+        if float(np.mean(emission[start:end, before] - emission[start:end, chord_id])) > -0.06:
+            decoded[start:end] = before
     output = []
     last = None
     for frame, state in zip(frames, decoded):
