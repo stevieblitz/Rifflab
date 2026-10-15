@@ -5,6 +5,7 @@ on:
     branches: [feature/complexity-slider-test]
     paths:
       - 'ai_worker.py'
+      - 'requirements-full.txt'
       - '.github/workflows/windows-ai-engine.yml'
 permissions:
   contents: read
@@ -47,8 +48,14 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path 'dist/RiffLabAI/*' -DestinationPath 'RiffLab-AI-Engine.zip' -Force
+          $hash = (Get-FileHash 'RiffLab-AI-Engine.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "SHA256: $hash"
+          Write-Host ("AI Engine ZIP size: {0:N1} MB" -f ((Get-Item 'RiffLab-AI-Engine.zip').Length / 1MB))
+          $hash | Set-Content 'RiffLab-AI-Engine.sha256'
       - uses: actions/upload-artifact@v4
         with:
           name: RiffLab-AI-Engine
-          path: RiffLab-AI-Engine.zip
+          path: |
+            RiffLab-AI-Engine.zip
+            RiffLab-AI-Engine.sha256
           retention-days: 30
