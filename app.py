@@ -760,7 +760,11 @@ class Window(QMainWindow):
         # Avoid an extra toolbar row and prevent expanding Save/Open buttons.
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
-        self.tabs.setCornerWidget(project_header, Qt.TopLeftCorner)
+        # Keep the project controls outside QTabWidget's corner-widget ownership.
+        # The corner widget is created before the tabs exist and is a likely
+        # trigger for Qt's native layout/visibility crash on Windows.
+        outer.addWidget(project_header)
+
         outer.addWidget(self.tabs, 1)
         def tab_page(name):
             page = QWidget()
