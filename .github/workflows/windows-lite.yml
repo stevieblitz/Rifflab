@@ -1,4 +1,4 @@
-name: Build RiffLab Compact for Windows
+name: Build RiffLab Complete for Windows
 # Build request: updated compact UI and visible advanced controls.
 
 # One Windows build per branch. New commits cancel obsolete queued/running
@@ -29,7 +29,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -124,6 +124,21 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'QtAwesome resource check failed' }
 
+      - name: Install full AI analysis dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-full.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Full AI dependency installation failed' }
+          python -c "import demucs, librosa, scipy, torch, soundfile; print('AI dependencies available')"
+          if ($LASTEXITCODE -ne 0) { throw 'AI import validation failed' }
+
+      - name: Build AI worker
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLabAI --collect-all demucs --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all scipy --collect-all soundfile ai_worker.py
+          if ($LASTEXITCODE -ne 0) { throw 'AI worker build failed' }
+          if (!(Test-Path 'dist/RiffLabAI/RiffLabAI.exe')) { throw 'Missing AI executable' }
+
       - name: Build UI executable
         shell: pwsh
         run: |
@@ -178,19 +193,22 @@ jobs:
               sys.exit(1)
           '@ | python -
 
-      - name: Package small UI download
+      - name: Package complete Windows download
         shell: pwsh
         run: |
           $root = 'dist/RiffLab'
           if (!(Test-Path "$root/RiffLab.exe")) { throw 'RiffLab.exe missing' }
+          if (!(Test-Path 'dist/RiffLabAI/RiffLabAI.exe')) { throw 'Missing AI executable; refusing incomplete package' }
+          Copy-Item 'dist/RiffLabAI' (Join-Path $root 'RiffLabAI') -Recurse -Force
+          if (!(Test-Path "$root/RiffLabAI/RiffLabAI.exe")) { throw 'Missing AI folder in packaged UI' }
           New-Item -ItemType Directory -Force "$root/bin" | Out-Null
           Copy-Item vendor/bin/ffmpeg.exe "$root/bin/ffmpeg.exe"
           Copy-Item vendor/bin/ffprobe.exe "$root/bin/ffprobe.exe"
           @'
-          RiffLab Compact
-          1. Run RiffLab.exe to open the interface and saved analyses.
-          2. Install the AI Engine separately once to enable new stem separation and bass/chord analysis.
-          3. Keep all files in this folder together.
+          RiffLab Complete
+          1. Run RiffLab.exe.
+          2. The RiffLabAI folder is included for stem separation and note analysis.
+          3. Keep all files and folders together; AI model weights may download at first use.
           '@ | Set-Content "$root/START-HERE.txt"
           @'
           @echo off
@@ -207,12 +225,19 @@ jobs:
           echo Startup log: %~dp0startup-log.txt
           pause
           '@ | Set-Content "$root/START-DEBUG.bat"
-          Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Compact-${{ github.run_number }}.zip -Force
+          Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Complete-${{ github.run_number }}.zip -Force
+          Add-Type -AssemblyName System.IO.Compression
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path 'RiffLab-Complete-${{ github.run_number }}.zip').Path)
+          try {
+            if (-not ($archive.Entries | Where-Object { $_.FullName -eq 'RiffLabAI/RiffLabAI.exe' -or $_.FullName -eq 'RiffLabAI\RiffLabAI.exe' })) {
+              throw 'AI executable missing from final ZIP'
+            }
+          } finally { $archive.Dispose() }
 
       - name: Report actual download size and largest bundled files
         shell: pwsh
         run: |
-          $archive = 'RiffLab-Compact-${{ github.run_number }}.zip'
+          $archive = 'RiffLab-Complete-${{ github.run_number }}.zip'
           $zip = Get-Item $archive
           Write-Host ("ZIP download: {0:N1} MB" -f ($zip.Length / 1MB))
           $root = 'dist/RiffLab'
@@ -226,6 +251,6 @@ jobs:
       - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
-          name: RiffLab-Compact-${{ github.run_number }}
-          path: RiffLab-Compact-${{ github.run_number }}.zip
+          name: RiffLab-Complete-${{ github.run_number }}
+          path: RiffLab-Complete-${{ github.run_number }}.zip
           retention-days: 30
