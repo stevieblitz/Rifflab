@@ -125,6 +125,26 @@ jobs:
           python -m PyInstaller --noconfirm --clean --windowed --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
+      - name: Smoke-test Windows application startup
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          @'
+          import subprocess, time, os
+          exe = os.path.abspath('dist/RiffLab/RiffLab.exe')
+          proc = subprocess.Popen([exe], env=os.environ.copy())
+          try:
+              time.sleep(8)
+              if proc.poll() is not None:
+                  raise RuntimeError(f'RiffLab exited early: {proc.returncode}')
+              print('RiffLab remained running for 8 seconds')
+          finally:
+              proc.terminate()
+              try: proc.wait(timeout=8)
+              except subprocess.TimeoutExpired: proc.kill()
+          '@ | python -
+
       - name: Package small UI download
         shell: pwsh
         run: |
