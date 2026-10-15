@@ -1731,6 +1731,43 @@ class Window(QMainWindow):
         self.setup_developer_menus()
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
+    def compare_with_isophonics(self):
+        """Benchmark the original Beatles recording against verified chord labels."""
+        if self.analysis_mode.currentIndex() == 0 or not self.chord_data:
+            QMessageBox.information(self, 'Isophonics benchmark',
+                                    'Analyze the song in Chord Mode first.')
+            return
+        title = str((self.song_metadata or {}).get('title', ''))
+        filename = str(getattr(self, 'source_audio', '') or '')
+        candidate = (title + ' ' + Path(filename).stem).lower()
+        if 'i saw her standing there' not in candidate.replace('_', ' ').replace('-', ' '):
+            QMessageBox.warning(
+                self, 'Wrong recording',
+                'This benchmark belongs to The Beatles - I Saw Her Standing There '
+                '(Please Please Me album version). Load that track first. '
+                'Other recordings have different chord timing.')
+            return
+        try:
+            from chord_comparison import (fetch_isophonics_benchmark, compare,
+                                          save_report)
+            reference = fetch_isophonics_benchmark()
+            predictions = [(float(t), str(note)) for t, note in self.chord_data]
+            end_time = self._duration / 1000.0 if self._duration > 0 else None
+            result = compare(predictions, reference, end_seconds=end_time)
+            output = ROOT / 'isophonics-beatles-i-saw-her-standing-there-report.csv'
+            save_report(output, result)
+            QMessageBox.information(
+                self, 'Isophonics benchmark',
+                f"Chord agreement: {result['exact_percent']}%\n"
+                f"Root agreement: {result['root_percent']}%\n"
+                f"Compared: {result['compared_seconds']} seconds\n"
+                f"Disagreement regions: {len(result['intervals'])}\n\n"
+                f"Report: {output}\n\n"
+                "Reference: Isophonics v1.2, human-annotated; not Chordify.")
+        except (OSError, ValueError, IndexError, TimeoutError) as exc:
+            QMessageBox.warning(self, 'Reference unavailable',
+                                f'Could not retrieve or compare Isophonics annotations: {exc}')
+
     def compare_chords_with_reference(self):
         """Compare the current AI chord timeline against a timestamped reference."""
         if self.analysis_mode.currentIndex() == 0:
@@ -1785,6 +1822,7 @@ class Window(QMainWindow):
         file_menu.addAction('Import / Export', lambda: self.tabs.setCurrentIndex(2))
         file_menu.addAction('Export WAV…', self.export_mix)
         file_menu.addAction('Compare Chords with Reference CSV…', self.compare_chords_with_reference)
+        file_menu.addAction('Benchmark Beatles Chords (Isophonics)…', self.compare_with_isophonics)
         file_menu.addSeparator()
         file_menu.addAction('Exit', self.close)
         view = bar.addMenu('&View')
