@@ -13,6 +13,7 @@ on:
       - 'realtime_audio.py'
       - 'requirements-*.txt'
       - '.github/workflows/windows-ui-test.yml'
+      - 'BUILD_COMPACT.txt'
 
 concurrency:
   group: rifflab-lite-${{ github.ref }}
