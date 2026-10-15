@@ -200,6 +200,30 @@ jobs:
               print('WARNING: All startup smoke tests failed; uploading diagnostic build anyway.', flush=True)
           '@ | python -
 
+      - name: Isolate Qt window show crash
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $exe = (Resolve-Path 'dist/RiffLab/RiffLab.exe').Path
+          $env:QT_QPA_PLATFORM = 'windows'
+          $env:PYTHONFAULTHANDLER = '1'
+          foreach ($mode in @('hide-children', 'no-central-widget')) {
+            Write-Host "=== DIAGNOSTIC MODE: $mode ==="
+            $env:RIFFLAB_DIAG_MODE = $mode
+            $out = Join-Path $env:RUNNER_TEMP "riff-$mode-stdout.txt"
+            $err = Join-Path $env:RUNNER_TEMP "riff-$mode-stderr.txt"
+            $p = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+            if (!$p.WaitForExit(12000)) {
+              Write-Host "ALIVE after 12 seconds (startup passed); terminating diagnostic process"
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            } else {
+              Write-Host "Exit code: $($p.ExitCode)"
+            }
+            Get-Content $err -ErrorAction SilentlyContinue | Select-Object -Last 35
+            Remove-Item Env:RIFFLAB_DIAG_MODE -ErrorAction SilentlyContinue
+          }
+
       - name: Capture native Windows crash with ProcDump
         shell: pwsh
         continue-on-error: true
