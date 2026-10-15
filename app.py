@@ -4318,6 +4318,19 @@ if __name__ == '__main__':
             if child is not window:
                 child.hide()
         print('RIFFLAB_DIAG: all child widgets hidden', file=sys.stderr, flush=True)
+    elif diag_mode.startswith('bisect-'):
+        # Keep the original widget tree; only suppress rendering of half the
+        # direct children of the central widget, to isolate the native crash.
+        central = window.centralWidget()
+        children = [c for c in central.findChildren(QWidget, options=Qt.FindDirectChildrenOnly)] if central else []
+        side = diag_mode.removeprefix('bisect-')
+        midpoint = len(children) // 2
+        hidden = children[:midpoint] if side == 'first' else children[midpoint:]
+        for child in hidden:
+            child.hide()
+        print(f'RIFFLAB_DIAG: {side} half hidden ({len(hidden)}/{len(children)}): '
+              + ', '.join(type(x).__name__ + ':' + x.objectName() for x in hidden),
+              file=sys.stderr, flush=True)
     elif diag_mode == 'no-central-widget':
         central = window.takeCentralWidget()
         if central is not None:
