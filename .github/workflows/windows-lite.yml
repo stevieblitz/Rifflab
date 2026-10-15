@@ -159,7 +159,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp --runtime-hook qtawesome_runtime_hook.py app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
-      - name: Smoke-test Windows application startup (diagnostic)
+      - name: Smoke-test Windows application startup (required)
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
@@ -197,7 +197,8 @@ jobs:
                       try: proc.wait(timeout=5)
                       except subprocess.TimeoutExpired: proc.kill()
           if not success:
-              print('WARNING: All startup smoke tests failed; uploading diagnostic build anyway.', flush=True)
+              print('ERROR: RiffLab.exe failed all three startup checks. This build is NOT usable.', flush=True)
+              sys.exit(1)
           '@ | python -
 
       - name: Isolate Qt window show crash
