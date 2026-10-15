@@ -161,6 +161,20 @@ jobs:
           '@ | Set-Content "$root/START-HERE.txt"
           Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Compact-${{ github.run_number }}.zip -Force
 
+      - name: Report actual download size and largest bundled files
+        shell: pwsh
+        run: |
+          $archive = 'RiffLab-Compact-${{ github.run_number }}.zip'
+          $zip = Get-Item $archive
+          Write-Host ("ZIP download: {0:N1} MB" -f ($zip.Length / 1MB))
+          $root = 'dist/RiffLab'
+          $total = (Get-ChildItem $root -File -Recurse | Measure-Object Length -Sum).Sum
+          Write-Host ("Unpacked installation: {0:N1} MB" -f ($total / 1MB))
+          Get-ChildItem $root -File -Recurse |
+            Sort-Object Length -Descending |
+            Select-Object -First 20 @{Name='MB';Expression={[math]::Round($_.Length / 1MB, 1)}}, FullName |
+            Format-Table -AutoSize | Out-String | Write-Host
+
       - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
