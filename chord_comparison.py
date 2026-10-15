@@ -1,7 +1,7 @@
-"""Compare timestamped RiffLab chord predictions against a user-provided reference.
+"""Compare timestamped RiffLab chords with external annotated ground truth.
 
 Reference CSV: time,chord (seconds or mm:ss[.sss]). Rows mark the START of a chord.
-The reference must be provided by the user: no scraping or implied Chordify API.
+Sources may be CSV supplied locally or published human-annotated Isophonics labels.
 """
 import csv
 import json
@@ -32,7 +32,7 @@ def normalize(chord):
     equivalents = {'Db':'C#', 'Eb':'D#', 'Gb':'F#', 'Ab':'G#', 'Bb':'A#',
                    'Cb':'B', 'Fb':'E', 'E#':'F', 'B#':'C'}
     root = equivalents.get(root, root)
-    suffix = suffix.lower().replace('minor', 'm').replace('major', '')
+    suffix = suffix.split('/', 1)[0].lower().lstrip(':').replace('minor', 'm').replace('major', '')
     if suffix.startswith('maj'):
         quality = 'maj'
     elif suffix.startswith('min') or suffix.startswith('m') and not suffix.startswith('maj'):
@@ -119,3 +119,36 @@ def save_report(path, report):
         writer.writerow(['start_seconds','end_seconds','RiffLab','reference'])
         for row in report['intervals']:
             writer.writerow([row['start'], row['end'], row['riffLab'], row['reference']])
+
+# Published, manually reviewed chord timeline; NOT a Chordify prediction.
+# https://isophonics.net/content/reference-annotations-beatles
+ISOPHONICS_BENCHMARK_URL = (
+    'https://isophonics.net/files/annotations/chordlab/'
+    'The%20Beatles/01_-_Please_Please_Me/01_-_I_Saw_Her_Standing_There.lab'
+)
+
+def parse_isophonics_lab(text):
+    """Parse onset offset Harte chord from C4DM Isophonics .lab format."""
+    events = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        fields = line.split()
+        if len(fields) < 3:
+            raise ValueError('Invalid Isophonics annotation row')
+        start, end = float(fields[0]), float(fields[1])
+        if start < 0 or end <= start:
+            raise ValueError('Invalid Isophonics time interval')
+        events.append((start, fields[2]))
+    return validate(events)
+
+def fetch_isophonics_benchmark(timeout=12):
+    """Obtain a real annotation file on demand; do not fabricate song timings."""
+    from urllib.request import Request, urlopen
+    req = Request(ISOPHONICS_BENCHMARK_URL, headers={
+        'User-Agent': 'RiffLab/2 (noncommercial chord-validation test)'
+    })
+    with urlopen(req, timeout=timeout) as response:
+        raw = response.read(2_000_000)
+    return parse_isophonics_lab(raw.decode('utf-8-sig'))
