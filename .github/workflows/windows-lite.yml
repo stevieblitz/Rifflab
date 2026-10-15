@@ -17,6 +17,8 @@ on:
       - 'BUILD_COMPACT.txt'
       - 'autocue.py'
       - 'autocue_widget.py'
+      - 'chord_comparison.py'
+      - 'test_chord_comparison.py'
       - 'qtawesome_runtime_hook.py'
 
 concurrency:
@@ -135,9 +137,9 @@ jobs:
       - name: Validate chord-pattern regression tests
         shell: pwsh
         run: |
-          python -m py_compile app.py ai_worker.py autocue_widget.py test_chord_patterns.py
+          python -m py_compile app.py ai_worker.py autocue_widget.py test_chord_patterns.py chord_comparison.py test_chord_comparison.py
           if ($LASTEXITCODE -ne 0) { throw 'Python source syntax check failed' }
-          python -m unittest -v test_chord_patterns
+          python -m unittest -v test_chord_patterns test_chord_comparison
           if ($LASTEXITCODE -ne 0) { throw 'Chord pattern regression tests failed' }
 
       - name: Build AI worker
