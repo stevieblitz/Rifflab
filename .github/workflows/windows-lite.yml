@@ -132,6 +132,14 @@ jobs:
           python -c "import demucs, librosa, scipy, torch, soundfile; print('AI dependencies available')"
           if ($LASTEXITCODE -ne 0) { throw 'AI import validation failed' }
 
+      - name: Validate chord-pattern regression tests
+        shell: pwsh
+        run: |
+          python -m py_compile app.py ai_worker.py autocue_widget.py test_chord_patterns.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python source syntax check failed' }
+          python -m unittest -v test_chord_patterns
+          if ($LASTEXITCODE -ne 0) { throw 'Chord pattern regression tests failed' }
+
       - name: Build AI worker
         shell: pwsh
         run: |
