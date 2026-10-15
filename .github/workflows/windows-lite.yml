@@ -16,6 +16,7 @@ on:
       - '.github/workflows/windows-ui-test.yml'
       - 'BUILD_COMPACT.txt'
       - 'autocue.py'
+      - 'autocue_widget.py'
       - 'test_autocue.py'
 
 concurrency:
@@ -110,7 +111,7 @@ jobs:
       - name: Verify Python syntax and label development build
         shell: pwsh
         run: |
-          python -m py_compile app.py ai_worker.py realtime_audio.py
+          python -m py_compile app.py ai_worker.py realtime_audio.py autocue_widget.py
           if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
           "BUILD_NUMBER = '${{ github.run_number }}'" | Set-Content -Encoding UTF8 build_info.py
 
@@ -138,16 +139,22 @@ jobs:
       - name: Smoke-test Windows application startup
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORM: minimal
+          PYTHONFAULTHANDLER: '1'
         run: |
           @'
           import subprocess, time, os
           exe = os.path.abspath('dist/RiffLab/RiffLab.exe')
-          proc = subprocess.Popen([exe], env=os.environ.copy())
+          env = os.environ.copy()
+          env['QT_DEBUG_PLUGINS'] = '1'
+          proc = subprocess.Popen([exe], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
           try:
               time.sleep(8)
               if proc.poll() is not None:
-                  raise RuntimeError(f'RiffLab exited early: {proc.returncode}')
+                  stdout, stderr = proc.communicate(timeout=5)
+                  print('STDOUT:', stdout.decode(errors='replace')[-6000:])
+                  print('STDERR:', stderr.decode(errors='replace')[-12000:])
+                  raise RuntimeError(f'RiffLab exited early: {proc.returncode} (Windows access violation = 3221225477)')
               print('RiffLab remained running for 8 seconds')
           finally:
               proc.terminate()
