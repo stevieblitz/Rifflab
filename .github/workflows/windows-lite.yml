@@ -115,6 +115,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
           "BUILD_NUMBER = '${{ github.run_number }}'" | Set-Content -Encoding UTF8 build_info.py
 
+      - name: Validate QtAwesome font resources before packaging
+        shell: pwsh
+        run: |
+          @'
+          import os, qtawesome
+          from pathlib import Path
+          base = Path(qtawesome.__file__).parent / 'fonts'
+          print('QtAwesome fonts:', base)
+          for path in sorted(base.glob('*.ttf')):
+              print(path.name, path.stat().st_size, 'bytes')
+              if path.stat().st_size < 1000:
+                  raise RuntimeError(f'Empty QtAwesome font: {path}')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'QtAwesome resource check failed' }
+
       - name: Build UI executable
         shell: pwsh
         run: |
@@ -133,7 +148,7 @@ jobs:
                              (64,64), (128,128), (256,256)])
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon "assets/rifflab-app.ico" --add-data "assets/rifflab-logo.svg;assets" --add-data "assets/rifflab-window-icon.png;assets" @brandArg --collect-all qtawesome --collect-all yt_dlp --runtime-hook qtawesome_runtime_hook.py app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup (diagnostic)
