@@ -1,4 +1,4 @@
-name: Build RiffLab Lite for Windows
+name: Build RiffLab Compact for Windows
 
 # One Windows build per branch. New commits cancel obsolete queued/running
 # builds; avoid duplicate push + pull_request builds for the same revision.
@@ -134,16 +134,16 @@ jobs:
           Copy-Item vendor/bin/ffmpeg.exe "$root/bin/ffmpeg.exe"
           Copy-Item vendor/bin/ffprobe.exe "$root/bin/ffprobe.exe"
           @'
-          RiffLab Lite
+          RiffLab Compact
           1. Run RiffLab.exe to open the interface and saved analyses.
           2. Install the AI Engine separately once to enable new stem separation and bass/chord analysis.
           3. Keep all files in this folder together.
           '@ | Set-Content "$root/START-HERE.txt"
-          Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Lite-UI-${{ github.run_number }}.zip -Force
+          Compress-Archive -Path "$root/*" -DestinationPath RiffLab-Compact-${{ github.run_number }}.zip -Force
 
       - name: Upload Windows download
         uses: actions/upload-artifact@v4
         with:
-          name: RiffLab-Lite-UI-${{ github.run_number }}
-          path: RiffLab-Lite-UI-${{ github.run_number }}.zip
+          name: RiffLab-Compact-${{ github.run_number }}
+          path: RiffLab-Compact-${{ github.run_number }}.zip
           retention-days: 30
