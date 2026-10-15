@@ -1140,6 +1140,7 @@ class Window(QMainWindow):
             self.sensitivity.blockSignals(False)
             self.rebuild_chords()
         self.complexity.valueChanged.connect(apply_complexity)
+        apply_complexity(self.complexity.value())
         options.addWidget(self.complexity)
         options.addWidget(self.complexity_label)
         options.addWidget(QLabel('♮ Transpose'))
