@@ -1761,6 +1761,19 @@ class Window(QMainWindow):
           QProgressBar{max-height:4px;background:#202d3b;border:0}
           QProgressBar::chunk{background:#7bd6ff}
         ''')
+        # Windows safe mode: isolate Qt style-engine/native widget painting.
+        # Keep all tabs and controls functional, prioritizing an app that opens.
+        # The full theme remains enabled on non-Windows platforms.
+        if sys.platform == 'win32':
+            self.setStyleSheet(
+                "QMainWindow { background: #111923; color: #e8edf2; }"
+                "QWidget { color: #e8edf2; }"
+                "QPushButton { background: #263747; border: 1px solid #466177;"
+                " border-radius: 3px; padding: 4px; }"
+                "QPushButton:checked { background: #31526e; }"
+            )
+            print('RIFFLAB_BOOT: Windows lightweight widget stylesheet enabled',
+                  file=sys.stderr, flush=True)
         self.setup_developer_menus()
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
