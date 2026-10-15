@@ -1083,7 +1083,7 @@ class Window(QMainWindow):
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
         options.addWidget(QLabel('◈ Accuracy'))
         self.accuracy = QComboBox()
-        self.accuracy.addItems(['Fast · snelle preview', 'Balanced · normaal', 'Detailed · meer precisie'])
+        self.accuracy.addItems(['Fast preview', 'Balanced', 'Detailed'])
         self.accuracy.setCurrentIndex(1)
         self.accuracy.setToolTip('Rekentijd en resolutie van de AI-analyse. Wijziging toepassen met Re-analyze; sneller is niet per definitie nauwkeuriger.')
         options.addWidget(self.accuracy)
@@ -1100,21 +1100,44 @@ class Window(QMainWindow):
         options.addWidget(self.cancel_analysis_button)
         options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
-        self.noteguard.addItems(['Uit · alle detecties', 'Licht · snelle riffs', 'Normaal · betrouwbaar', 'Sterk · grondtonen'])
+        self.noteguard.addItems(['Off · all notes', 'Light · quick riffs', 'Normal · reliable', 'Strong · root focus'])
         self.noteguard.setCurrentIndex(0)
-        self.noteguard.setToolTip('Filtert korte twijfelachtige detecties op de bestaande noten. Dit herberekent de audio niet.')
+        self.noteguard.setToolTip('Filters short uncertain notes without reanalyzing audio.')
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
         options.addWidget(self.noteguard)
         options.addWidget(QLabel('≋ Stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
         self.sensitivity.setValue(0)
-        self.sensitivity.setToolTip('Minimale duur van een nootwijziging; hogere waarde = minder korte wisselingen. Wordt direct toegepast.')
+        self.sensitivity.setToolTip('Minimum note duration. Higher values suppress short changes.')
         self.sensitivity.setFixedWidth(90)
         self.sensitivity.valueChanged.connect(self.rebuild_chords)
         options.addWidget(self.sensitivity)
         self.sensitivity_label = QLabel('≥0.0 s')
         options.addWidget(self.sensitivity_label)
+        # Practice complexity is a view filter: preserve the original detected notes.
+        options.addWidget(QLabel('Complexity'))
+        self.complexity = QSlider(Qt.Horizontal)
+        self.complexity.setRange(0, 100)
+        self.complexity.setValue(25)
+        self.complexity.setMinimumWidth(105)
+        self.complexity.setToolTip('Low: focus on root notes. High: include more passing notes and bass runs. Audio pitch is unchanged.')
+        self.complexity_label = QLabel('25%')
+        def apply_complexity(value):
+            self.complexity_label.setText(f'{value}%')
+            # Reuse the existing display filters; never touch playback or analysis.
+            guard = 3 if value <= 20 else 2 if value <= 45 else 1 if value <= 70 else 0
+            stability = round((100 - value) * 0.16)
+            self.noteguard.blockSignals(True)
+            self.sensitivity.blockSignals(True)
+            self.noteguard.setCurrentIndex(guard)
+            self.sensitivity.setValue(stability)
+            self.noteguard.blockSignals(False)
+            self.sensitivity.blockSignals(False)
+            self.rebuild_chords()
+        self.complexity.valueChanged.connect(apply_complexity)
+        options.addWidget(self.complexity)
+        options.addWidget(self.complexity_label)
         options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
         self.transpose.setRange(-12, 12)
@@ -1648,6 +1671,8 @@ class Window(QMainWindow):
           QPushButton[transportIcon='true']{padding:2px;min-width:30px;min-height:28px;max-height:30px}
           QPushButton:disabled{background:#28333e;color:#7d8a96;border-color:#34404c}
           QLineEdit,QComboBox,QSpinBox{padding:5px;background:#202d3b;border:1px solid #34475c;border-radius:4px}
+          QComboBox{min-width:105px}
+          QComboBox QAbstractItemView{min-width:235px;padding:5px;selection-background-color:#294d70}
           QScrollArea{border:0}
           QCheckBox{spacing:5px}
           QWidget#stemPanel{background:#172431;border:1px solid #33485d;border-radius:6px}
