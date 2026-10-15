@@ -3074,7 +3074,7 @@ class Window(QMainWindow):
                 cache = self.folder / f'bass_stem_only_v1_{self._accuracy_key()}.json'
                 task, paths = 'bass_notes', [str(self.stems['bass']), self._accuracy_key()]
             else:
-                cache = self.folder / f'chords_instruments_v5_{self._accuracy_key()}.json'
+                cache = self.folder / f'chords_instruments_v6_patterns_{self._accuracy_key()}.json'
                 task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self._accuracy_key()]
             if cache.exists() and not force:
                 result = json.loads(cache.read_text(encoding='utf-8'))
