@@ -1141,8 +1141,12 @@ class Window(QMainWindow):
             self.rebuild_chords()
         self.complexity.valueChanged.connect(apply_complexity)
         # Initialize the visual filters before analysis state exists.
+        self.noteguard.blockSignals(True)
+        self.sensitivity.blockSignals(True)
         self.noteguard.setCurrentIndex(2)
         self.sensitivity.setValue(12)
+        self.noteguard.blockSignals(False)
+        self.sensitivity.blockSignals(False)
         options.addWidget(self.complexity)
         options.addWidget(self.complexity_label)
         options.addWidget(QLabel('♮ Transpose'))
