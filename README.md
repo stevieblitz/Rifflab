@@ -6,9 +6,17 @@ A Windows music practice and analysis app for musicians who want to hear what's 
 
 Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
 
-**Created by Stevie Blitz.**
+**Created by Stevieblitz [Teun Verhoeven].** [teunverhoeven.nl](https://teunverhoeven.nl)
 
-> **Development status:** First public beta in preparation. Builds on development branches are experimental; a successful build is not automatically a published release.
+> **Current release:** [RiffLab | Alpha v0.2.0 — Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). This is experimental software; builds on development branches are not automatically public releases.
+
+## Download and releases
+
+**[Download the current Windows Alpha v0.2.0](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1)** · [All releases / older versions](https://github.com/stevieblitz/Rifflab/releases)
+
+The original [Alpha v0.1.0](https://github.com/stevieblitz/Rifflab/releases/tag/v0.1.0-alpha.1) remains available as an older version. The tagged release is the download source; GitHub's `main` branch contains the current application source and ongoing documentation.
+
+[Release changes](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1) · [Historical changelog](CHANGELOG.md) · [Repository file and workflow guide](docs/REPOSITORY_GUIDE.md)
 
 ## What it does
 
@@ -30,7 +38,7 @@ RiffLab is for **practice and exploration**, not guaranteed sheet-music transcri
 
 ## Getting started (Windows)
 
-When the beta is published, get the **complete Windows package** from [GitHub Releases](https://github.com/stevieblitz/Rifflab/releases). Extract the entire archive, keep its bundled folders together and launch `RiffLab.exe`. The full build includes a separate `RiffLabAI` worker and FFmpeg executables.
+Get the **complete Alpha v0.2.0 Windows package** from [GitHub Releases](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). Extract the entire archive, keep its bundled folders together and launch `RiffLab.exe`. The full build includes a separate `RiffLabAI` worker and FFmpeg executables.
 
 The initial separation may download model weights and can take a while, depending on your hardware. Local analysis requires adequate disk space and RAM. Minimum hardware requirements are still being established during testing.
 
@@ -46,7 +54,7 @@ The initial separation may download model weights and can take a while, dependin
 
 **Audio pitch and note display are separate concerns:** grid zoom and Complexity affect what you see. Notation Transpose changes displayed note names rather than retuning the audio.
 
-## Beta notes
+## Alpha notes
 
 RiffLab is actively developed. Expect occasional wrong notes/chords, imperfect stem isolation, variable processing speed and bugs. Tested benchmarks help direct improvements, but they do not make any individual song's transcription definitive.
 
@@ -62,7 +70,7 @@ RiffLab is open to improvements, bug reports, discussion and pull requests. Impr
 
 I'd genuinely love to see what others build with RiffLab. If you create a fork or make something interesting, feel free to open an issue or discussion and share it. That isn't a requirement — just curiosity.
 
-**License note:** No `LICENSE` file has been selected for RiffLab yet. The repository being visible does **not** by itself grant permission to copy, modify or redistribute its code under an open-source license. Until a license is added, clone/fork functionality on GitHub is subject to GitHub's terms; broader reuse, redistribution and third-party contributions should wait for an explicit license. A license must be chosen before a genuine open-source beta release.
+**License note:** No `LICENSE` file has been selected for RiffLab yet. The repository being visible does **not** by itself grant permission to copy, modify or redistribute its code under an open-source license. Until a license is added, clone/fork functionality on GitHub is subject to GitHub's terms; broader reuse, redistribution and third-party contributions should wait for an explicit license. A license must be chosen before the project can be presented as openly licensed software.
 
 ## Technology & acknowledgements
 
@@ -85,7 +93,7 @@ The build must retain any required copyright notices and license terms for bundl
 
 ## Credits
 
-**Created by Stevie Blitz.** Built around a musician's workflow, with a healthy amount of experimentation. AI-assisted development tools have been used along the way.
+**Created by Stevieblitz [Teun Verhoeven].** [teunverhoeven.nl](https://teunverhoeven.nl). Built around a musician's workflow, with a healthy amount of experimentation. AI-assisted development tools have been used along the way.
 
 RiffLab is not affiliated with or endorsed by the maintainers of its dependencies or reference datasets.
 
