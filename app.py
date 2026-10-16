@@ -1105,26 +1105,23 @@ class Window(QMainWindow):
         self.cancel_analysis_button.clicked.connect(self.stop_analysis)
         self.cancel_analysis_button.hide()
         options.addWidget(self.cancel_analysis_button)
-        options.addWidget(QLabel('◇ NoteGuard'))
+        # Advanced filters remain connected internally, controlled by Complexity.
         self.noteguard = QComboBox()
         self.noteguard.addItems(['Off · all notes', 'Light · quick riffs', 'Normal · reliable', 'Strong · root notes'])
         self.noteguard.setCurrentIndex(0)
         self.noteguard.setMinimumWidth(175)
         self.noteguard.setToolTip('Filter uncertain short notes in the display without reanalyzing the audio.')
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
-        options.addWidget(self.noteguard)
-        options.addWidget(QLabel('≋ Stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
         self.sensitivity.setValue(0)
         self.sensitivity.setToolTip('Minimum note duration. Higher values reduce rapid changes; display only.')
         self.sensitivity.setFixedWidth(90)
         self.sensitivity.valueChanged.connect(self.rebuild_chords)
-        options.addWidget(self.sensitivity)
         self.sensitivity_label = QLabel('≥0.0 s')
-        options.addWidget(self.sensitivity_label)
         # Complexity only filters the note display; it never changes playback speed,
         # sample rate, analysis source or audio pitch.
+        options = playback_options
         options.addWidget(QLabel('Complexity'))
         self.complexity = QSlider(Qt.Horizontal)
         self.complexity.setRange(0, 100)
@@ -1152,8 +1149,8 @@ class Window(QMainWindow):
         self.sensitivity.blockSignals(False)
         options.addWidget(self.complexity)
         options.addWidget(self.complexity_label)
-        # Playback/navigation on its own row: no clipped labels.
-        options = playback_options
+        # Tuning belongs inline with the main analysis actions at the top.
+        options = analysis_options
         options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
         self.transpose.setMinimumWidth(92)
@@ -1170,6 +1167,7 @@ class Window(QMainWindow):
         self.tuning_advice.clicked.connect(self.open_tuning_guide)
         self.tuning_advice.setAccessibleName('Open optional tuning advice')
         options.addWidget(self.tuning_advice)
+        options = playback_options
         options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
         self.grid_bpm.setMinimumWidth(85)
@@ -1200,16 +1198,13 @@ class Window(QMainWindow):
         self.chord_lookahead.setToolTip('Show the next chord this many milliseconds early; audio and grid timing remain unchanged')
         self.chord_lookahead.valueChanged.connect(self.refresh_chord_indicator)
         options.addWidget(self.chord_lookahead)
-        options.addStretch(1)
         toolbar_panel = QWidget()
         toolbar_panel.setObjectName('analysisToolbar')
         toolbar_layout = QVBoxLayout(toolbar_panel)
-        toolbar_layout.setContentsMargins(14, 10, 14, 10)
-        toolbar_layout.setSpacing(10)
+        toolbar_layout.setContentsMargins(14, 8, 14, 8)
+        toolbar_layout.setSpacing(0)
         analysis_options.addStretch(1)
-        playback_options.addStretch(1)
         toolbar_layout.addLayout(analysis_options)
-        toolbar_layout.addLayout(playback_options)
         layout.addWidget(toolbar_panel)
         # The display mode belongs to the grid, not the analysis controls.
         grid_column = QVBoxLayout()
@@ -1416,6 +1411,14 @@ class Window(QMainWindow):
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
         controls.addWidget(self.loop_info, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
+        # Display controls sit above transport, aligned to the right.
+        playback_panel = QWidget()
+        playback_panel.setObjectName('playbackOptionsToolbar')
+        playback_panel_layout = QHBoxLayout(playback_panel)
+        playback_panel_layout.setContentsMargins(10, 5, 10, 5)
+        playback_panel_layout.addStretch(1)
+        playback_panel_layout.addLayout(playback_options)
+        layout.addWidget(playback_panel, 0)
         # Bottom-docked controls: never float halfway up when the window grows.
         layout.addLayout(controls, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
