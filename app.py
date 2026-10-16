@@ -906,7 +906,6 @@ class Window(QMainWindow):
         self.library_remove.clicked.connect(self.remove_library_song)
         library_actions.addWidget(self.library_remove, 1, 1)
         library_toolbar.addLayout(library_actions)
-        library_layout.addLayout(library_toolbar)
         self.library_table = LibraryDragTable(0, 8)
         self.library_table.setHorizontalHeaderLabels(
             ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
@@ -940,6 +939,7 @@ class Window(QMainWindow):
             shortcut.activated.connect(callback)
             self.shortcuts.append(shortcut)
         library_layout.addWidget(self.library_table, 1)
+        library_layout.addLayout(library_toolbar)
         self.library_summary = QLabel('Double-click a song to open its saved project.')
         self.library_summary.setObjectName('ioDescription')
         library_layout.addWidget(self.library_summary)
@@ -1358,6 +1358,8 @@ class Window(QMainWindow):
         self.chord_grid.setSpacing(5)
         self.chord_grid.setAlignment(Qt.AlignTop)
         self.chord_scroll.setWidget(self.grid_host)
+        self.grid_host.setAcceptDrops(True)
+        self.grid_host.installEventFilter(self)
         self.chord_loading = QWidget(self.chord_scroll.viewport())
         self.chord_loading.setObjectName('chordLoading')
         self.chord_loading.setStyleSheet(
@@ -1802,7 +1804,9 @@ class Window(QMainWindow):
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
           QWidget#bottomControlBar{background:#101923;border-top:1px solid #31495a}
           QTabWidget#sidebarTabs::pane{background:#101923;border:1px solid #304559;border-radius:5px}
-          QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 12px}
+          QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
+          QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
+          QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
           QPushButton#headerTuner,QPushButton#practiceNav{background:#1b2938;border:1px solid #304a60;padding:4px 8px;border-radius:4px}
           QPushButton#headerTuner:hover,QPushButton#practiceNav:hover{background:#294e69}
           QPushButton[gridModeButton='true']{padding:2px 7px;min-height:20px}
@@ -2261,14 +2265,19 @@ class Window(QMainWindow):
                       song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
             for col, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
+                # Sidebar list shows a clean title + artist on two lines.
+                display_value = str(value)
+                if col == 1 and song['artist']:
+                    display_value += '\n' + str(song['artist'])
+                item = QTableWidgetItem(display_value)
                 item.setData(Qt.UserRole, song['project_path'])
                 if col in (5, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.library_table.setItem(row_index, col, item)
+            self.library_table.setRowHeight(row_index, 44)
         self.library_table.setSortingEnabled(False)
         self.library_summary.setText(
-            f'{len(rows)} songs  ·  Double-click to open a project  ·  Edit Details to set artist and tuning')
+            f'{len(rows)} songs · Double-click or drag to open')
 
     def show_library_context_menu(self, pos):
         """Right-click actions for the song actually under the cursor."""
@@ -2719,6 +2728,27 @@ class Window(QMainWindow):
             self.chord_loading.raise_()
 
     def eventFilter(self, obj, event):
+        # Let Library project drags land on waveform, grid, or grid note buttons.
+        drop_target = (obj is getattr(self, 'waveform', None)
+                       or obj is getattr(self, 'grid_host', None)
+                       or (hasattr(self, 'chord_scroll') and obj is self.chord_scroll.viewport())
+                       or bool(obj.property('riffDropTarget')))
+        if drop_target and event.type() in (event.Type.DragEnter, event.Type.DragMove, event.Type.Drop):
+            candidate = self._drop_candidate(event)
+            if candidate is not None:
+                if event.type() == event.Type.Drop:
+                    if self.processing or self.analysis_running:
+                        self.status_message('Finish or stop the current analysis before loading another song.')
+                        event.ignore()
+                        return True
+                    event.acceptProposedAction()
+                    if candidate.suffix.lower() == '.riff':
+                        self.load_project(candidate)
+                    else:
+                        self.load_local(candidate.resolve())
+                else:
+                    event.acceptProposedAction()
+                return True
         if (hasattr(self, 'menu_title_label') and obj is self.menuBar()
                 and event.type() == event.Type.Resize):
             self.menu_title_label.setGeometry(
@@ -4238,6 +4268,9 @@ class Window(QMainWindow):
                 button = QPushButton('' if chord == '—' else chord)
                 button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 button.setToolTip(f'{chord} · {t:.2f}s · {j-i} beats')
+                button.setAcceptDrops(True)
+                button.setProperty('riffDropTarget', True)
+                button.installEventFilter(self)
                 button.clicked.connect(lambda checked=False, seconds=t:
                                        self.seek_and_play(int(seconds * 1000)))
                 self.chord_grid.addWidget(button, (start//16)*2+1, i-start+1, 1, j-i)
