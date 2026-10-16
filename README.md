@@ -1,16 +1,16 @@
-# StevieBlitz's RIFFLAB
+# StevieBlitz's RiffLab
 
 **LESS GUESSING. MORE PLAYING.**
 
-**StevieBlitz's RIFFLAB** — the musician-focused audio practice and analysis tool.
+**StevieBlitz's RiffLab** — the musician-focused audio practice and analysis tool.
 
 A Windows music practice and analysis app for musicians who want to hear what's really going on in a song.
 
 Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
 
-**StevieBlitz's RIFFLAB — by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl)
+**StevieBlitz's RiffLab — by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl)
 
-> **Current release:** [StevieBlitz's RIFFLAB | Alpha v0.2.0 — Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). This is experimental software; builds on development branches are not automatically public releases.
+> **Current release:** [StevieBlitz's RiffLab | Alpha v0.2.0 — Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). This is experimental software; builds on development branches are not automatically public releases.
 
 ## Download and releases
 
@@ -95,7 +95,7 @@ The build must retain any required copyright notices and license terms for bundl
 
 ## Credits
 
-**StevieBlitz's RIFFLAB — by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl). Built around a musician's workflow, with a healthy amount of experimentation. AI-assisted development tools have been used along the way.
+**StevieBlitz's RiffLab — by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl). Built around a musician's workflow, with a healthy amount of experimentation. AI-assisted development tools have been used along the way.
 
 RiffLab is not affiliated with or endorsed by the maintainers of its dependencies or reference datasets.
 
