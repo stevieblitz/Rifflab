@@ -1509,9 +1509,9 @@ class Window(QMainWindow):
         zoom_minus.clicked.connect(lambda: self.grid_zoom.setValue(max(self.grid_zoom.minimum(), self.grid_zoom.value() - 5)))
         zoom_plus.clicked.connect(lambda: self.grid_zoom.setValue(min(self.grid_zoom.maximum(), self.grid_zoom.value() + 5)))
         self.grid_zoom_label = QLabel('100%')
-        self.grid_zoom_label.setFixedWidth(45)
+        self.grid_zoom_label.setFixedWidth(43)
         self.grid_zoom_label.installEventFilter(self)
-        self.grid_zoom_label.hide()  # Keep state label without asymmetric visual clutter.
+        zoom_controls.addWidget(self.grid_zoom_label)
         # Single compact vertical zoom control, rendered horizontally alongside H.
         zoom_controls.addSpacing(6)
         zoom_controls.addWidget(QLabel('V'))
@@ -1539,8 +1539,9 @@ class Window(QMainWindow):
         zoom_controls.addWidget(height_plus)
         height_minus.clicked.connect(lambda: self.grid_row_height.setValue(max(self.grid_row_height.minimum(), self.grid_row_height.value() - 4)))
         height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
-        self.grid_row_height_label = QLabel('38')
-        self.grid_row_height_label.hide()
+        self.grid_row_height_label = QLabel(f'{round(self.grid_row_height.value() / 38 * 100)}%')
+        self.grid_row_height_label.setFixedWidth(43)
+        zoom_controls.addWidget(self.grid_row_height_label)
         self._height_wheel_targets = (self.grid_row_height,)
         self._zoom_wheel_targets = (self.grid_zoom,)
         # Equal-width outer columns keep transport geometrically centered.
@@ -4077,7 +4078,7 @@ class Window(QMainWindow):
 
     def apply_grid_row_height(self, height):
         """True vertical zoom of the continuous note bars."""
-        self.grid_row_height_label.setText(str(height))
+        self.grid_row_height_label.setText(f'{round(height / 38 * 100)}%')
         for index,(end,button) in getattr(self,'grid_segments',{}).items():
             font = button.font()
             font.setPixelSize(self._grid_note_font_px())
