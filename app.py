@@ -16,9 +16,9 @@ import math
 import time
 from pathlib import Path
 from urllib.parse import urlparse
-from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush
+from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush, QDrag
 
-from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF
+from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF, QMimeData
 import qtawesome as qta
 from PySide6.QtSvg import QSvgRenderer
 from realtime_audio import LiveStemPlayer
@@ -48,6 +48,21 @@ def loop_boundary_icon(which):
         painter.drawLine(17, 39, 32, 39)
     painter.end()
     return QIcon(pix)
+
+
+class LibraryDragTable(QTableWidget):
+    """Drag saved project paths to the waveform or note grid."""
+    def startDrag(self, supported_actions):
+        row = self.currentRow()
+        item = self.item(row, 1) if row >= 0 else None
+        path = item.data(Qt.UserRole) if item else None
+        if not path:
+            return
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(path))])
+        drag.setMimeData(mime)
+        drag.exec(Qt.CopyAction)
 
 
 class ScrollingSongTitle(QWidget):
@@ -707,10 +722,9 @@ class Window(QMainWindow):
         self.header_practice.setIcon(qta.icon('fa5s.play-circle', color='#7bd6ff'))
         self.header_practice.setToolTip('Return to the note timeline and stem mixer')
         self.header_practice.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
-        self.header_practice.setText('')
-        self.header_practice.setFixedSize(34, 30)
+        self.header_practice.setText('Practice')
+        self.header_practice.setObjectName('practiceNav')
         self.header_practice.setAccessibleName('Practice timeline')
-        project_row.addWidget(self.header_practice)
         self.project_save = QPushButton('Save')
         self.project_save.setIcon(qta.icon('fa5s.save', color='#e5f4ff'))
         self.project_save.setToolTip('Save project (Ctrl+S)')
@@ -742,20 +756,23 @@ class Window(QMainWindow):
         self.now_playing.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.now_playing.setMinimumHeight(40)
         project_row.addWidget(self.now_playing)
-        # Prominent, technical time readout lives beside the song title.
+        # Visible clock alongside song title, above the waveform.
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
         self.time_label.setFixedWidth(172)
         self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.time_label.setToolTip('Current playback position / track duration')
-        self.header_tuner = QPushButton()
+        project_row.addWidget(self.time_label, 0)
+        self.header_tuner = QPushButton('Tuner')
         self.header_tuner.setObjectName('headerTuner')
-        self.header_tuner.setFixedSize(34, 32)
+        self.header_tuner.setMinimumWidth(78)
+        self.header_tuner.setFixedHeight(32)
         self.header_tuner.setIcon(self.tuning_fork_icon())
         self.header_tuner.setIconSize(QSize(22, 22))
         self.header_tuner.setToolTip('Open Chromatic Tuner (Ctrl+Shift+T)')
         self.header_tuner.clicked.connect(self.toggle_tuner_panel)
         project_row.addStretch(1)
+        project_row.addWidget(self.header_practice)
         project_row.addWidget(self.header_tuner)
         self.update_now_playing()
         # This widget is installed in the left corner of the main tab bar below.
@@ -863,9 +880,11 @@ class Window(QMainWindow):
         self.library_remove.clicked.connect(self.remove_library_song)
         library_toolbar.addWidget(self.library_remove)
         library_layout.addLayout(library_toolbar)
-        self.library_table = QTableWidget(0, 8)
+        self.library_table = LibraryDragTable(0, 8)
         self.library_table.setHorizontalHeaderLabels(
             ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
+        self.library_table.setDragEnabled(True)
+        self.library_table.setDragDropMode(QAbstractItemView.DragOnly)
         self.library_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.library_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.library_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -874,6 +893,12 @@ class Window(QMainWindow):
         self.library_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        # Narrow sidebar: retain every data column for existing actions, but show a clean list.
+        for column in range(2, 8):
+            self.library_table.setColumnHidden(column, True)
+        self.library_table.setColumnWidth(0, 28)
+        self.library_table.horizontalHeader().setStretchLastSection(False)
+        self.library_table.setToolTip('Double-click to open; drag a song onto the waveform or grid to load.')
         self.library_table.doubleClicked.connect(self.open_library_song)
         self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
@@ -1099,6 +1124,8 @@ class Window(QMainWindow):
         self._set_current_chord('—')
         waveform_row.addWidget(self.chord)
         self.waveform = WaveformTimeline(self)
+        self.waveform.setAcceptDrops(True)
+        self.waveform.installEventFilter(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
         self.waveform.markerMoved.connect(self.move_loop_marker)
         waveform_row.addWidget(self.waveform, 1)
@@ -1112,7 +1139,7 @@ class Window(QMainWindow):
         analysis_options.setSpacing(12)
         analysis_options.setContentsMargins(0, 0, 0, 0)
         playback_options = QHBoxLayout()
-        playback_options.setSpacing(8)
+        playback_options.setSpacing(5)
         playback_options.setContentsMargins(0, 0, 0, 0)
         navigation_options = QHBoxLayout()
         navigation_options.setSpacing(8)
@@ -1218,7 +1245,7 @@ class Window(QMainWindow):
         options.addWidget(self.tuning_advice)
         options = playback_options
         self.grid_bpm = QSpinBox()
-        self.grid_bpm.setFixedWidth(78)
+        self.grid_bpm.setFixedWidth(62)
         self.grid_bpm.setRange(40, 250)
         self.grid_bpm.setValue(130)
         self.grid_bpm.valueChanged.connect(self.bpm_changed)
@@ -1226,14 +1253,18 @@ class Window(QMainWindow):
         self.reset_bpm_button.setObjectName('resetBpmButton')
         self.reset_bpm_button.setIcon(qta.icon('fa5s.undo', color='#9bb7cb'))
         self.reset_bpm_button.setIconSize(QSize(13, 13))
-        self.reset_bpm_button.setFixedSize(23, 25)
+        self.reset_bpm_button.setFixedSize(20, 24)
         self.reset_bpm_button.setToolTip('Reset BPM to detected tempo (100% playback speed)')
         self.reset_bpm_button.setAccessibleName('Reset BPM')
         self.reset_bpm_button.clicked.connect(self.reset_bpm)
-        # Reset immediately to the left of the BPM value.
-        options.addWidget(self.reset_bpm_button)
-        options.addWidget(QLabel('BPM'))
-        options.addWidget(self.grid_bpm)
+        # Single tight BPM group: label, digits, small reset on the RIGHT.
+        bpm_group = QHBoxLayout()
+        bpm_group.setSpacing(2)
+        bpm_group.setContentsMargins(0, 0, 0, 0)
+        bpm_group.addWidget(QLabel('BPM'))
+        bpm_group.addWidget(self.grid_bpm)
+        bpm_group.addWidget(self.reset_bpm_button)
+        options.addLayout(bpm_group)
         options = navigation_options
         self.follow = QCheckBox('↧ Auto-scroll')
         self.follow.setChecked(True)
@@ -1272,8 +1303,9 @@ class Window(QMainWindow):
         for button in (self.bass_mode_button, self.chord_mode_button):
             button.setCheckable(True)
             button.setProperty('gridModeButton', True)
-            button.setFixedHeight(29)
-            button.setMinimumWidth(74)
+            button.setFixedHeight(25)
+            button.setMinimumWidth(0)
+            button.setFixedHeight(25)
         self.bass_mode_button.setToolTip('Bass Mode: detect and display the bass-note roots')
         self.chord_mode_button.setToolTip('Detect and display chords')
         self.bass_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(0))
@@ -1285,12 +1317,14 @@ class Window(QMainWindow):
         grid_column.addLayout(grid_header)
         self.update_grid_mode_buttons()
         self.chord_scroll = QScrollArea()
+        self.chord_scroll.setAcceptDrops(True)
+        self.chord_scroll.viewport().setAcceptDrops(True)
         self.chord_scroll.setWidgetResizable(True)
         self.chord_scroll.setMinimumHeight(160)
         self.chord_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.grid_host = QWidget()
         self.chord_grid = QGridLayout(self.grid_host)
-        self.chord_grid.setContentsMargins(4, 4, 4, 4)
+        self.chord_grid.setContentsMargins(5, 5, 16, 5)
         self.chord_grid.setHorizontalSpacing(0)
         self.chord_grid.setVerticalSpacing(5)
         self.chord_grid.setSpacing(5)
@@ -1330,7 +1364,7 @@ class Window(QMainWindow):
         grid_host_panel = QWidget()
         grid_content_row = QHBoxLayout()
         grid_content_row.setContentsMargins(0, 0, 0, 0)
-        grid_content_row.setSpacing(6)
+        grid_content_row.setSpacing(12)
         grid_content_row.addWidget(self.chord_scroll, 1)
         grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
@@ -1359,7 +1393,7 @@ class Window(QMainWindow):
         self.player.mediaStatusChanged.connect(self.on_media_status)
         # Keep the transport geometrically centered, regardless of the right-side loop status.
         controls = QGridLayout()
-        controls.setContentsMargins(4, 4, 4, 2)
+        controls.setContentsMargins(3, 1, 3, 1)
         controls.setHorizontalSpacing(8)
         controls.setColumnStretch(0, 1)
         controls.setColumnStretch(2, 1)
@@ -1416,7 +1450,7 @@ class Window(QMainWindow):
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
-        self.grid_zoom.setFixedWidth(160)
+        self.grid_zoom.setFixedWidth(148)
         self.grid_zoom.setToolTip('Adjust note-block width by dragging or scrolling')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
@@ -1482,14 +1516,14 @@ class Window(QMainWindow):
         # Navigation stays to the right; clock is now next to the song title.
         right_controls = QHBoxLayout()
         right_controls.setSpacing(8)
-        right_controls.addWidget(self.time_label)
         right_controls.addStretch(1)
         right_controls.addLayout(navigation_options)
         controls.addLayout(right_controls, 0, 2)
         bottom_panel = QWidget()
         bottom_panel.setObjectName('bottomControlBar')
         bottom_panel_layout = QVBoxLayout(bottom_panel)
-        bottom_panel_layout.setContentsMargins(8, 5, 8, 3)
+        bottom_panel_layout.setContentsMargins(6, 1, 6, 1)
+        bottom_panel_layout.setSpacing(0)
         bottom_panel_layout.addLayout(controls)
         layout.addWidget(bottom_panel, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
@@ -1617,10 +1651,12 @@ class Window(QMainWindow):
         self.tabs.insertTab(1, QWidget(), 'Library')  # Compatibility for saved tab IDs.
         self.sidebar_tabs = QTabWidget()
         self.sidebar_tabs.setObjectName('sidebarTabs')
-        self.sidebar_tabs.setMinimumWidth(260)
+        self.sidebar_tabs.setMinimumWidth(235)
         self.sidebar_tabs.setMaximumWidth(460)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
+        self.sidebar_tabs.setTabIcon(0, qta.icon('fa5s.sliders-h', color='#7bd6ff'))
+        self.sidebar_tabs.setTabIcon(1, qta.icon('fa5s.book', color='#7bd6ff'))
         self.sidebar_tabs.setCurrentIndex(0)
         self.play_splitter.insertWidget(0, self.sidebar_tabs)
         self.sidebar_tabs.currentChanged.connect(
@@ -1638,6 +1674,7 @@ class Window(QMainWindow):
         # Move the original tuner widget to its own page, without recreating controls.
         self.tuner_dialog.setWindowFlags(Qt.Widget)
         self.tuner_dialog.setMinimumWidth(0)
+        self.tuner_dialog.setContentsMargins(8, 6, 8, 6)
         self.tabs.addTab(self.tuner_dialog, '')
         tuner_index = self.tabs.indexOf(self.tuner_dialog)
         self.tabs.setTabIcon(tuner_index, self.tuning_fork_icon())
@@ -1738,7 +1775,9 @@ class Window(QMainWindow):
           QWidget#bottomControlBar{background:#101923;border-top:1px solid #31495a}
           QTabWidget#sidebarTabs::pane{background:#101923;border:1px solid #304559;border-radius:5px}
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 12px}
-          QPushButton#headerTuner{background:#1b2938;border:1px solid #304a60;padding:2px}
+          QPushButton#headerTuner,QPushButton#practiceNav{background:#1b2938;border:1px solid #304a60;padding:4px 8px;border-radius:4px}
+          QPushButton#headerTuner:hover,QPushButton#practiceNav:hover{background:#294e69}
+          QPushButton[gridModeButton='true']{padding:2px 7px;min-height:20px}
           QPushButton{font-family:'Bahnschrift','Segoe UI';font-weight:500}
           QComboBox,QSpinBox{font-family:'Bahnschrift','Segoe UI'}
           QLabel#gridTitle,QLabel#mixerTitle{font-family:'Bahnschrift','Segoe UI';font-weight:600}
