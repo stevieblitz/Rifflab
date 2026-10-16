@@ -1753,6 +1753,10 @@ class Window(QMainWindow):
           QPushButton#resetBpmButton:hover{background:#2a4964;border-color:#7bd6ff}
           QLabel#gridNotice{color:#819aad;font-size:11px}
           QLabel#loopInfo{color:#a2b8ca;font-size:11px}
+          /* Uniform subtle housing for all sliders: stem mixer, export, complexity, zoom. */
+          QSlider{background:#172838;border:1px solid #294357;border-radius:4px;padding:2px}
+          QSlider:hover{border-color:#36546a;background:#192c3d}
+          QSlider:disabled{background:#15222f;border-color:#253645}
           QSlider::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
