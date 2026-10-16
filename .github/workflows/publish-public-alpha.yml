@@ -41,6 +41,18 @@ jobs:
           - Chromatic tuner, tuning guide, Play Along, and accessible Import / Export.
           - Refined dark interface, compact notes/chords switch, original RiffLab branding.
           
+          ## Changelog — changes since Alpha v0.1.0
+          - Rebuilt the Play Along workspace with a streamlined dark interface and outlined panels.
+          - Added the song Library with search, favorites, editable metadata, drag-and-drop, and compact cyan action icons.
+          - Added AI stem separation and a dedicated stem mixer with independent volume, mute, and solo.
+          - Improved bass/root tracking, including chromatic semitone changes, and added configurable NoteGuard filtering.
+          - Updated note/chord recognition with repeated-riff stabilization and reference comparison tools.
+          - Replaced detached beat cells with continuous sustained note bars and progress fill.
+          - Added waveform seeking, loop IN/OUT markers, BPM controls, and separate horizontal/vertical grid zoom.
+          - Added chromatic tuner, instrument tuning guide, and workspace/project persistence.
+          - Improved bundled Windows dependencies, automated checks, and startup validation.
+          - Refined compact navigation, analysis controls, grid ruler, and mixer/library layout.
+          
           ## Windows installation
           1. Download **RiffLab-Windows-v0.2.0-alpha.1.zip** below.
           2. Extract the **entire** ZIP into a folder.
