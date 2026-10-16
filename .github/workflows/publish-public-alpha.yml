@@ -55,8 +55,13 @@ jobs:
           
           Built with open-source audio/AI tooling and AI-assisted development.
           NOTES
-          gh release create v0.2.0-alpha.1 release-files/RiffLab-Windows-v0.2.0-alpha.1.zip \
-            --repo stevieblitz/Rifflab \
-            --target dccb0e0d826693694c32af373fa7edcaa64b3722 \
-            --title "RiffLab Alpha v0.2.0 — Windows" \
-            --prerelease --notes-file release-notes.md
+          if gh release view v0.2.0-alpha.1 --repo stevieblitz/Rifflab >/dev/null 2>&1; then
+            gh release edit v0.2.0-alpha.1 --repo stevieblitz/Rifflab --notes-file release-notes.md --prerelease
+            gh release upload v0.2.0-alpha.1 release-files/RiffLab-Windows-v0.2.0-alpha.1.zip --repo stevieblitz/Rifflab --clobber
+          else
+            gh release create v0.2.0-alpha.1 release-files/RiffLab-Windows-v0.2.0-alpha.1.zip \
+              --repo stevieblitz/Rifflab \
+              --target dccb0e0d826693694c32af373fa7edcaa64b3722 \
+              --title "RiffLab Alpha v0.2.0 — Windows" \
+              --prerelease --notes-file release-notes.md
+          fi
