@@ -1405,7 +1405,7 @@ class Window(QMainWindow):
         mode_row.addWidget(self.bass_mode_button)
         mode_row.addWidget(self.chord_mode_button)
         self.grid_mode_overlay.setFixedSize(146, 27)
-        self.grid_mode_overlay.setStyleSheet('QWidget#gridModeOverlay{background:#172736;border:1px solid #314b60;border-radius:4px;}')
+        self.grid_mode_overlay.setStyleSheet('QWidget#gridModeOverlay{background:#111923;border:1px solid #304559;border-radius:4px;}')
         self.grid_mode_overlay.move(max(0, self.chord_scroll.viewport().width() - 151), 2)
         self.grid_mode_overlay.raise_()
         # Only the grid area is horizontally split with the compact stem mixer.
@@ -1500,7 +1500,7 @@ class Window(QMainWindow):
         zoom_minus.setFixedSize(18, 20)
         zoom_minus.setToolTip('Zoom out horizontally')
         zoom_controls.addWidget(QLabel('H'))
-        zoom_controls.addWidget(zoom_minus)
+        zoom_minus.hide()  # Keep handler but omit +/- from the compact UI.
         self.grid_zoom = QSlider(Qt.Horizontal)
         self.grid_zoom.setObjectName('gridZoom')
         self.grid_zoom.setRange(65, 200)
@@ -1517,13 +1517,13 @@ class Window(QMainWindow):
         zoom_plus.setObjectName('gridZoomStep')
         zoom_plus.setFixedSize(18, 20)
         zoom_plus.setToolTip('Zoom in horizontally')
-        zoom_controls.addWidget(zoom_plus)
+        zoom_plus.hide()  # No permanent zoom step buttons.
         zoom_minus.clicked.connect(lambda: self.grid_zoom.setValue(max(self.grid_zoom.minimum(), self.grid_zoom.value() - 5)))
         zoom_plus.clicked.connect(lambda: self.grid_zoom.setValue(min(self.grid_zoom.maximum(), self.grid_zoom.value() + 5)))
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(38)
         self.grid_zoom_label.installEventFilter(self)
-        zoom_controls.addWidget(self.grid_zoom_label)
+        self.grid_zoom_label.hide()  # Keep value updates without a visible percent.
         # Single compact vertical zoom control, rendered horizontally alongside H.
         zoom_controls.addSpacing(6)
         zoom_controls.addWidget(QLabel('V'))
@@ -1531,7 +1531,7 @@ class Window(QMainWindow):
         height_minus.setObjectName('gridZoomStep')
         height_minus.setFixedSize(18, 20)
         height_minus.setToolTip('Decrease note row height')
-        zoom_controls.addWidget(height_minus)
+        height_minus.hide()
         self.grid_row_height = QSlider(Qt.Horizontal)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
@@ -1548,12 +1548,12 @@ class Window(QMainWindow):
         height_plus.setObjectName('gridZoomStep')
         height_plus.setFixedSize(18, 20)
         height_plus.setToolTip('Increase note row height')
-        zoom_controls.addWidget(height_plus)
+        height_plus.hide()
         height_minus.clicked.connect(lambda: self.grid_row_height.setValue(max(self.grid_row_height.minimum(), self.grid_row_height.value() - 4)))
         height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
         self.grid_row_height_label = QLabel(f'{round(self.grid_row_height.value() / 38 * 100)}%')
         self.grid_row_height_label.setFixedWidth(38)
-        zoom_controls.addWidget(self.grid_row_height_label)
+        self.grid_row_height_label.hide()
         self._height_wheel_targets = (self.grid_row_height,)
         self._zoom_wheel_targets = (self.grid_zoom,)
         # Equal-width outer columns keep transport geometrically centered.
@@ -1826,8 +1826,9 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
-          QWidget#bottomControlBar{background:#172a3a;border:1px solid #35556a;border-radius:5px}
-          QTabWidget#sidebarTabs::pane{background:#172939;border:1px solid #35556a;border-radius:5px}
+          QWidget#bottomControlBar{background:#111923;border:1px solid #304559;border-radius:5px}
+          QWidget#bottomControlBar QLabel,QWidget#bottomControlBar QCheckBox{background:transparent;border:0}
+          QTabWidget#sidebarTabs::pane{background:#111923;border:1px solid #304559;border-radius:5px}
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
@@ -1845,10 +1846,10 @@ class Window(QMainWindow):
           ScrollingSongTitle#nowPlayingTitle{background:transparent;border:none}
           QWidget#projectHeader{background:#111923;border:none}
           QWidget#nowPlayingTitle{background:transparent;border:none}
-          QWidget#analysisToolbar{background:#172a3a;border:1px solid #35556a;border-radius:5px}
-          QWidget#noteGridPanel{background:#172939;border:1px solid #35556a;border-radius:5px}
-          QScrollArea#noteGridScroll{background:#111d2a;border:1px solid #2a465b;border-radius:4px}
-          QScrollArea#noteGridScroll QWidget#qt_scrollarea_viewport{background:#111d2a}
+          QWidget#analysisToolbar{background:#111923;border:1px solid #304559;border-radius:5px}
+          QWidget#noteGridPanel{background:#111923;border:1px solid #304559;border-radius:5px}
+          QScrollArea#noteGridScroll{background:#111923;border:0}
+          QScrollArea#noteGridScroll QWidget#qt_scrollarea_viewport{background:#111923}
           QPushButton[gridModeButton='true']{background:#1c2d3d;border:1px solid #34536d;border-radius:3px;color:#a7bfd0;padding:2px 5px;font-weight:600}
           QPushButton[gridModeButton='true']:hover{background:#263e51}
           QPushButton[gridModeButton='true']:checked{background:#244661;border:1px solid #4a7695;border-bottom:3px solid #7bd6ff;color:#e1f4ff}
@@ -1895,6 +1896,7 @@ class Window(QMainWindow):
           QLabel#mixerTitle{background:transparent;font-size:12px;font-weight:600;color:#c2d4e2}
           QLabel#stemName{background:transparent;font-size:12px;font-weight:400;color:#d5e1ed}
           QWidget#playStemPanel QLabel{background:transparent}
+          QWidget#noteGridPanel QLabel{background:transparent}
           QPushButton[stemToggle='true']{background:#263c51;padding:1px;border:1px solid #36536b;border-radius:4px}
           QPushButton[soloToggle='true']{background:#263c51;padding:1px;border:1px solid #36536b;border-radius:4px;color:#a9c2d5;font-weight:700}
           QLabel[soloDimmed='true']{color:#657686}
