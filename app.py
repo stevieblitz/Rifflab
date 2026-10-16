@@ -762,6 +762,12 @@ class Window(QMainWindow):
         self.time_label.setFixedWidth(143)
         self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.time_label.setToolTip('Current playback position / track duration')
+        self.header_time_label = QLabel('00:00 / 00:00')
+        self.header_time_label.setObjectName('headerTimeLabel')
+        self.header_time_label.setFixedWidth(118)
+        self.header_time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        self.header_time_label.setToolTip('Playback time (also shown in transport)')
+        project_row.addWidget(self.header_time_label)
         self.header_tuner = QPushButton('Tuner')
         self.header_tuner.setObjectName('headerTuner')
         self.header_tuner.setMinimumWidth(78)
@@ -1844,6 +1850,7 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
+          QLabel#headerTimeLabel{color:#9dbcd0;background:transparent;border:0;font-family:'Cascadia Mono','Consolas',monospace;font-size:12px;font-weight:600;padding:0}
           QLabel#timeLabel{background:transparent;color:#a5e5ff;border:0;font-family:'Cascadia Mono','Consolas',monospace;font-size:14px;font-weight:600;padding:0px 2px}
           QLabel#loopInfo{background:transparent}
           QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
@@ -4104,6 +4111,7 @@ class Window(QMainWindow):
         self.waveform.set_position(ms)
         self.time_label.setText(f'{ms // 60000:02d}:{(ms // 1000) % 60:02d} / '
                                 f'{self._duration // 60000:02d}:{(self._duration // 1000) % 60:02d}')
+        self.header_time_label.setText(self.time_label.text())
         self.update_chord_indicator(ms)
         self.update_grid_position(ms / 1000)
 
