@@ -1560,7 +1560,7 @@ class Window(QMainWindow):
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
         stem_panel.setMinimumWidth(165)
-        stem_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        stem_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         panel = QVBoxLayout(stem_panel)
         panel.setContentsMargins(8, 7, 8, 7)
         panel.setSpacing(9)
@@ -1670,8 +1670,7 @@ class Window(QMainWindow):
         # No nested scroll area around four stem controls. The parent tab owns
         # the entire left panel, avoiding the inset rectangle and dead gutter.
         self.mixer_scroll = None
-        mixer_holder_layout.addWidget(stem_panel, 0)
-        mixer_holder_layout.addStretch(1)
+        mixer_holder_layout.addWidget(stem_panel, 1)
         # The actual Library page and the actual Stem Mixer share a left sidebar.
         # Reparent existing widgets: no replacement logic, duplicated controls or data.
         library_page = self.tabs.widget(1)
@@ -1681,6 +1680,7 @@ class Window(QMainWindow):
         self.sidebar_tabs.setObjectName('sidebarTabs')
         self.sidebar_tabs.setMinimumWidth(235)
         self.sidebar_tabs.setMaximumWidth(460)
+        self.sidebar_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
         self.sidebar_tabs.setTabIcon(0, qta.icon('fa5s.sliders-h', color='#7bd6ff'))
@@ -1854,6 +1854,8 @@ class Window(QMainWindow):
           QWidget#stemPanel{background:#172431;border:1px solid #33485d;border-radius:6px}
           QWidget#playStemPanel{background:transparent;border:0;border-radius:0}
           QWidget#sidebarTabs{background:#111923}
+          QWidget#playStemPanel{background:#111923;border:0}
+          QTabWidget#sidebarTabs QWidget{border-radius:0}
           QScrollArea#mixerScroll{background:transparent;border:0}
           QLabel#mixerTitle{background:transparent;font-size:12px;font-weight:600;color:#c2d4e2}
           QLabel#stemName{background:transparent;font-size:12px;font-weight:400;color:#d5e1ed}
