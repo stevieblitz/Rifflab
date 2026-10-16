@@ -1,4 +1,4 @@
-# StevieBlitz's RIFFLAB — release overview
+# StevieBlitz's RiffLab — release overview
 
 ## Alpha v0.2.0 — current public Windows alpha (16 October 2026)
 
@@ -20,13 +20,13 @@
 
 ---
 
-# StevieBlitz's RIFFLAB — Development Changelog
+# StevieBlitz's RiffLab — Development Changelog
 
 Historical alpha development notes preserved from the original README.
 
 ---
 
-# StevieBlitz's RIFFLAB Alpha 1.0.2 — Minimal panel dividers
+# StevieBlitz's RiffLab Alpha 1.0.2 — Minimal panel dividers
 
 - Removed thick/gradient-like splitter styling.
 - PLAY and Export splitters now have a single centered 1px muted blue-gray divider, brighter on hover and blue while dragging.
