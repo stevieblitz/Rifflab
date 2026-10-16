@@ -1,0 +1,83 @@
+name: Update Alpha 2 release description and changelog
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/update-alpha2-notes.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update published release text without modifying Windows download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          # RiffLab Alpha v0.2.0 — Windows
+          
+          First public alpha release from the current RiffLab development series. Built from the successful Windows build #91 (`dccb0e0`). This is experimental software: features, UI and analysis results may change.
+          
+          **LESS GUESSING. MORE PLAYING.**
+          
+          RiffLab is a Windows music-practice and analysis app for musicians who want to hear what's really going on in a song. Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
+          
+          It combines local audio analysis, source separation, a synchronized note grid, and practical playback controls in one desktop application. Built for practice and exploration — not guaranteed sheet-music transcription.
+          
+          ## What RiffLab does
+          - **Stem separation:** split a track into drums, bass, vocals, and other instruments with Demucs.
+          - **Bass Mode:** follow detected bass notes, preferably from the isolated bass stem; semitone changes are tracked rather than assumed away.
+          - **Chord Mode:** explore estimated harmony and repeated patterns.
+          - **Note timeline:** follow sustained, colored note bars in time with the waveform and playback position.
+          - **Stem Mixer:** change instrument levels or use mute and solo to hear parts independently.
+          - **Practice controls:** seek, pause, loop a difficult passage with IN/OUT markers, and adjust practice BPM.
+          - **Display controls:** independent H/V grid zoom and Complexity/NoteGuard filtering without changing audio pitch.
+          - **Chromatic tuner and tuning guide:** check instrument tuning separately from displayed-note transposition.
+          - **Projects and Library:** keep song details and analysis results, reopen your work, and drag entries into the workspace.
+          
+          **Made for curious ears and impatient fingers.** Expect occasional inaccurate note/chord estimates, imperfect isolation and evolving UI in this alpha.
+          
+          ## Highlights
+          - Audio import, saved projects and searchable song Library with drag-and-drop.
+          - AI stem separation and per-stem mixer with volume, mute and solo.
+          - Bass/root-note and chord analysis with a continuous note timeline.
+          - Playback, looping, BPM adjustment, waveform seeking and independent H/V grid zoom.
+          - Chromatic tuner, tuning guide, Play Along, and accessible Import / Export.
+          - Refined dark interface, compact notes/chords switch, original RiffLab branding.
+          
+          ## Changelog — changes since Alpha v0.1.0
+          - Rebuilt the Play Along workspace with a streamlined dark interface and outlined panels.
+          - Added the song Library with search, favorites, editable metadata, drag-and-drop, and compact cyan action icons.
+          - Added AI stem separation and a dedicated stem mixer with independent volume, mute, and solo.
+          - Improved bass/root tracking, including chromatic semitone changes, and added configurable NoteGuard filtering.
+          - Updated note/chord recognition with repeated-riff stabilization and reference comparison tools.
+          - Replaced detached beat cells with continuous sustained note bars and progress fill.
+          - Added waveform seeking, loop IN/OUT markers, BPM controls, and separate horizontal/vertical grid zoom.
+          - Added chromatic tuner, instrument tuning guide, and workspace/project persistence.
+          - Improved bundled Windows dependencies, automated checks, and startup validation.
+          - Refined compact navigation, analysis controls, grid ruler, and mixer/library layout.
+          
+          ## Windows installation
+          1. Download **RiffLab-Windows-v0.2.0-alpha.1.zip** below.
+          2. Extract the **entire** ZIP into a folder.
+          3. Run **RiffLab.exe**, keeping the `RiffLabAI` and `bin` folders alongside it.
+          4. First-time stem separation may download AI model weights and can take time.
+          
+          This package was produced by GitHub Actions with syntax, dependency, regression and Windows startup checks. Real-world audio detection accuracy and full manual Windows UI testing are not guaranteed. Only analyze audio you are allowed to use.
+          
+          ## Credits
+          **RiffLab by Stevieblitz [Teun Verhoeven]**  
+          https://teunverhoeven.nl
+          
+          ## Technology and acknowledgements
+          Developed with Python, PySide6/Qt, QtAwesome, Demucs, PyTorch, torchaudio, librosa, NumPy, SciPy, SoundFile, FFmpeg/FFprobe, yt-dlp, SQLite and PyInstaller. Chord benchmarking draws on Isophonics reference annotations. Credit belongs to the respective developers and maintainers of these independent projects. Refer to the [README](https://github.com/stevieblitz/Rifflab#readme) for more detail, dependencies, and license considerations.
+          
+          ## Contribute and improve
+          Bugs, suggestions and pull requests are welcome. [Report an issue](https://github.com/stevieblitz/Rifflab/issues) with your build number, Windows version and steps to reproduce.
+          
+          **Licensing note:** The repository currently has no project LICENSE granting general redistribution rights. Review the README before reusing the code; third-party licenses apply separately.
+          
+          Built with AI-assisted development as a tool, not the headline. **Less guessing. More playing.**
+          NOTES
+          gh release edit v0.2.0-alpha.1 --repo stevieblitz/Rifflab --notes-file release-notes.md --title "RiffLab | Alpha v0.2.0 - Windows" --prerelease
