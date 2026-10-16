@@ -2,15 +2,15 @@
 
 **LESS GUESSING. MORE PLAYING.**
 
-**StevieBlitz's RiffLab** — the musician-focused audio practice and analysis tool.
+**StevieBlitz's RiffLab**: the musician-focused audio practice and analysis tool.
 
 A Windows music practice and analysis app for musicians who want to hear what's really going on in a song.
 
 Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
 
-**StevieBlitz's RiffLab — by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl)
+**StevieBlitz's RiffLab: by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl)
 
-> **Current release:** [StevieBlitz's RiffLab | Alpha v0.2.0 — Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). This is experimental software; builds on development branches are not automatically public releases.
+> **Current release:** [StevieBlitz's RiffLab | Alpha v0.2.0: Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). This is experimental software; builds on development branches are not automatically public releases.
 
 ## Download and releases
 
@@ -70,7 +70,7 @@ If something breaks, [open an issue](https://github.com/stevieblitz/Rifflab/issu
 
 RiffLab is open to improvements, bug reports, discussion and pull requests. Improvements to analysis accuracy, stability, accessibility, performance and the interface are especially welcome.
 
-I'd genuinely love to see what others build with RiffLab. If you create a fork or make something interesting, feel free to open an issue or discussion and share it. That isn't a requirement — just curiosity.
+I'd genuinely love to see what others build with RiffLab. If you create a fork or make something interesting, feel free to open an issue or discussion and share it. That isn't a requirement: just curiosity.
 
 **License note:** No `LICENSE` file has been selected for RiffLab yet. The repository being visible does **not** by itself grant permission to copy, modify or redistribute its code under an open-source license. Until a license is added, clone/fork functionality on GitHub is subject to GitHub's terms; broader reuse, redistribution and third-party contributions should wait for an explicit license. A license must be chosen before the project can be presented as openly licensed software.
 
@@ -95,7 +95,7 @@ The build must retain any required copyright notices and license terms for bundl
 
 ## Credits
 
-**StevieBlitz's RiffLab — by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl). Built around a musician's workflow, with a healthy amount of experimentation. AI-assisted development tools have been used along the way.
+**StevieBlitz's RiffLab: by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl). Built around a musician's workflow, with a healthy amount of experimentation. AI-assisted development tools have been used along the way.
 
 RiffLab is not affiliated with or endorsed by the maintainers of its dependencies or reference datasets.
 
@@ -103,4 +103,4 @@ RiffLab is not affiliated with or endorsed by the maintainers of its dependencie
 
 **Made for curious ears and impatient fingers.**
 
-**RiffLab — Less guessing. More playing.**
+**RiffLab: Less guessing. More playing.**
