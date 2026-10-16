@@ -15,7 +15,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > release-notes.md <<'NOTES'
-          # StevieBlitz's RiffLab Alpha v0.2.0 — Windows
+          # StevieBlitz's RiffLab Alpha v0.2.0: Windows
           
           First public alpha release from the current RiffLab development series. Built from the successful Windows build #91 (`dccb0e0`). This is experimental software: features, UI and analysis results may change.
           
@@ -23,7 +23,7 @@ jobs:
           
           StevieBlitz's RiffLab is a Windows music-practice and analysis app for musicians who want to hear what's really going on in a song. Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
           
-          It combines local audio analysis, source separation, a synchronized note grid, and practical playback controls in one desktop application. Built for practice and exploration — not guaranteed sheet-music transcription.
+          It combines local audio analysis, source separation, a synchronized note grid, and practical playback controls in one desktop application. Built for practice and exploration: not guaranteed sheet-music transcription.
           
           ## What StevieBlitz's RiffLab does
           - **Stem separation:** split a track into drums, bass, vocals, and other instruments with Demucs.
@@ -46,7 +46,7 @@ jobs:
           - Chromatic tuner, tuning guide, Play Along, and accessible Import / Export.
           - Refined dark interface, compact notes/chords switch, original RiffLab branding.
           
-          ## Changelog — changes since Alpha v0.1.0
+          ## Changelog: changes since Alpha v0.1.0
           - Rebuilt the Play Along workspace with a streamlined dark interface and outlined panels.
           - Added the song Library with search, favorites, editable metadata, drag-and-drop, and compact cyan action icons.
           - Added AI stem separation and a dedicated stem mixer with independent volume, mute, and solo.
