@@ -1236,11 +1236,11 @@ class Window(QMainWindow):
         self.sensitivity_label = QLabel('≥0.0 s')
         # Complexity only filters the note display; it never changes playback speed,
         # sample rate, analysis source or audio pitch.
-        options = playback_options
+        options = analysis_options
         options.addWidget(QLabel('Complexity'))
         self.complexity = QSlider(Qt.Horizontal)
         self.complexity.setRange(0, 100)
-        self.complexity.setFixedWidth(110)
+        self.complexity.setFixedWidth(88)
         self.complexity.setValue(25)
         self.complexity.setToolTip('How much short-note detail to display. Lower = simpler. Higher = more detail. Does not change NoteGuard or audio pitch.')
         self.complexity_label = QLabel('25%')
