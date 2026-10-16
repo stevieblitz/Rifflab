@@ -772,8 +772,7 @@ class Window(QMainWindow):
         self.header_tuner.setToolTip('Open Chromatic Tuner (Ctrl+Shift+T)')
         self.header_tuner.clicked.connect(self.toggle_tuner_panel)
         project_row.addStretch(1)
-        project_row.addWidget(self.header_practice)
-        project_row.addWidget(self.header_tuner)
+        # Play Along and Tuner live in the actual QTabWidget tab bar.
         self.update_now_playing()
         # This widget is installed in the left corner of the main tab bar below.
         self.refresh_recent_projects()
@@ -814,7 +813,7 @@ class Window(QMainWindow):
             tab_layout.setContentsMargins(12, 10, 12, 10)
             tab_layout.setSpacing(8)
             return tab_layout
-        practice_layout = tab_page('PLAY')
+        practice_layout = tab_page('Play Along')
         library_layout = tab_page('Library')
         io_layout = tab_page('Import / Export')
         self.tabs.setTabIcon(0, qta.icon('fa5s.play-circle', color='#7bd6ff'))
@@ -1481,7 +1480,7 @@ class Window(QMainWindow):
             button.setFixedSize(32, 30)
             button.setIconSize(QSize(24, 24) if button in (self.loop_a_button, self.loop_b_button) else QSize(15, 15))
             button.setProperty('transportIcon', True)
-        # Zoom controls belong to the grid, not the transport.
+        # The two zoom axes belong together in the transport bar.
         zoom_controls = QHBoxLayout()
         zoom_controls.setContentsMargins(0, 0, 0, 0)
         zoom_controls.setSpacing(6)
@@ -1489,7 +1488,7 @@ class Window(QMainWindow):
         zoom_minus.setObjectName('gridZoomStep')
         zoom_minus.setFixedSize(18, 20)
         zoom_minus.setToolTip('Zoom out horizontally')
-        zoom_controls.addStretch(1)
+        zoom_controls.addWidget(QLabel('H'))
         zoom_controls.addWidget(zoom_minus)
         self.grid_zoom = QSlider(Qt.Horizontal)
         self.grid_zoom.setObjectName('gridZoom')
@@ -1497,7 +1496,7 @@ class Window(QMainWindow):
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
-        self.grid_zoom.setFixedWidth(148)
+        self.grid_zoom.setFixedWidth(82)
         self.grid_zoom.setToolTip('Adjust note-block width by dragging or scrolling')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
@@ -1514,46 +1513,25 @@ class Window(QMainWindow):
         self.grid_zoom_label.setFixedWidth(45)
         self.grid_zoom_label.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom_label)  # Current zoom percentage
-        # Frameless blue zoom marks, consistent on both axes.
-        height_panel = QWidget()
-        height_panel.setFixedWidth(32)
-        height_panel.setStyleSheet('background:transparent;border:0;')
-        height_column = QVBoxLayout(height_panel)
-        height_column.setContentsMargins(0, 0, 0, 0)
-        height_column.setSpacing(3)
-        height_column.addStretch(1)
-        height_plus = QPushButton('+')
-        height_plus.setObjectName('gridZoomStep')
-        height_plus.setFixedSize(22, 20)
-        height_plus.setToolTip('Increase note row height')
-        height_column.addWidget(height_plus, 0, Qt.AlignHCenter)
-        self.grid_row_height = QSlider(Qt.Vertical)
+        # Single compact vertical zoom control, rendered horizontally alongside H.
+        zoom_controls.addSpacing(6)
+        zoom_controls.addWidget(QLabel('V'))
+        self.grid_row_height = QSlider(Qt.Horizontal)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
-        self.grid_row_height.setFixedHeight(160)
-        self.grid_row_height.setFixedWidth(26)
+        self.grid_row_height.setFixedWidth(82)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
         self.grid_row_height.setValue(max(24, min(96, int(self.layout_settings.value('grid_row_height', 38)))))
-        self.grid_row_height.setToolTip('Adjust note-block height by dragging or scrolling')
+        self.grid_row_height.setToolTip('Adjust note row height')
         self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
         self.grid_row_height.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_row_height', value))
         self.grid_row_height.installEventFilter(self)
-        height_column.addWidget(self.grid_row_height, 0, Qt.AlignHCenter)
-        height_minus = QPushButton('−')
-        height_minus.setObjectName('gridZoomStep')
-        height_minus.setFixedSize(22, 20)
-        height_minus.setToolTip('Decrease note row height')
-        height_column.addWidget(height_minus, 0, Qt.AlignHCenter)
-        height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
-        height_minus.clicked.connect(lambda: self.grid_row_height.setValue(max(self.grid_row_height.minimum(), self.grid_row_height.value() - 4)))
+        zoom_controls.addWidget(self.grid_row_height)
         self.grid_row_height_label = QLabel('38')
-        self.grid_row_height_label.hide()  # Kept for programmatic state, not shown.
-        height_panel.installEventFilter(self)
-        self._height_wheel_targets = (height_panel, self.grid_row_height)
+        self.grid_row_height_label.hide()
+        self._height_wheel_targets = (self.grid_row_height,)
         self._zoom_wheel_targets = (self.grid_zoom,)
-        grid_content_row.addWidget(height_panel, 0, Qt.AlignVCenter)
-        grid_column.addLayout(zoom_controls)
         # Equal-width outer columns keep transport geometrically centered.
         controls.addLayout(playback_options, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
@@ -1564,6 +1542,8 @@ class Window(QMainWindow):
         right_controls = QHBoxLayout()
         right_controls.setSpacing(8)
         right_controls.addStretch(1)
+        right_controls.addLayout(zoom_controls)
+        right_controls.addSpacing(8)
         right_controls.addLayout(navigation_options)
         controls.addLayout(right_controls, 0, 2)
         bottom_panel = QWidget()
@@ -1572,7 +1552,7 @@ class Window(QMainWindow):
         bottom_panel_layout.setContentsMargins(6, 1, 6, 1)
         bottom_panel_layout.setSpacing(0)
         bottom_panel_layout.addLayout(controls)
-        layout.addWidget(bottom_panel, 0)
+        grid_column.addWidget(bottom_panel, 0)  # Only below the grid, not below the mixer.
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
@@ -1720,7 +1700,7 @@ class Window(QMainWindow):
         self.tuner_dialog.setWindowFlags(Qt.Widget)
         self.tuner_dialog.setMinimumWidth(0)
         self.tuner_dialog.setContentsMargins(8, 6, 8, 6)
-        self.tabs.addTab(self.tuner_dialog, '')
+        self.tabs.addTab(self.tuner_dialog, 'Tuner')
         tuner_index = self.tabs.indexOf(self.tuner_dialog)
         self.tabs.setTabIcon(tuner_index, self.tuning_fork_icon())
         self.tabs.setTabToolTip(tuner_index, 'Chromatic Tuner')
@@ -1848,7 +1828,8 @@ class Window(QMainWindow):
           QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
-          QTabBar#mainTabBar::tab{margin-top:2px}
+          QTabBar#mainTabBar::tab{margin-top:2px;padding:7px 15px;min-width:90px;border-bottom:2px solid transparent}
+          QTabBar#mainTabBar::tab:selected{background:#234b68;color:#d4efff;border-bottom:2px solid #7bd6ff}
           QLabel#ioDescription{color:#9bb0c1;font-size:12px;padding:2px 0}
           QTabWidget#ioSections::pane{border:1px solid #34495d;border-radius:7px;background:#15212d}
           QTabWidget#ioSections QTabBar::tab{padding:9px 24px;background:#1c2b3a}
@@ -1857,7 +1838,7 @@ class Window(QMainWindow):
           QTabWidget::pane{border:1px solid #2c3b4b;border-radius:5px}
           QTabBar::tab{background:#1b2938;padding:7px 16px;margin-right:2px;border-radius:4px}
           QTabBar::tab:selected{background:#2b4862;color:#7bd6ff}
-          QTabBar#mainTabBar::tab:first{font-weight:700;min-width:110px;padding:10px 21px}
+          QTabBar#mainTabBar::tab:first{font-weight:700;min-width:110px;padding:7px 15px}
           QTabBar#mainTabBar::tab:first:selected{background:#254d6d;border-bottom:2px solid #7bd6ff}
           QPushButton#tunerQuickButton{background:#1b2938;border:1px solid #34495d;border-radius:4px;padding:0px;min-height:0px;min-width:0px}
           QPushButton#tunerQuickButton:hover{background:#294d70;border-color:#7bd6ff}
@@ -1899,11 +1880,11 @@ class Window(QMainWindow):
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
           /* Both zoom axes share exactly the same rail, thumb, and accent. */
-          QSlider#gridZoom{background:transparent;border:0;padding:0}
+          QSlider#gridZoom,QSlider#gridRowHeight{background:transparent;border:0;padding:0}
           QSlider#gridRowHeight{background:transparent;border:0;padding:0}
-          QSlider#gridZoom::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
-          QSlider#gridZoom::sub-page:horizontal{background:#64b9e9;border-radius:2px}
-          QSlider#gridZoom::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
+          QSlider#gridZoom::groove:horizontal,QSlider#gridRowHeight::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
+          QSlider#gridZoom::sub-page:horizontal,QSlider#gridRowHeight::sub-page:horizontal{background:#64b9e9;border-radius:2px}
+          QSlider#gridZoom::handle:horizontal,QSlider#gridRowHeight::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
           QSlider#gridRowHeight::groove:vertical{width:5px;background:#2b4052;border-radius:2px}
           QSlider#gridRowHeight::add-page:vertical{background:#64b9e9;border-radius:2px}
           QSlider#gridRowHeight::handle:vertical{background:#d5ecfa;border:1px solid #72bde9;height:11px;margin:0 -5px;border-radius:6px}
@@ -1928,7 +1909,11 @@ class Window(QMainWindow):
         self.setup_developer_menus()
         # No duplicate top navigation: existing workspaces remain accessible
         # through Import / Export, Practice, the sidebar and the tuner.
-        self.tabs.tabBar().hide()
+        self.tabs.setTabVisible(1, False)  # Library uses the left-hand sidebar tabs.
+        self.tabs.setTabVisible(2, False)  # Import / Export uses the header action.
+        self.tabs.tabBar().show()
+        self.tabs.tabBar().setExpanding(False)
+        self.tabs.tabBar().setDocumentMode(True)
 
     def compare_with_isophonics(self):
         """Benchmark the original Beatles recording against verified chord labels."""
