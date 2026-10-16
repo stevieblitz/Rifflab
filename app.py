@@ -905,7 +905,21 @@ class Window(QMainWindow):
         self.library_remove.setToolTip('Remove from library only; keep project and audio files')
         self.library_remove.clicked.connect(self.remove_library_song)
         library_actions.addWidget(self.library_remove, 1, 1)
-        library_toolbar.addLayout(library_actions)
+        # Retain each original action/callback, but expose them through one menu
+        # rather than four permanent buttons crowding a narrow Library.
+        self.library_actions_button = QPushButton('Actions  ▾')
+        self.library_actions_button.setToolTip('Add, edit, favorite or remove songs')
+        self.library_actions_menu = QMenu(self.library_actions_button)
+        for label, button in (
+            ('Add current song', self.library_add),
+            ('Edit selected song', self.library_edit),
+            ('Toggle favorite', self.library_star),
+            ('Remove from Library', self.library_remove),
+        ):
+            action = self.library_actions_menu.addAction(label)
+            action.triggered.connect(button.click)
+        self.library_actions_button.setMenu(self.library_actions_menu)
+        library_toolbar.addWidget(self.library_actions_button)
         self.library_table = LibraryDragTable(0, 8)
         self.library_table.setHorizontalHeaderLabels(
             ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
