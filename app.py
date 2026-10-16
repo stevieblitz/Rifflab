@@ -25,7 +25,7 @@ from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
 )
 
 def loop_boundary_icon(which):
@@ -711,8 +711,8 @@ class Window(QMainWindow):
         project_header.setObjectName('projectHeader')
         project_row = QHBoxLayout(project_header)
         project_row.setContentsMargins(8, 0, 8, 0)
-        project_row.setSpacing(8)
-        project_header.setFixedHeight(46)
+        project_row.setSpacing(6)
+        project_header.setFixedHeight(42)
         self.header_import = QPushButton('Import / Export')
         self.header_import.setIcon(qta.icon('fa5s.exchange-alt', color='#7bd6ff'))
         self.header_import.setToolTip('Open the complete Import / Export workspace')
@@ -756,13 +756,12 @@ class Window(QMainWindow):
         self.now_playing.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.now_playing.setMinimumHeight(40)
         project_row.addWidget(self.now_playing)
-        # Visible clock alongside song title, above the waveform.
+        # Compact playback clock is displayed beside the transport buttons.
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
-        self.time_label.setFixedWidth(172)
+        self.time_label.setFixedWidth(143)
         self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.time_label.setToolTip('Current playback position / track duration')
-        project_row.addWidget(self.time_label, 0)
         self.header_tuner = QPushButton('Tuner')
         self.header_tuner.setObjectName('headerTuner')
         self.header_tuner.setMinimumWidth(78)
@@ -772,7 +771,7 @@ class Window(QMainWindow):
         self.header_tuner.setToolTip('Open Chromatic Tuner (Ctrl+Shift+T)')
         self.header_tuner.clicked.connect(self.toggle_tuner_panel)
         project_row.addStretch(1)
-        # Play Along and Tuner live in the actual QTabWidget tab bar.
+        # A genuine QTabBar is docked inline in this header, not on a second row.
         self.update_now_playing()
         # This widget is installed in the left corner of the main tab bar below.
         self.refresh_recent_projects()
@@ -1335,9 +1334,9 @@ class Window(QMainWindow):
         # The display mode belongs to the grid, not the analysis controls.
         grid_column = QVBoxLayout()
         grid_column.setContentsMargins(0, 0, 0, 0)
-        grid_column.setSpacing(6)
+        grid_column.setSpacing(4)
         grid_header = QHBoxLayout()
-        grid_header.setContentsMargins(4, 2, 4, 2)
+        grid_header.setContentsMargins(4, 1, 4, 1)
         grid_header.setSpacing(0)
         grid_header.addStretch(1)
         self.bass_mode_button = QPushButton('Root notes')
@@ -1410,7 +1409,7 @@ class Window(QMainWindow):
         grid_host_panel = QWidget()
         grid_content_row = QHBoxLayout()
         grid_content_row.setContentsMargins(0, 0, 0, 0)
-        grid_content_row.setSpacing(12)
+        grid_content_row.setSpacing(8)
         grid_content_row.addWidget(self.chord_scroll, 1)
         grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
@@ -1440,7 +1439,7 @@ class Window(QMainWindow):
         # Keep the transport geometrically centered, regardless of the right-side loop status.
         controls = QGridLayout()
         controls.setContentsMargins(3, 1, 3, 1)
-        controls.setHorizontalSpacing(8)
+        controls.setHorizontalSpacing(6)
         controls.setColumnStretch(0, 1)
         controls.setColumnStretch(2, 1)
         transport_buttons = QHBoxLayout()
@@ -1480,7 +1479,7 @@ class Window(QMainWindow):
             button.setFixedSize(32, 30)
             button.setIconSize(QSize(24, 24) if button in (self.loop_a_button, self.loop_b_button) else QSize(15, 15))
             button.setProperty('transportIcon', True)
-        # The two zoom axes belong together in the transport bar.
+        # Both zoom axes use identical compact transport controls.
         zoom_controls = QHBoxLayout()
         zoom_controls.setContentsMargins(0, 0, 0, 0)
         zoom_controls.setSpacing(6)
@@ -1512,10 +1511,15 @@ class Window(QMainWindow):
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(45)
         self.grid_zoom_label.installEventFilter(self)
-        zoom_controls.addWidget(self.grid_zoom_label)  # Current zoom percentage
+        self.grid_zoom_label.hide()  # Keep state label without asymmetric visual clutter.
         # Single compact vertical zoom control, rendered horizontally alongside H.
         zoom_controls.addSpacing(6)
         zoom_controls.addWidget(QLabel('V'))
+        height_minus = QPushButton('−')
+        height_minus.setObjectName('gridZoomStep')
+        height_minus.setFixedSize(18, 20)
+        height_minus.setToolTip('Decrease note row height')
+        zoom_controls.addWidget(height_minus)
         self.grid_row_height = QSlider(Qt.Horizontal)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
@@ -1528,19 +1532,31 @@ class Window(QMainWindow):
         self.grid_row_height.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_row_height', value))
         self.grid_row_height.installEventFilter(self)
         zoom_controls.addWidget(self.grid_row_height)
+        height_plus = QPushButton('+')
+        height_plus.setObjectName('gridZoomStep')
+        height_plus.setFixedSize(18, 20)
+        height_plus.setToolTip('Increase note row height')
+        zoom_controls.addWidget(height_plus)
+        height_minus.clicked.connect(lambda: self.grid_row_height.setValue(max(self.grid_row_height.minimum(), self.grid_row_height.value() - 4)))
+        height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
         self.grid_row_height_label = QLabel('38')
         self.grid_row_height_label.hide()
         self._height_wheel_targets = (self.grid_row_height,)
         self._zoom_wheel_targets = (self.grid_zoom,)
         # Equal-width outer columns keep transport geometrically centered.
         controls.addLayout(playback_options, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
+        centered_transport = QHBoxLayout()
+        centered_transport.setContentsMargins(0, 0, 0, 0)
+        centered_transport.setSpacing(9)
+        centered_transport.addWidget(self.time_label)
+        centered_transport.addLayout(transport_buttons)
+        controls.addLayout(centered_transport, 0, 1, Qt.AlignCenter)
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
         self.loop_info.hide()  # Retain state; the single-row controlbar stays uncluttered.
         # Navigation stays to the right; clock is now next to the song title.
         right_controls = QHBoxLayout()
-        right_controls.setSpacing(8)
+        right_controls.setSpacing(6)
         right_controls.addStretch(1)
         right_controls.addLayout(zoom_controls)
         right_controls.addSpacing(8)
@@ -1549,7 +1565,7 @@ class Window(QMainWindow):
         bottom_panel = QWidget()
         bottom_panel.setObjectName('bottomControlBar')
         bottom_panel_layout = QVBoxLayout(bottom_panel)
-        bottom_panel_layout.setContentsMargins(6, 1, 6, 1)
+        bottom_panel_layout.setContentsMargins(8, 5, 8, 5)
         bottom_panel_layout.setSpacing(0)
         bottom_panel_layout.addLayout(controls)
         grid_column.addWidget(bottom_panel, 0)  # Only below the grid, not below the mixer.
@@ -1559,7 +1575,7 @@ class Window(QMainWindow):
         stem_panel.setMinimumWidth(165)
         stem_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         panel = QVBoxLayout(stem_panel)
-        panel.setContentsMargins(8, 7, 8, 7)
+        panel.setContentsMargins(8, 8, 8, 8)
         panel.setSpacing(9)
         mixer_header = QHBoxLayout()
         mixer_header.setContentsMargins(0, 0, 0, 0)
@@ -1823,11 +1839,15 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#timeLabel{background:#0b1621;color:#a5e5ff;border:1px solid #31546b;border-radius:4px;font-family:'Cascadia Mono','Consolas',monospace;font-size:20px;font-weight:600;padding:3px 8px}
+          QLabel#timeLabel{background:transparent;color:#a5e5ff;border:0;font-family:'Cascadia Mono','Consolas',monospace;font-size:14px;font-weight:600;padding:0px 2px}
           QLabel#loopInfo{background:transparent}
           QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
+          QTabBar#headerWorkspaceTabs{background:transparent}
+          QTabBar#headerWorkspaceTabs::tab{padding:7px 13px;min-width:80px;border:1px solid #314b60;border-bottom:2px solid transparent;background:#1b2938;color:#c9dae6}
+          QTabBar#headerWorkspaceTabs::tab:selected{background:#254d6d;color:#e8f6ff;border-bottom:2px solid #7bd6ff}
+          QTabBar#headerWorkspaceTabs::tab:hover:!selected{background:#263e51}
           QTabBar#mainTabBar::tab{margin-top:2px;padding:7px 15px;min-width:90px;border-bottom:2px solid transparent}
           QTabBar#mainTabBar::tab:selected{background:#234b68;color:#d4efff;border-bottom:2px solid #7bd6ff}
           QLabel#ioDescription{color:#9bb0c1;font-size:12px;padding:2px 0}
@@ -1911,9 +1931,23 @@ class Window(QMainWindow):
         # through Import / Export, Practice, the sidebar and the tuner.
         self.tabs.setTabVisible(1, False)  # Library uses the left-hand sidebar tabs.
         self.tabs.setTabVisible(2, False)  # Import / Export uses the header action.
-        self.tabs.tabBar().show()
-        self.tabs.tabBar().setExpanding(False)
-        self.tabs.tabBar().setDocumentMode(True)
+        self.tabs.tabBar().hide()
+        # Native QTabBar in the same header row as the project controls.
+        # Its selection drives the existing QTabWidget and vice versa.
+        self.header_tabs = QTabBar(project_header)
+        self.header_tabs.setObjectName('headerWorkspaceTabs')
+        self.header_tabs.setExpanding(False)
+        self.header_tabs.setDrawBase(False)
+        self.header_tabs.addTab(qta.icon('fa5s.play-circle', color='#7bd6ff'), 'Play Along')
+        self.header_tabs.addTab(self.tuning_fork_icon(), 'Tuner')
+        self.header_tabs.setCurrentIndex(0)
+        self.header_tabs.currentChanged.connect(
+            lambda index: self.tabs.setCurrentIndex(
+                0 if index == 0 else self.tabs.indexOf(self.tuner_dialog)))
+        self.tabs.currentChanged.connect(
+            lambda index: self.header_tabs.setCurrentIndex(
+                1 if self.tabs.widget(index) is self.tuner_dialog else 0))
+        project_row.addWidget(self.header_tabs, 0, Qt.AlignVCenter)
 
     def compare_with_isophonics(self):
         """Benchmark the original Beatles recording against verified chord labels."""
