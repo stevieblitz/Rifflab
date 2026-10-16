@@ -21,7 +21,6 @@ from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPe
 from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF
 import qtawesome as qta
 from PySide6.QtSvg import QSvgRenderer
-from autocue_widget import AutocueWidget
 from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -561,7 +560,7 @@ class TunerMeter(QWidget):
         self.cents = 0.0
         self.signal_active = False
         self.setMinimumHeight(76)
-        self.setToolTip('Afwijking in cents: links te laag, rechts te hoog; midden is zuiver.')
+        self.setToolTip('Pitch deviation in cents: flat on the left, sharp on the right, in tune at center.')
 
     def set_reading(self, cents, active=True):
         self.cents = max(-50.0, min(50.0, float(cents)))
@@ -1074,9 +1073,14 @@ class Window(QMainWindow):
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.next_chords.setStyleSheet('font-size:12px;color:#9bb7cb;padding:3px')
         self.next_chords.hide()  # No NEXT strip: the grid shows upcoming notes.
-        options = QHBoxLayout()
-        options.setSpacing(8)
-        options.setContentsMargins(0, 0, 0, 0)
+        # Two comfortable, logical rows instead of one overflowing toolbar.
+        analysis_options = QHBoxLayout()
+        analysis_options.setSpacing(12)
+        analysis_options.setContentsMargins(0, 0, 0, 0)
+        playback_options = QHBoxLayout()
+        playback_options.setSpacing(12)
+        playback_options.setContentsMargins(0, 0, 0, 0)
+        options = analysis_options
         self.analysis_mode = QComboBox()
         self.analysis_mode.addItems(['Bass Mode', 'Chord Mode'])
         self.analysis_mode.setToolTip('Bass Mode tracks actual bass-note changes, including semitone steps; Chord Mode estimates harmony')
@@ -1084,13 +1088,15 @@ class Window(QMainWindow):
         self.analysis_mode.hide()  # Backing mode state for existing analysis and project logic.
         options.addWidget(QLabel('◈ Accuracy'))
         self.accuracy = QComboBox()
-        self.accuracy.addItems(['Fast · snelle preview', 'Balanced · normaal', 'Detailed · meer precisie'])
+        self.accuracy.addItems(['Fast · preview', 'Balanced · standard', 'Detailed · precise'])
         self.accuracy.setCurrentIndex(1)
-        self.accuracy.setToolTip('Rekentijd en resolutie van de AI-analyse. Wijziging toepassen met Re-analyze; sneller is niet per definitie nauwkeuriger.')
+        self.accuracy.setMinimumWidth(165)
+        self.accuracy.setToolTip('Analysis speed and detail. Press Re-analyze to apply the selection.')
         options.addWidget(self.accuracy)
         self.reanalyze_button = QPushButton('Re-analyze')
+        self.reanalyze_button.setMinimumWidth(110)
         self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
-        self.reanalyze_button.setToolTip('Nieuwe AI-berekening met de gekozen Accuracy. NoteGuard en Stability worden direct toegepast zonder nieuwe analyse.')
+        self.reanalyze_button.setToolTip('Run analysis again using the selected accuracy. Display filters update immediately.')
         self.reanalyze_button.clicked.connect(self.reanalyze_current)
         options.addWidget(self.reanalyze_button)
         self.cancel_analysis_button = QPushButton('Stop Analyze')
@@ -1101,16 +1107,17 @@ class Window(QMainWindow):
         options.addWidget(self.cancel_analysis_button)
         options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
-        self.noteguard.addItems(['Uit · alle detecties', 'Licht · snelle riffs', 'Normaal · betrouwbaar', 'Sterk · grondtonen'])
+        self.noteguard.addItems(['Off · all notes', 'Light · quick riffs', 'Normal · reliable', 'Strong · root notes'])
         self.noteguard.setCurrentIndex(0)
-        self.noteguard.setToolTip('Filtert korte twijfelachtige detecties op de bestaande noten. Dit herberekent de audio niet.')
+        self.noteguard.setMinimumWidth(175)
+        self.noteguard.setToolTip('Filter uncertain short notes in the display without reanalyzing the audio.')
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
         options.addWidget(self.noteguard)
         options.addWidget(QLabel('≋ Stability'))
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
         self.sensitivity.setValue(0)
-        self.sensitivity.setToolTip('Minimale duur van een nootwijziging; hogere waarde = minder korte wisselingen. Wordt direct toegepast.')
+        self.sensitivity.setToolTip('Minimum note duration. Higher values reduce rapid changes; display only.')
         self.sensitivity.setFixedWidth(90)
         self.sensitivity.valueChanged.connect(self.rebuild_chords)
         options.addWidget(self.sensitivity)
@@ -1145,15 +1152,19 @@ class Window(QMainWindow):
         self.sensitivity.blockSignals(False)
         options.addWidget(self.complexity)
         options.addWidget(self.complexity_label)
+        # Playback/navigation on its own row: no clipped labels.
+        options = playback_options
         options.addWidget(QLabel('♮ Transpose'))
         self.transpose = QSpinBox()
+        self.transpose.setMinimumWidth(92)
         self.transpose.setRange(-12, 12)
         self.transpose.setValue(0)
         self.transpose.setSuffix(' st')
         self.transpose.setToolTip('Notation only: changes displayed notes/chords, never the audio pitch or the instrument tuning.')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
-        self.tuning_advice = QPushButton('Tuning guide  ↗')
+        self.tuning_advice = QPushButton('Tuning guide ↗')
+        self.tuning_advice.setMinimumWidth(120)
         self.tuning_advice.setToolTip(
             'Open the tuner and choose a string tuning. Transpose does not retune audio.')
         self.tuning_advice.clicked.connect(self.open_tuning_guide)
@@ -1161,6 +1172,7 @@ class Window(QMainWindow):
         options.addWidget(self.tuning_advice)
         options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
+        self.grid_bpm.setMinimumWidth(85)
         self.grid_bpm.setRange(40, 250)
         self.grid_bpm.setValue(130)
         self.grid_bpm.valueChanged.connect(self.bpm_changed)
@@ -1180,6 +1192,7 @@ class Window(QMainWindow):
         options.addSpacing(12)
         options.addWidget(QLabel('◷ Lookahead'))
         self.chord_lookahead = QSpinBox()
+        self.chord_lookahead.setMinimumWidth(110)
         self.chord_lookahead.setRange(0, 500)
         self.chord_lookahead.setSingleStep(25)
         self.chord_lookahead.setSuffix(' ms')
@@ -1191,9 +1204,12 @@ class Window(QMainWindow):
         toolbar_panel = QWidget()
         toolbar_panel.setObjectName('analysisToolbar')
         toolbar_layout = QVBoxLayout(toolbar_panel)
-        toolbar_layout.setContentsMargins(10, 6, 10, 6)
-        toolbar_layout.setSpacing(0)
-        toolbar_layout.addLayout(options)
+        toolbar_layout.setContentsMargins(14, 10, 14, 10)
+        toolbar_layout.setSpacing(10)
+        analysis_options.addStretch(1)
+        playback_options.addStretch(1)
+        toolbar_layout.addLayout(analysis_options)
+        toolbar_layout.addLayout(playback_options)
         layout.addWidget(toolbar_panel)
         # The display mode belongs to the grid, not the analysis controls.
         grid_column = QVBoxLayout()
@@ -1222,11 +1238,6 @@ class Window(QMainWindow):
         grid_header.addWidget(self.chord_mode_button)
         grid_column.addLayout(grid_header)
         self.update_grid_mode_buttons()
-        self.cue_toggle = QPushButton('Autocue')
-        self.cue_toggle.setCheckable(True)
-        self.cue_toggle.setChecked(True)
-        self.cue_toggle.setToolTip('Switch between continuous autocue and classic grid')
-        grid_header.addWidget(self.cue_toggle)
         self.chord_scroll = QScrollArea()
         self.chord_scroll.setWidgetResizable(True)
         self.chord_scroll.setMinimumHeight(160)
@@ -1274,14 +1285,7 @@ class Window(QMainWindow):
         grid_content_row = QHBoxLayout()
         grid_content_row.setContentsMargins(0, 0, 0, 0)
         grid_content_row.setSpacing(6)
-        self.autocue = AutocueWidget()
-        self.autocue.seekRequested.connect(self.seek_waveform)
         grid_content_row.addWidget(self.chord_scroll, 1)
-        grid_content_row.addWidget(self.autocue, 1)
-        self.chord_scroll.hide()
-        self.cue_toggle.toggled.connect(
-            lambda enabled: (self.autocue.setVisible(enabled),
-                             self.chord_scroll.setVisible(not enabled)))
         grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
         grid_host_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -3494,7 +3498,6 @@ class Window(QMainWindow):
                     collapsed.append((t, note))
             output = collapsed
         self.display_chords = output
-        self.autocue.set_events(output, self._duration / 1000)
         self.refresh_tuning_advice()
         self.display_times = [t for t, _ in output]
         self.render_grid()
@@ -3787,7 +3790,6 @@ class Window(QMainWindow):
                                 f'{self._duration // 60000:02d}:{(self._duration // 1000) % 60:02d}')
         self.update_chord_indicator(ms)
         self.update_grid_position(ms / 1000)
-        self.autocue.set_position(ms / 1000)
 
     def load_waveform(self, source):
         if isinstance(source, dict):
