@@ -1335,17 +1335,15 @@ class Window(QMainWindow):
         grid_column = QVBoxLayout()
         grid_column.setContentsMargins(0, 0, 0, 0)
         grid_column.setSpacing(4)
-        self.bass_mode_button = QPushButton('Root notes')
-        self.bass_mode_button.setIcon(qta.icon('fa5s.music', color='#a9d9ef'))
+        self.bass_mode_button = QPushButton('Notes')
         self.chord_mode_button = QPushButton('Chords')
-        self.chord_mode_button.setIcon(qta.icon('fa5s.th-large', color='#a9d9ef'))
         for button in (self.bass_mode_button, self.chord_mode_button):
             button.setCheckable(True)
             button.setProperty('gridModeButton', True)
             button.setFixedHeight(25)
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.bass_mode_button.setFixedWidth(116)
-        self.chord_mode_button.setFixedWidth(91)
+        self.bass_mode_button.setFixedWidth(70)
+        self.chord_mode_button.setFixedWidth(76)
         self.bass_mode_button.setToolTip('Bass Mode: detect and display the bass-note roots')
         self.chord_mode_button.setToolTip('Detect and display chords')
         self.bass_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(0))
@@ -1396,12 +1394,12 @@ class Window(QMainWindow):
         self.grid_mode_overlay.setObjectName('gridModeOverlay')
         mode_row = QHBoxLayout(self.grid_mode_overlay)
         mode_row.setContentsMargins(0, 0, 0, 0)
-        mode_row.setSpacing(3)
+        mode_row.setSpacing(0)
         mode_row.addWidget(self.bass_mode_button)
         mode_row.addWidget(self.chord_mode_button)
-        self.grid_mode_overlay.setFixedSize(214, 27)
+        self.grid_mode_overlay.setFixedSize(146, 27)
         self.grid_mode_overlay.setStyleSheet('QWidget#gridModeOverlay{background:#111923;border:0;}')
-        self.grid_mode_overlay.move(max(0, self.chord_scroll.viewport().width() - 219), 2)
+        self.grid_mode_overlay.move(max(0, self.chord_scroll.viewport().width() - 151), 2)
         self.grid_mode_overlay.raise_()
         # Only the grid area is horizontally split with the compact stem mixer.
         self.play_splitter = MinimalSplitter(Qt.Horizontal)
@@ -1827,7 +1825,7 @@ class Window(QMainWindow):
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
           QPushButton#headerTuner,QPushButton#practiceNav{background:#1b2938;border:1px solid #304a60;padding:4px 8px;border-radius:4px}
           QPushButton#headerTuner:hover,QPushButton#practiceNav:hover{background:#294e69}
-          QPushButton[gridModeButton='true']{padding:2px 7px;min-height:20px}
+          QPushButton[gridModeButton='true']{padding:2px 5px;min-height:20px}
           QPushButton{font-family:'Bahnschrift','Segoe UI';font-weight:500}
           QComboBox,QSpinBox{font-family:'Bahnschrift','Segoe UI'}
           QLabel#gridTitle,QLabel#mixerTitle{font-family:'Bahnschrift','Segoe UI';font-weight:600}
