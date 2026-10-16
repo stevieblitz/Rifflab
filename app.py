@@ -1357,6 +1357,7 @@ class Window(QMainWindow):
         self.analysis_mode.currentIndexChanged.connect(self.update_grid_mode_buttons)
         self.update_grid_mode_buttons()
         self.chord_scroll = QScrollArea()
+        self.chord_scroll.setObjectName('noteGridScroll')
         self.chord_scroll.setAcceptDrops(True)
         self.chord_scroll.viewport().setAcceptDrops(True)
         self.chord_scroll.setWidgetResizable(True)
@@ -1417,9 +1418,10 @@ class Window(QMainWindow):
         self.play_splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.play_splitter.setMinimumHeight(190)
         grid_host_panel = QWidget()
+        grid_host_panel.setObjectName('noteGridPanel')
         grid_content_row = QHBoxLayout()
-        grid_content_row.setContentsMargins(0, 0, 0, 0)
-        grid_content_row.setSpacing(8)
+        grid_content_row.setContentsMargins(7, 7, 7, 7)
+        grid_content_row.setSpacing(6)
         grid_content_row.addWidget(self.chord_scroll, 1)
         grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
@@ -1824,8 +1826,8 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
-          QWidget#bottomControlBar{background:#142330;border:1px solid #2f4558;border-radius:5px}
-          QTabWidget#sidebarTabs::pane{background:#14212d;border:1px solid #304559;border-radius:5px}
+          QWidget#bottomControlBar{background:#172a3a;border:1px solid #35556a;border-radius:5px}
+          QTabWidget#sidebarTabs::pane{background:#172939;border:1px solid #35556a;border-radius:5px}
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
@@ -1843,7 +1845,10 @@ class Window(QMainWindow):
           ScrollingSongTitle#nowPlayingTitle{background:transparent;border:none}
           QWidget#projectHeader{background:#111923;border:none}
           QWidget#nowPlayingTitle{background:transparent;border:none}
-          QWidget#analysisToolbar{background:#162635;border:1px solid #293f52;border-radius:5px}
+          QWidget#analysisToolbar{background:#172a3a;border:1px solid #35556a;border-radius:5px}
+          QWidget#noteGridPanel{background:#172939;border:1px solid #35556a;border-radius:5px}
+          QScrollArea#noteGridScroll{background:#111d2a;border:1px solid #2a465b;border-radius:4px}
+          QScrollArea#noteGridScroll QWidget#qt_scrollarea_viewport{background:#111d2a}
           QPushButton[gridModeButton='true']{background:#1c2d3d;border:1px solid #34536d;border-radius:3px;color:#a7bfd0;padding:2px 5px;font-weight:600}
           QPushButton[gridModeButton='true']:hover{background:#263e51}
           QPushButton[gridModeButton='true']:checked{background:#244661;border:1px solid #4a7695;border-bottom:3px solid #7bd6ff;color:#e1f4ff}
@@ -1913,13 +1918,9 @@ class Window(QMainWindow):
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
           /* Both zoom axes share exactly the same rail, thumb, and accent. */
           QSlider#gridZoom,QSlider#gridRowHeight{background:transparent;border:0;padding:0}
-          QSlider#gridRowHeight{background:transparent;border:0;padding:0}
           QSlider#gridZoom::groove:horizontal,QSlider#gridRowHeight::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider#gridZoom::sub-page:horizontal,QSlider#gridRowHeight::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider#gridZoom::handle:horizontal,QSlider#gridRowHeight::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
-          QSlider#gridRowHeight::groove:vertical{width:5px;background:#2b4052;border-radius:2px}
-          QSlider#gridRowHeight::add-page:vertical{background:#64b9e9;border-radius:2px}
-          QSlider#gridRowHeight::handle:vertical{background:#d5ecfa;border:1px solid #72bde9;height:11px;margin:0 -5px;border-radius:6px}
           /* Identical slim native scrollbars on both axes. */
           QScrollBar:vertical{background:#101c28;width:9px;margin:0;border:0}
           QScrollBar:horizontal{background:#101c28;height:9px;margin:0;border:0}
