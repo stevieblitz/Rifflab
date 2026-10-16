@@ -1432,16 +1432,9 @@ class Window(QMainWindow):
         controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
-        controls.addWidget(self.loop_info, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
-        # Display controls sit above transport, aligned to the right.
-        playback_panel = QWidget()
-        playback_panel.setObjectName('playbackOptionsToolbar')
-        playback_panel_layout = QHBoxLayout(playback_panel)
-        playback_panel_layout.setContentsMargins(10, 5, 10, 5)
-        playback_panel_layout.addStretch(1)
-        playback_panel_layout.addLayout(playback_options)
-        layout.addWidget(playback_panel, 0)
-        # Bottom-docked controls: never float halfway up when the window grows.
+        self.loop_info.hide()  # Retain state; the single-row controlbar stays uncluttered.
+        # One bottom controlbar: clock left, transport center, display controls right.
+        controls.addLayout(playback_options, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
         layout.addLayout(controls, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
