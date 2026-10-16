@@ -905,21 +905,24 @@ class Window(QMainWindow):
         self.library_remove.setToolTip('Remove from library only; keep project and audio files')
         self.library_remove.clicked.connect(self.remove_library_song)
         library_actions.addWidget(self.library_remove, 1, 1)
-        # Retain each original action/callback, but expose them through one menu
-        # rather than four permanent buttons crowding a narrow Library.
-        self.library_actions_button = QPushButton('Actions  ▾')
-        self.library_actions_button.setToolTip('Add, edit, favorite or remove songs')
-        self.library_actions_menu = QMenu(self.library_actions_button)
-        for label, button in (
-            ('Add current song', self.library_add),
-            ('Edit selected song', self.library_edit),
-            ('Toggle favorite', self.library_star),
-            ('Remove from Library', self.library_remove),
+        # Compact icon-only actions; the existing callbacks and confirmation stay.
+        library_icons = QHBoxLayout()
+        library_icons.setSpacing(5)
+        for button, icon_name, hint in (
+            (self.library_add, 'fa5s.plus', 'Add current song to Library'),
+            (self.library_edit, 'fa5s.edit', 'Edit selected song details'),
+            (self.library_star, 'fa5s.star', 'Toggle selected song favorite'),
+            (self.library_remove, 'fa5s.trash-alt', 'Remove selected song from Library (keeps files)'),
         ):
-            action = self.library_actions_menu.addAction(label)
-            action.triggered.connect(button.click)
-        self.library_actions_button.setMenu(self.library_actions_menu)
-        library_toolbar.addWidget(self.library_actions_button)
+            button.setText('')
+            button.setIcon(qta.icon(icon_name, color='#b9ddf0'))
+            button.setIconSize(QSize(15, 15))
+            button.setFixedSize(30, 28)
+            button.setToolTip(hint)
+            button.setAccessibleName(hint)
+            library_icons.addWidget(button)
+        library_icons.addStretch(1)
+        library_toolbar.addLayout(library_icons)
         self.library_table = LibraryDragTable(0, 8)
         self.library_table.setHorizontalHeaderLabels(
             ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
