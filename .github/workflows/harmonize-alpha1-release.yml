@@ -1,0 +1,49 @@
+name: Harmonize historical Alpha 1 release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/harmonize-alpha1-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Alpha 1 release title and notes (preserve downloads and tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          # RiffLab | Alpha v0.1.0 - Windows
+
+          The original RiffLab public alpha. An early experimental build of the audio-analysis and musician practice application, preserved for historical downloads.
+
+          ## Highlights
+          - Import audio and inspect tracks with AI-assisted analysis.
+          - Bass note detection and chord recognition.
+          - Timeline-based note and chord visualization.
+          - Playback and practice tools for exploring songs.
+          - Portable Windows package.
+
+          ## Changelog
+          - Introduced the first publicly downloadable RiffLab alpha for Windows.
+          - Added the initial bass and chord analysis interface.
+          - Added timeline-oriented visual feedback for detected notes and chords.
+          - Packaged the alpha as a portable ZIP.
+
+          ## Windows installation
+          1. Download **RiffLab-Windows-Alpha-1.3.7.zip** below.
+          2. Extract the complete ZIP into a folder.
+          3. Launch RiffLab using the included executable or launcher, keeping its supporting files together.
+
+          ## Known limitations
+          This is an archived experimental alpha. Note and chord detection may be inaccurate; audio compatibility, Windows support and startup behavior may vary. For ongoing development and the newer Windows package, see [Alpha v0.2.0](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1).
+
+          ## Credits
+          **RiffLab by Stevieblitz [Teun Verhoeven]**  
+          https://teunverhoeven.nl
+
+          Built with open-source audio/AI tooling and AI-assisted development.
+          NOTES
+          gh release edit v0.1.0-alpha.1 --repo stevieblitz/Rifflab --title "RiffLab | Alpha v0.1.0 - Windows" --notes-file release-notes.md --prerelease
