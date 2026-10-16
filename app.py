@@ -1259,7 +1259,7 @@ class Window(QMainWindow):
         grid_header.setContentsMargins(4, 2, 4, 2)
         grid_header.setSpacing(0)
         grid_header.addStretch(1)
-        self.bass_mode_button = QPushButton('Bass')
+        self.bass_mode_button = QPushButton('Root notes')
         self.bass_mode_button.setIcon(qta.icon('fa5s.music', color='#a9d9ef'))
         self.chord_mode_button = QPushButton('Chords')
         self.chord_mode_button.setIcon(qta.icon('fa5s.th-large', color='#a9d9ef'))
@@ -1268,7 +1268,7 @@ class Window(QMainWindow):
             button.setProperty('gridModeButton', True)
             button.setFixedHeight(29)
             button.setMinimumWidth(74)
-        self.bass_mode_button.setToolTip('Detect and display bass notes')
+        self.bass_mode_button.setToolTip('Bass Mode: detect and display the bass-note roots')
         self.chord_mode_button.setToolTip('Detect and display chords')
         self.bass_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(0))
         self.chord_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(1))
@@ -1809,6 +1809,13 @@ class Window(QMainWindow):
           QSlider#gridRowHeight::groove:vertical{width:5px;background:#2b4052;border-radius:2px}
           QSlider#gridRowHeight::add-page:vertical{background:#64b9e9;border-radius:2px}
           QSlider#gridRowHeight::handle:vertical{background:#d5ecfa;border:1px solid #72bde9;height:11px;margin:0 -5px;border-radius:6px}
+          /* Identical slim native scrollbars on both axes. */
+          QScrollBar:vertical{background:#101c28;width:9px;margin:0;border:0}
+          QScrollBar:horizontal{background:#101c28;height:9px;margin:0;border:0}
+          QScrollBar::handle:vertical,QScrollBar::handle:horizontal{background:#35546a;border-radius:4px;min-height:22px;min-width:22px}
+          QScrollBar::handle:vertical:hover,QScrollBar::handle:horizontal:hover{background:#4a7d99}
+          QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical,QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;height:0;border:0;background:transparent}
+          QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical,QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent}
           QScrollArea{background:#141e2a}
           QPushButton[transportIcon='true']{background:#1d3042;border:1px solid #34526b;border-radius:6px}
           QPushButton[transportIcon='true']:hover{background:#263d52;border-color:#47657c}
@@ -1905,17 +1912,15 @@ class Window(QMainWindow):
                           "QMenu{background:#172331;color:#e8edf2;border:1px solid #344658;}"
                           "QMenu::item{padding:6px 24px;}"
                           "QMenu::item:selected{background:#28455b;}")
-        title_space = QWidget()
-        title_row = QHBoxLayout(title_space)
-        title_row.setContentsMargins(0, 0, 12, 0)
-        title_row.addStretch(1)
-        title = QLabel('RiffLab')
-        title.setObjectName('menuAppTitle')
-        title.setAlignment(Qt.AlignCenter)
-        title.setMinimumWidth(185)
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        bar.setCornerWidget(title_space, Qt.TopRightCorner)
+        # Center brand over the entire menu bar, not just the unused right corner.
+        # Mouse-transparent label leaves File / View menus fully interactive.
+        self.menu_title_label = QLabel('RiffLab', bar)
+        self.menu_title_label.setObjectName('menuAppTitle')
+        self.menu_title_label.setAlignment(Qt.AlignCenter)
+        self.menu_title_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        bar.installEventFilter(self)
+        QTimer.singleShot(0, lambda: self.menu_title_label.setGeometry(
+            max(0, (bar.width() - 190) // 2), 0, 190, bar.height()))
         file_menu = bar.addMenu('&File')
         file_menu.addAction('Open Project…', self.open_project)
         file_menu.addAction('Save Project', self.save_project)
@@ -2641,6 +2646,10 @@ class Window(QMainWindow):
             self.chord_loading.raise_()
 
     def eventFilter(self, obj, event):
+        if (hasattr(self, 'menu_title_label') and obj is self.menuBar()
+                and event.type() == event.Type.Resize):
+            self.menu_title_label.setGeometry(
+                max(0, (obj.width() - 190) // 2), 0, 190, obj.height())
         # The loading mask belongs to the grid viewport, never underneath it.
         if (hasattr(self, 'chord_loading') and obj is self.chord_scroll.viewport()
                 and event.type() == event.Type.Resize):
@@ -3865,11 +3874,23 @@ class Window(QMainWindow):
         self.grid_zoom_label.setText(f'{zoom}%')
         scale = zoom / 100.0
         for index,(end,button) in getattr(self,'grid_segments',{}).items():
-            button.setMinimumWidth(round(36*scale*(end-index)))
+            intended_width = max(38, round(36*scale*(end-index)))
+            button.setMinimumWidth(intended_width)
             button.setFixedHeight(self.grid_row_height.value())
+            full_label = self.grid_chord_names[index]
+            full_label = '' if full_label == '—' else full_label
             font = button.font()
             font.setPixelSize(self._grid_note_font_px())
-            font.setBold(bool(button.text().strip()))
+            font.setBold(bool(full_label))
+            from PySide6.QtGui import QFontMetrics
+            metrics = QFontMetrics(font)
+            if metrics.horizontalAdvance(full_label) + 14 > intended_width:
+                root_match = re.match(r'^[A-G](?:#|b)?', full_label)
+                short_label = root_match.group(0) if root_match else full_label
+                font.setPixelSize(max(11, min(font.pixelSize(), 13)))
+                button.setText(short_label)
+            else:
+                button.setText(full_label)
             button.setFont(font)
             button.setStyleSheet(self._chord_segment_style(index, self.grid_active>=index and self.grid_active<end))
         self.chord_grid.setHorizontalSpacing(0)
