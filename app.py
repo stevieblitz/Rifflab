@@ -632,7 +632,7 @@ class Window(QMainWindow):
             from build_info import BUILD_NUMBER
         except ImportError:
             BUILD_NUMBER = 'local'
-        self.setWindowTitle(f'RiffLab Alpha v2.0.0-dev.{BUILD_NUMBER} — Music Practice')
+        self.setWindowTitle(f"StevieBlitz's RIFFLAB — Alpha v0.2.0-dev.{BUILD_NUMBER}")
         self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
         self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
         self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
@@ -829,7 +829,7 @@ class Window(QMainWindow):
         self.tabs.tabBar().setObjectName('mainTabBar')
         # Project controls have fixed widths, leaving the right-hand tabs visible.
         self.tuner_dialog = QDialog(self)
-        self.tuner_dialog.setWindowTitle('RiffLab · Chromatic Tuner')
+        self.tuner_dialog.setWindowTitle("StevieBlitz's RIFFLAB · Chromatic Tuner")
         self.tuner_dialog.setMinimumWidth(430)
         self.tuner_dialog.setModal(False)
         tuner_layout = QVBoxLayout(self.tuner_dialog)
@@ -1815,7 +1815,7 @@ class Window(QMainWindow):
         self.refresh_stems_led()
         self.maker_credit = QLabel(
             'by <a href="https://github.com/stevieblitz/Rifflab" '
-            'style="color:#7bd6ff;text-decoration:none;">Stevie Blitz</a>, powered by AI'
+            'style="color:#7bd6ff;text-decoration:none;">StevieBlitz\'s RIFFLAB</a> · <a href="https://teunverhoeven.nl" style="color:#9bb7cb;text-decoration:none;">Teun Verhoeven</a> · powered by AI'
         )
         self.maker_credit.setObjectName('makerCredit')
         self.maker_credit.setTextFormat(Qt.RichText)
