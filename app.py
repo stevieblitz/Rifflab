@@ -710,8 +710,8 @@ class Window(QMainWindow):
         project_header = QWidget()
         project_header.setObjectName('projectHeader')
         project_row = QHBoxLayout(project_header)
-        project_row.setContentsMargins(8, 0, 8, 0)
-        project_row.setSpacing(6)
+        project_row.setContentsMargins(10, 0, 10, 0)
+        project_row.setSpacing(8)
         project_header.setFixedHeight(42)
         self.header_import = QPushButton('Import / Export')
         self.header_import.setIcon(qta.icon('fa5s.exchange-alt', color='#7bd6ff'))
@@ -759,12 +759,12 @@ class Window(QMainWindow):
         # Compact playback clock is displayed beside the transport buttons.
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
-        self.time_label.setFixedWidth(143)
+        self.time_label.setFixedWidth(135)
         self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.time_label.setToolTip('Current playback position / track duration')
         self.header_time_label = QLabel('00:00 / 00:00')
         self.header_time_label.setObjectName('headerTimeLabel')
-        self.header_time_label.setFixedWidth(118)
+        self.header_time_label.setFixedWidth(120)
         self.header_time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.header_time_label.setToolTip('Playback time (also shown in transport)')
         project_row.addWidget(self.header_time_label)
@@ -815,7 +815,7 @@ class Window(QMainWindow):
             page = QWidget()
             self.tabs.addTab(page, name)
             tab_layout = QVBoxLayout(page)
-            tab_layout.setContentsMargins(12, 10, 12, 10)
+            tab_layout.setContentsMargins(10, 8, 10, 8)
             tab_layout.setSpacing(8)
             return tab_layout
         practice_layout = tab_page('Play Along')
@@ -1132,7 +1132,7 @@ class Window(QMainWindow):
         play_left = QWidget()
         layout = QVBoxLayout(play_left)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
         practice_layout.addWidget(play_left, 1)
         # Current chord sits BEFORE the waveform, never on top of its audio peaks.
         waveform_row = QHBoxLayout()
@@ -1185,13 +1185,13 @@ class Window(QMainWindow):
         self.next_chords.hide()  # No NEXT strip: the grid shows upcoming notes.
         # Two comfortable, logical rows instead of one overflowing toolbar.
         analysis_options = QHBoxLayout()
-        analysis_options.setSpacing(12)
+        analysis_options.setSpacing(8)
         analysis_options.setContentsMargins(0, 0, 0, 0)
         playback_options = QHBoxLayout()
         playback_options.setSpacing(5)
         playback_options.setContentsMargins(0, 0, 0, 0)
         navigation_options = QHBoxLayout()
-        navigation_options.setSpacing(8)
+        navigation_options.setSpacing(6)
         navigation_options.setContentsMargins(0, 0, 0, 0)
         options = analysis_options
         self.analysis_mode = QComboBox()
@@ -1332,7 +1332,7 @@ class Window(QMainWindow):
         toolbar_panel = QWidget()
         toolbar_panel.setObjectName('analysisToolbar')
         toolbar_layout = QVBoxLayout(toolbar_panel)
-        toolbar_layout.setContentsMargins(14, 8, 14, 8)
+        toolbar_layout.setContentsMargins(10, 6, 10, 6)
         toolbar_layout.setSpacing(0)
         analysis_options.addStretch(1)
         toolbar_layout.addLayout(analysis_options)
@@ -1364,7 +1364,7 @@ class Window(QMainWindow):
         self.chord_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.grid_host = QWidget()
         self.chord_grid = QGridLayout(self.grid_host)
-        self.chord_grid.setContentsMargins(5, 5, 16, 5)
+        self.chord_grid.setContentsMargins(5, 3, 12, 5)
         self.chord_grid.setHorizontalSpacing(0)
         self.chord_grid.setVerticalSpacing(5)
         self.chord_grid.setSpacing(5)
@@ -1404,13 +1404,13 @@ class Window(QMainWindow):
         mode_row.addWidget(self.bass_mode_button)
         mode_row.addWidget(self.chord_mode_button)
         self.grid_mode_overlay.setFixedSize(146, 27)
-        self.grid_mode_overlay.setStyleSheet('QWidget#gridModeOverlay{background:#111923;border:0;}')
+        self.grid_mode_overlay.setStyleSheet('QWidget#gridModeOverlay{background:#172736;border:1px solid #314b60;border-radius:4px;}')
         self.grid_mode_overlay.move(max(0, self.chord_scroll.viewport().width() - 151), 2)
         self.grid_mode_overlay.raise_()
         # Only the grid area is horizontally split with the compact stem mixer.
         self.play_splitter = MinimalSplitter(Qt.Horizontal)
         self.play_splitter.setObjectName('playSplitter')
-        self.play_splitter.setHandleWidth(12)
+        self.play_splitter.setHandleWidth(8)
         self.play_splitter.setToolTip('Drag the divider to resize the mixer and note grid')
         self.play_splitter.setChildrenCollapsible(False)
         # The grid consumes all available vertical space above the pinned transport.
@@ -1448,7 +1448,7 @@ class Window(QMainWindow):
         self.player.mediaStatusChanged.connect(self.on_media_status)
         # Keep the transport geometrically centered, regardless of the right-side loop status.
         controls = QGridLayout()
-        controls.setContentsMargins(3, 1, 3, 1)
+        controls.setContentsMargins(0, 0, 0, 0)
         controls.setHorizontalSpacing(6)
         controls.setColumnStretch(0, 1)
         controls.setColumnStretch(2, 1)
@@ -1505,7 +1505,7 @@ class Window(QMainWindow):
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
-        self.grid_zoom.setFixedWidth(82)
+        self.grid_zoom.setFixedWidth(74)
         self.grid_zoom.setToolTip('Adjust note-block width by dragging or scrolling')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
@@ -1519,7 +1519,7 @@ class Window(QMainWindow):
         zoom_minus.clicked.connect(lambda: self.grid_zoom.setValue(max(self.grid_zoom.minimum(), self.grid_zoom.value() - 5)))
         zoom_plus.clicked.connect(lambda: self.grid_zoom.setValue(min(self.grid_zoom.maximum(), self.grid_zoom.value() + 5)))
         self.grid_zoom_label = QLabel('100%')
-        self.grid_zoom_label.setFixedWidth(43)
+        self.grid_zoom_label.setFixedWidth(38)
         self.grid_zoom_label.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom_label)
         # Single compact vertical zoom control, rendered horizontally alongside H.
@@ -1533,7 +1533,7 @@ class Window(QMainWindow):
         self.grid_row_height = QSlider(Qt.Horizontal)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
-        self.grid_row_height.setFixedWidth(82)
+        self.grid_row_height.setFixedWidth(74)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
         self.grid_row_height.setValue(max(24, min(96, int(self.layout_settings.value('grid_row_height', 38)))))
@@ -1550,7 +1550,7 @@ class Window(QMainWindow):
         height_minus.clicked.connect(lambda: self.grid_row_height.setValue(max(self.grid_row_height.minimum(), self.grid_row_height.value() - 4)))
         height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
         self.grid_row_height_label = QLabel(f'{round(self.grid_row_height.value() / 38 * 100)}%')
-        self.grid_row_height_label.setFixedWidth(43)
+        self.grid_row_height_label.setFixedWidth(38)
         zoom_controls.addWidget(self.grid_row_height_label)
         self._height_wheel_targets = (self.grid_row_height,)
         self._zoom_wheel_targets = (self.grid_zoom,)
@@ -1576,7 +1576,7 @@ class Window(QMainWindow):
         bottom_panel = QWidget()
         bottom_panel.setObjectName('bottomControlBar')
         bottom_panel_layout = QVBoxLayout(bottom_panel)
-        bottom_panel_layout.setContentsMargins(8, 5, 8, 5)
+        bottom_panel_layout.setContentsMargins(10, 6, 10, 6)
         bottom_panel_layout.setSpacing(0)
         bottom_panel_layout.addLayout(controls)
         grid_column.addWidget(bottom_panel, 0)  # Only below the grid, not below the mixer.
@@ -1824,8 +1824,8 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
-          QWidget#bottomControlBar{background:#101923;border-top:1px solid #31495a}
-          QTabWidget#sidebarTabs::pane{background:#101923;border:1px solid #304559;border-radius:5px}
+          QWidget#bottomControlBar{background:#142330;border:1px solid #2f4558;border-radius:5px}
+          QTabWidget#sidebarTabs::pane{background:#14212d;border:1px solid #304559;border-radius:5px}
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
@@ -1843,8 +1843,8 @@ class Window(QMainWindow):
           ScrollingSongTitle#nowPlayingTitle{background:transparent;border:none}
           QWidget#projectHeader{background:#111923;border:none}
           QWidget#nowPlayingTitle{background:transparent;border:none}
-          QWidget#analysisToolbar{background:#14212d;border:1px solid #293f52;border-radius:5px}
-          QPushButton[gridModeButton='true']{background:#1c2d3d;border:1px solid #34536d;border-radius:4px;color:#a7bfd0;padding:4px 12px;font-weight:600}
+          QWidget#analysisToolbar{background:#162635;border:1px solid #293f52;border-radius:5px}
+          QPushButton[gridModeButton='true']{background:#1c2d3d;border:1px solid #34536d;border-radius:3px;color:#a7bfd0;padding:2px 5px;font-weight:600}
           QPushButton[gridModeButton='true']:hover{background:#263e51}
           QPushButton[gridModeButton='true']:checked{background:#244661;border:1px solid #4a7695;border-bottom:3px solid #7bd6ff;color:#e1f4ff}
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
