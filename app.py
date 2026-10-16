@@ -722,6 +722,13 @@ class Window(QMainWindow):
         self.now_playing.setFixedWidth(260)
         self.now_playing.setMinimumHeight(40)
         project_row.addWidget(self.now_playing)
+        # Prominent, technical time readout lives beside the song title.
+        self.time_label = QLabel('00:00 / 00:00')
+        self.time_label.setObjectName('timeLabel')
+        self.time_label.setFixedWidth(172)
+        self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        self.time_label.setToolTip('Current playback position / track duration')
+        project_row.addWidget(self.time_label)
         self.update_now_playing()
         # This widget is installed in the left corner of the main tab bar below.
         self.refresh_recent_projects()
@@ -1189,7 +1196,6 @@ class Window(QMainWindow):
         self.grid_bpm.setRange(40, 250)
         self.grid_bpm.setValue(130)
         self.grid_bpm.valueChanged.connect(self.bpm_changed)
-        options.addWidget(self.grid_bpm)
         self.reset_bpm_button = QPushButton()
         self.reset_bpm_button.setObjectName('resetBpmButton')
         self.reset_bpm_button.setIcon(qta.icon('fa5s.undo', color='#9bb7cb'))
@@ -1198,7 +1204,9 @@ class Window(QMainWindow):
         self.reset_bpm_button.setToolTip('Reset BPM to detected tempo (100% playback speed)')
         self.reset_bpm_button.setAccessibleName('Reset BPM')
         self.reset_bpm_button.clicked.connect(self.reset_bpm)
+        # Reset immediately to the left of the BPM value.
         options.addWidget(self.reset_bpm_button)
+        options.addWidget(self.grid_bpm)
         options = navigation_options
         self.follow = QCheckBox('↧ Auto-scroll')
         self.follow.setChecked(True)
@@ -1438,28 +1446,24 @@ class Window(QMainWindow):
         self._zoom_wheel_targets = (self.grid_zoom,)
         grid_content_row.addWidget(height_panel, 0, Qt.AlignVCenter)
         grid_column.addLayout(zoom_controls)
-        self.time_label = QLabel('00:00 / 00:00')
-        self.time_label.setObjectName('timeLabel')
-        self.time_label.setMinimumWidth(125)
-        self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-        self.time_label.setToolTip('Current playback position / track duration')
-        time_controls = QHBoxLayout()
-        time_controls.setContentsMargins(12, 0, 12, 0)
-        time_controls.addWidget(self.time_label)
         # Equal-width outer columns keep transport geometrically centered.
         controls.addLayout(playback_options, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
         self.loop_info.hide()  # Retain state; the single-row controlbar stays uncluttered.
-        # Clock follows transport; navigation controls align to far right.
+        # Navigation stays to the right; clock is now next to the song title.
         right_controls = QHBoxLayout()
         right_controls.setSpacing(8)
-        right_controls.addLayout(time_controls)
         right_controls.addStretch(1)
         right_controls.addLayout(navigation_options)
         controls.addLayout(right_controls, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
-        layout.addLayout(controls, 0)
+        bottom_panel = QWidget()
+        bottom_panel.setObjectName('bottomControlBar')
+        bottom_panel_layout = QVBoxLayout(bottom_panel)
+        bottom_panel_layout.setContentsMargins(8, 5, 8, 3)
+        bottom_panel_layout.addLayout(controls)
+        layout.addWidget(bottom_panel, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
@@ -1687,6 +1691,11 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
+          QWidget#bottomControlBar{background:#131e2a;border-top:1px solid #31495a}
+          QPushButton{font-family:'Bahnschrift','Segoe UI';font-weight:500}
+          QComboBox,QSpinBox{font-family:'Bahnschrift','Segoe UI'}
+          QLabel#gridTitle,QLabel#mixerTitle{font-family:'Bahnschrift','Segoe UI';font-weight:600}
+          ScrollingSongTitle#nowPlayingTitle{font-family:'Bahnschrift','Segoe UI';font-weight:600}
           QPushButton#gridZoomStep{background:transparent;border:0;color:#7bd6ff;font-size:14px;font-weight:500;padding:0}
           QPushButton#gridZoomStep:hover{color:#c5f1ff;background:transparent;border:0}
           QPushButton#gridZoomStep:pressed{color:#4daedb;background:transparent;border:0}
@@ -1701,7 +1710,7 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#timeLabel{background:transparent;color:#d8edfc;font-size:16px;font-weight:600}
+          QLabel#timeLabel{background:transparent;color:#7bd6ff;font-family:'Cascadia Mono','Consolas',monospace;font-size:20px;font-weight:600}
           QLabel#loopInfo{background:transparent}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
@@ -1743,7 +1752,7 @@ class Window(QMainWindow):
           QPushButton#resetBpmButton{background:#1e3041;border:1px solid #36516a;padding:2px;border-radius:5px}
           QPushButton#resetBpmButton:hover{background:#2a4964;border-color:#7bd6ff}
           QLabel#gridNotice{color:#819aad;font-size:11px}
-          QLabel#timeLabel,QLabel#loopInfo{color:#a2b8ca;font-size:11px}
+          QLabel#loopInfo{color:#a2b8ca;font-size:11px}
           QSlider::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
