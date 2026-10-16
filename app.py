@@ -1349,11 +1349,16 @@ class Window(QMainWindow):
             button.setFixedSize(32, 30)
             button.setIconSize(QSize(24, 24) if button in (self.loop_a_button, self.loop_b_button) else QSize(15, 15))
             button.setProperty('transportIcon', True)
-        # Grid zoom sits below the timeline, left of the centered transport.
+        # Zoom controls belong to the grid, not the transport.
         zoom_controls = QHBoxLayout()
         zoom_controls.setContentsMargins(0, 0, 0, 0)
         zoom_controls.setSpacing(6)
-        # Put the actual slider at the far left; label follows it.
+        zoom_minus = QPushButton('−')
+        zoom_minus.setObjectName('gridZoomStep')
+        zoom_minus.setFixedSize(22, 24)
+        zoom_minus.setToolTip('Zoom out horizontally')
+        zoom_controls.addStretch(1)
+        zoom_controls.addWidget(zoom_minus)
         self.grid_zoom = QSlider(Qt.Horizontal)
         self.grid_zoom.setObjectName('gridZoom')
         self.grid_zoom.setRange(65, 200)
@@ -1366,12 +1371,18 @@ class Window(QMainWindow):
         self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
         self.grid_zoom.installEventFilter(self)
         zoom_controls.addWidget(self.grid_zoom)
+        zoom_plus = QPushButton('+')
+        zoom_plus.setObjectName('gridZoomStep')
+        zoom_plus.setFixedSize(22, 24)
+        zoom_plus.setToolTip('Zoom in horizontally')
+        zoom_controls.addWidget(zoom_plus)
+        zoom_minus.clicked.connect(lambda: self.grid_zoom.setValue(max(self.grid_zoom.minimum(), self.grid_zoom.value() - 5)))
+        zoom_plus.clicked.connect(lambda: self.grid_zoom.setValue(min(self.grid_zoom.maximum(), self.grid_zoom.value() + 5)))
         self.grid_zoom_label = QLabel('100%')
         self.grid_zoom_label.setFixedWidth(45)
         self.grid_zoom_label.installEventFilter(self)
-        self.grid_zoom_label.hide()  # Keep project/status logic without visual clutter.
-        # Minimal L-shaped controls: both rails are exactly 160 px long.
-        # No box, text caption, or numeric readout around the height control.
+        zoom_controls.addWidget(self.grid_zoom_label)  # Current zoom percentage
+        # Frameless blue zoom marks, consistent on both axes.
         height_panel = QWidget()
         height_panel.setFixedWidth(32)
         height_panel.setStyleSheet('background:transparent;border:0;')
@@ -1379,6 +1390,11 @@ class Window(QMainWindow):
         height_column.setContentsMargins(0, 0, 0, 0)
         height_column.setSpacing(3)
         height_column.addStretch(1)
+        height_plus = QPushButton('+')
+        height_plus.setObjectName('gridZoomStep')
+        height_plus.setFixedSize(26, 24)
+        height_plus.setToolTip('Increase note row height')
+        height_column.addWidget(height_plus, 0, Qt.AlignHCenter)
         self.grid_row_height = QSlider(Qt.Vertical)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
@@ -1392,13 +1408,19 @@ class Window(QMainWindow):
         self.grid_row_height.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_row_height', value))
         self.grid_row_height.installEventFilter(self)
         height_column.addWidget(self.grid_row_height, 0, Qt.AlignHCenter)
+        height_minus = QPushButton('−')
+        height_minus.setObjectName('gridZoomStep')
+        height_minus.setFixedSize(26, 24)
+        height_minus.setToolTip('Decrease note row height')
+        height_column.addWidget(height_minus, 0, Qt.AlignHCenter)
+        height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
+        height_minus.clicked.connect(lambda: self.grid_row_height.setValue(max(self.grid_row_height.minimum(), self.grid_row_height.value() - 4)))
         self.grid_row_height_label = QLabel('38')
         self.grid_row_height_label.hide()  # Kept for programmatic state, not shown.
         height_panel.installEventFilter(self)
         self._height_wheel_targets = (height_panel, self.grid_row_height)
         self._zoom_wheel_targets = (self.grid_zoom,)
-        grid_content_row.insertWidget(0, height_panel)
-        zoom_controls.insertSpacing(0, 32)
+        grid_content_row.addWidget(height_panel, 0, Qt.AlignVCenter)
         grid_column.addLayout(zoom_controls)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
@@ -1648,6 +1670,9 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
+          QPushButton#gridZoomStep{background:transparent;border:0;color:#7bd6ff;font-size:17px;font-weight:600;padding:0}
+          QPushButton#gridZoomStep:hover{color:#c5f1ff;background:transparent;border:0}
+          QPushButton#gridZoomStep:pressed{color:#4daedb;background:transparent;border:0}
           QLabel#makerCredit{font-size:10px;color:#71889b;background:transparent;padding-right:3px}
           ScrollingSongTitle#nowPlayingTitle{background:transparent;border:none}
           QWidget#projectHeader{background:#111923;border:none}
