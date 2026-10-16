@@ -152,13 +152,30 @@ jobs:
       - name: Build UI executable
         shell: pwsh
         run: |
+          # Convert Stevie Blitz's EXISTING application icon; never replace artwork.
+          python -m pip install "Pillow>=10,<13"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot install image converter' }
+          @'
+          from PIL import Image
+          from pathlib import Path
+          source = Path('assets/rifflab-window-icon.png')
+          if not source.is_file():
+              raise SystemExit('Missing original RiffLab application icon')
+          image = Image.open(source).convert('RGBA')
+          target = source.with_suffix('.ico')
+          image.save(target, format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          if not target.exists() or target.stat().st_size < 512:
+              raise SystemExit('Failed to generate embedded Windows icon')
+          print('Using original RiffLab icon:', target)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
           $assets = @()
           foreach ($file in @('rifflab-logo.svg', 'rifflab-window-icon.png', 'rifflab-brand.png')) {
             if (Test-Path "assets/$file") {
               $assets += @('--add-data', "assets/$file;assets")
             }
           }
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup (required)
