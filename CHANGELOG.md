@@ -1,3 +1,25 @@
+# Release overview
+
+## Alpha v0.2.0 — current public Windows alpha (16 October 2026)
+
+[Download and full release notes](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1)
+
+- Reworked the Play Along workspace with compact navigation, mixer/library sidebar and restrained outlined panels.
+- Added project Library actions, favorites, metadata, search and drag-and-drop.
+- Added Demucs stem separation, per-stem mixer and analysis on isolated bass audio.
+- Improved chromatic bass tracking, note stabilization and chord-reference comparisons.
+- Added connected sustained note bars with playback progress fill, waveform loop markers and adjustable H/V zoom.
+- Added a chromatic tuner, project/workspace persistence, and more robust Windows packaging.
+- Retained synchronized header/transport time displays and original RiffLab branding.
+
+## Alpha v0.1.0 — older public Windows alpha
+
+[Older download and release notes](https://github.com/stevieblitz/Rifflab/releases/tag/v0.1.0-alpha.1)
+
+- Initial public Windows alpha with note/chord analysis and timeline practice features.
+
+---
+
 # RiffLab — Development Changelog
 
 Historical alpha development notes preserved from the original README.
