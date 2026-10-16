@@ -925,7 +925,7 @@ class Window(QMainWindow):
         self.library_table.setColumnWidth(0, 28)
         self.library_table.horizontalHeader().setStretchLastSection(False)
         self.library_table.setToolTip('Double-click to open; drag a song onto the waveform or grid to load.')
-        self.library_table.setMinimumHeight(140)
+        self.library_table.setMinimumHeight(180)
         self.library_table.doubleClicked.connect(self.open_library_song)
         self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
@@ -1560,10 +1560,9 @@ class Window(QMainWindow):
         stem_panel = QWidget()
         stem_panel.setObjectName('playStemPanel')
         stem_panel.setMinimumWidth(165)
-        stem_panel.setMaximumWidth(330)
-        stem_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        stem_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         panel = QVBoxLayout(stem_panel)
-        panel.setContentsMargins(6, 4, 6, 4)
+        panel.setContentsMargins(8, 7, 8, 7)
         panel.setSpacing(9)
         mixer_header = QHBoxLayout()
         mixer_header.setContentsMargins(0, 0, 0, 0)
@@ -1663,17 +1662,16 @@ class Window(QMainWindow):
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
-        mixer_holder.setMaximumWidth(390)
+        mixer_holder.setMaximumWidth(460)
         mixer_holder.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         mixer_holder_layout = QVBoxLayout(mixer_holder)
         mixer_holder_layout.setContentsMargins(0, 0, 0, 0)
         mixer_holder_layout.setSpacing(0)
-        self.mixer_scroll = QScrollArea(mixer_holder)
-        self.mixer_scroll.setWidgetResizable(True)
-        self.mixer_scroll.setFrameShape(QScrollArea.NoFrame)
-        self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.mixer_scroll.setWidget(stem_panel)
-        mixer_holder_layout.addWidget(self.mixer_scroll, 1)
+        # No nested scroll area around four stem controls. The parent tab owns
+        # the entire left panel, avoiding the inset rectangle and dead gutter.
+        self.mixer_scroll = None
+        mixer_holder_layout.addWidget(stem_panel, 0)
+        mixer_holder_layout.addStretch(1)
         # The actual Library page and the actual Stem Mixer share a left sidebar.
         # Reparent existing widgets: no replacement logic, duplicated controls or data.
         library_page = self.tabs.widget(1)
@@ -1854,7 +1852,9 @@ class Window(QMainWindow):
           QScrollArea{border:0}
           QCheckBox{spacing:5px}
           QWidget#stemPanel{background:#172431;border:1px solid #33485d;border-radius:6px}
-          QWidget#playStemPanel{background:transparent;border:none;border-radius:0}
+          QWidget#playStemPanel{background:transparent;border:0;border-radius:0}
+          QWidget#sidebarTabs{background:#111923}
+          QScrollArea#mixerScroll{background:transparent;border:0}
           QLabel#mixerTitle{background:transparent;font-size:12px;font-weight:600;color:#c2d4e2}
           QLabel#stemName{background:transparent;font-size:12px;font-weight:400;color:#d5e1ed}
           QWidget#playStemPanel QLabel{background:transparent}
@@ -1880,6 +1880,8 @@ class Window(QMainWindow):
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
           /* Both zoom axes share exactly the same rail, thumb, and accent. */
+          QSlider#gridZoom{background:transparent;border:0;padding:0}
+          QSlider#gridRowHeight{background:transparent;border:0;padding:0}
           QSlider#gridZoom::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider#gridZoom::sub-page:horizontal{background:#64b9e9;border-radius:2px}
           QSlider#gridZoom::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
