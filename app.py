@@ -223,7 +223,7 @@ class WaveformTimeline(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, False)
         w, h = self.width(), self.height()
-        painter.fillRect(self.rect(), QColor('#142231'))
+        painter.fillRect(self.rect(), QColor('#101a26'))
         painter.setPen(QPen(QColor('#2c4153'), 1))
         painter.drawRect(0, 0, w-1, h-1)
         # Time labels occupy the top 17 px; waveform occupies the remaining area.
@@ -698,17 +698,31 @@ class Window(QMainWindow):
         project_row.setContentsMargins(8, 0, 8, 0)
         project_row.setSpacing(8)
         project_header.setFixedHeight(46)
+        self.header_import = QPushButton('Import / Export')
+        self.header_import.setIcon(qta.icon('fa5s.exchange-alt', color='#7bd6ff'))
+        self.header_import.setToolTip('Open the complete Import / Export workspace')
+        self.header_import.clicked.connect(lambda: self.tabs.setCurrentIndex(2))
+        project_row.addWidget(self.header_import)
+        self.header_practice = QPushButton('Practice')
+        self.header_practice.setIcon(qta.icon('fa5s.play-circle', color='#7bd6ff'))
+        self.header_practice.setToolTip('Return to the note timeline and stem mixer')
+        self.header_practice.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
+        project_row.addWidget(self.header_practice)
         self.project_save = QPushButton('Save')
         self.project_save.setIcon(qta.icon('fa5s.save', color='#e5f4ff'))
         self.project_save.setToolTip('Save project (Ctrl+S)')
         self.project_save.clicked.connect(self.save_project)
-        self.project_save.setFixedWidth(92)
+        self.project_save.setText('')
+        self.project_save.setFixedSize(32, 30)
+        self.project_save.setAccessibleName('Save project')
         project_row.addWidget(self.project_save)
         self.project_load = QPushButton('Open')
         self.project_load.setIcon(qta.icon('fa5s.folder-open', color='#e5f4ff'))
         self.project_load.setToolTip('Open a saved project (Ctrl+O)')
         self.project_load.clicked.connect(self.open_project)
-        self.project_load.setFixedWidth(92)
+        self.project_load.setText('')
+        self.project_load.setFixedSize(32, 30)
+        self.project_load.setAccessibleName('Open project')
         project_row.addWidget(self.project_load)
         project_row.addWidget(QLabel('◷ Recent'))
         self.recent_projects = QComboBox()
@@ -728,7 +742,15 @@ class Window(QMainWindow):
         self.time_label.setFixedWidth(172)
         self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.time_label.setToolTip('Current playback position / track duration')
-        project_row.addWidget(self.time_label)
+        self.header_tuner = QPushButton()
+        self.header_tuner.setObjectName('headerTuner')
+        self.header_tuner.setFixedSize(34, 32)
+        self.header_tuner.setIcon(self.tuning_fork_icon())
+        self.header_tuner.setIconSize(QSize(22, 22))
+        self.header_tuner.setToolTip('Open Chromatic Tuner (Ctrl+Shift+T)')
+        self.header_tuner.clicked.connect(self.toggle_tuner_panel)
+        project_row.addStretch(1)
+        project_row.addWidget(self.header_tuner)
         self.update_now_playing()
         # This widget is installed in the left corner of the main tab bar below.
         self.refresh_recent_projects()
@@ -760,7 +782,7 @@ class Window(QMainWindow):
         # Avoid an extra toolbar row and prevent expanding Save/Open buttons.
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
-        self.tabs.setCornerWidget(project_header, Qt.TopLeftCorner)
+        outer.addWidget(project_header, 0)
         outer.addWidget(self.tabs, 1)
         def tab_page(name):
             page = QWidget()
@@ -787,11 +809,11 @@ class Window(QMainWindow):
         tuner_layout.setContentsMargins(18, 18, 18, 18)
         tuner_layout.setSpacing(12)
         # Local searchable song library, backed by SQLite.
-        library_filters = QHBoxLayout()
+        library_filters = QVBoxLayout()
         self.library_search = QLineEdit()
         self.library_search.setPlaceholderText('Search song, artist or album…')
         self.library_search.textChanged.connect(self.refresh_library)
-        library_filters.addWidget(self.library_search, 2)
+        library_filters.addWidget(self.library_search)
         self.library_tuning = QComboBox()
         self.library_tuning.addItems(['All tunings', 'Unknown', 'E Standard', 'Eb Standard', 'D Standard',
                                       'Drop D', 'Drop C#', 'Drop C', 'Other'])
@@ -812,7 +834,7 @@ class Window(QMainWindow):
         self.library_max_bpm.valueChanged.connect(self.refresh_library)
         library_filters.addWidget(self.library_max_bpm)
         library_layout.addLayout(library_filters)
-        library_toolbar = QHBoxLayout()
+        library_toolbar = QVBoxLayout()
         self.library_favorites = QCheckBox('Favorites only')
         self.library_favorites.toggled.connect(self.refresh_library)
         library_toolbar.addWidget(self.library_favorites)
@@ -820,7 +842,6 @@ class Window(QMainWindow):
         self.library_sort.addItems(['Title', 'Artist', 'Original BPM', 'Recently played'])
         self.library_sort.currentIndexChanged.connect(self.refresh_library)
         library_toolbar.addWidget(self.library_sort)
-        library_toolbar.addStretch(1)
         self.library_add = QPushButton('Add Current')
         self.library_add.setToolTip('Save the current song as a project and add it to Library')
         self.library_add.clicked.connect(self.add_current_to_library)
@@ -1190,9 +1211,8 @@ class Window(QMainWindow):
         self.tuning_advice.setAccessibleName('Open optional tuning advice')
         options.addWidget(self.tuning_advice)
         options = playback_options
-        options.addWidget(QLabel('♩ BPM'))
         self.grid_bpm = QSpinBox()
-        self.grid_bpm.setMinimumWidth(85)
+        self.grid_bpm.setFixedWidth(78)
         self.grid_bpm.setRange(40, 250)
         self.grid_bpm.setValue(130)
         self.grid_bpm.valueChanged.connect(self.bpm_changed)
@@ -1200,12 +1220,13 @@ class Window(QMainWindow):
         self.reset_bpm_button.setObjectName('resetBpmButton')
         self.reset_bpm_button.setIcon(qta.icon('fa5s.undo', color='#9bb7cb'))
         self.reset_bpm_button.setIconSize(QSize(13, 13))
-        self.reset_bpm_button.setFixedSize(27, 27)
+        self.reset_bpm_button.setFixedSize(23, 25)
         self.reset_bpm_button.setToolTip('Reset BPM to detected tempo (100% playback speed)')
         self.reset_bpm_button.setAccessibleName('Reset BPM')
         self.reset_bpm_button.clicked.connect(self.reset_bpm)
         # Reset immediately to the left of the BPM value.
         options.addWidget(self.reset_bpm_button)
+        options.addWidget(QLabel('BPM'))
         options.addWidget(self.grid_bpm)
         options = navigation_options
         self.follow = QCheckBox('↧ Auto-scroll')
@@ -1455,6 +1476,7 @@ class Window(QMainWindow):
         # Navigation stays to the right; clock is now next to the song title.
         right_controls = QHBoxLayout()
         right_controls.setSpacing(8)
+        right_controls.addWidget(self.time_label)
         right_controls.addStretch(1)
         right_controls.addLayout(navigation_options)
         controls.addLayout(right_controls, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
@@ -1582,10 +1604,26 @@ class Window(QMainWindow):
         self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.mixer_scroll.setWidget(stem_panel)
         mixer_holder_layout.addWidget(self.mixer_scroll, 1)
-        self.play_splitter.insertWidget(0, mixer_holder)
+        # The actual Library page and the actual Stem Mixer share a left sidebar.
+        # Reparent existing widgets: no replacement logic, duplicated controls or data.
+        library_page = self.tabs.widget(1)
+        self.tabs.removeTab(1)
+        self.tabs.insertTab(1, QWidget(), 'Library')  # Compatibility for saved tab IDs.
+        self.sidebar_tabs = QTabWidget()
+        self.sidebar_tabs.setObjectName('sidebarTabs')
+        self.sidebar_tabs.setMinimumWidth(260)
+        self.sidebar_tabs.setMaximumWidth(460)
+        self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
+        self.sidebar_tabs.addTab(library_page, 'Library')
+        self.sidebar_tabs.setCurrentIndex(0)
+        self.play_splitter.insertWidget(0, self.sidebar_tabs)
+        self.sidebar_tabs.currentChanged.connect(
+            lambda _index: self.tabs.setCurrentIndex(0) if self.tabs.currentIndex() == 1 else None)
+        self.tabs.currentChanged.connect(
+            lambda index: self.show_library_sidebar() if index == 1 else None)
         self.play_splitter.setStretchFactor(0, 0)
         self.play_splitter.setStretchFactor(1, 1)
-        self.play_splitter.setSizes([270, 780])
+        self.play_splitter.setSizes([320, 780])
         self.restore_splitter(self.play_splitter, 'play_splitter_grid_v3')
         # Mirror each control; both tabs edit the SAME live mixer state.
         self.connect_export_mixer()
@@ -1691,7 +1729,10 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
-          QWidget#bottomControlBar{background:#131e2a;border-top:1px solid #31495a}
+          QWidget#bottomControlBar{background:#101923;border-top:1px solid #31495a}
+          QTabWidget#sidebarTabs::pane{background:#101923;border:1px solid #304559;border-radius:5px}
+          QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 12px}
+          QPushButton#headerTuner{background:#1b2938;border:1px solid #304a60;padding:2px}
           QPushButton{font-family:'Bahnschrift','Segoe UI';font-weight:500}
           QComboBox,QSpinBox{font-family:'Bahnschrift','Segoe UI'}
           QLabel#gridTitle,QLabel#mixerTitle{font-family:'Bahnschrift','Segoe UI';font-weight:600}
@@ -1710,8 +1751,9 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#timeLabel{background:transparent;color:#7bd6ff;font-family:'Cascadia Mono','Consolas',monospace;font-size:20px;font-weight:600}
+          QLabel#timeLabel{background:#0b1621;color:#a5e5ff;border:1px solid #31546b;border-radius:4px;font-family:'Cascadia Mono','Consolas',monospace;font-size:20px;font-weight:600;padding:3px 8px}
           QLabel#loopInfo{background:transparent}
+          QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
           QTabBar#mainTabBar::tab{margin-top:2px}
@@ -1749,8 +1791,8 @@ class Window(QMainWindow):
           QPushButton[soloToggle='true']:checked{background:#263c51;border-bottom:3px solid #7bd6ff;color:#d4f3ff}
           QPushButton[stemToggle='true']:!checked{background:#263c51;color:#ffe0c8;border-bottom:3px solid #e5a37b;font-weight:700}
           QPushButton[stemToggle='true']:checked{background:#263c51;color:#a9c2d5;border:1px solid #36536b}
-          QPushButton#resetBpmButton{background:#1e3041;border:1px solid #36516a;padding:2px;border-radius:5px}
-          QPushButton#resetBpmButton:hover{background:#2a4964;border-color:#7bd6ff}
+          QPushButton#resetBpmButton{background:transparent;border:0;padding:2px;border-radius:3px}
+          QPushButton#resetBpmButton:hover{background:#243e51;border:0}
           QLabel#gridNotice{color:#819aad;font-size:11px}
           QLabel#loopInfo{color:#a2b8ca;font-size:11px}
           /* Uniform subtle housing for all sliders: stem mixer, export, complexity, zoom. */
@@ -1779,6 +1821,9 @@ class Window(QMainWindow):
           QProgressBar::chunk{background:#7bd6ff}
         ''')
         self.setup_developer_menus()
+        # No duplicate top navigation: existing workspaces remain accessible
+        # through Import / Export, Practice, the sidebar and the tuner.
+        self.tabs.tabBar().hide()
 
     def compare_with_isophonics(self):
         """Benchmark the original Beatles recording against verified chord labels."""
@@ -1860,6 +1905,17 @@ class Window(QMainWindow):
                           "QMenu{background:#172331;color:#e8edf2;border:1px solid #344658;}"
                           "QMenu::item{padding:6px 24px;}"
                           "QMenu::item:selected{background:#28455b;}")
+        title_space = QWidget()
+        title_row = QHBoxLayout(title_space)
+        title_row.setContentsMargins(0, 0, 12, 0)
+        title_row.addStretch(1)
+        title = QLabel('RiffLab')
+        title.setObjectName('menuAppTitle')
+        title.setAlignment(Qt.AlignCenter)
+        title.setMinimumWidth(185)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        bar.setCornerWidget(title_space, Qt.TopRightCorner)
         file_menu = bar.addMenu('&File')
         file_menu.addAction('Open Project…', self.open_project)
         file_menu.addAction('Save Project', self.save_project)
@@ -1974,6 +2030,12 @@ class Window(QMainWindow):
         self.play_splitter.widget(0).show()
         self.view_mixer_action.setChecked(True)
         self.play_splitter.setSizes([270, 780])
+
+    def show_library_sidebar(self):
+        """Open the real Library in the left pane and keep the timeline visible."""
+        self.tabs.setCurrentIndex(0)
+        self.play_splitter.widget(0).show()
+        self.sidebar_tabs.setCurrentIndex(1)
 
     def toggle_tuner_panel(self):
         self.tabs.setCurrentWidget(self.tuner_dialog)
@@ -2579,6 +2641,12 @@ class Window(QMainWindow):
             self.chord_loading.raise_()
 
     def eventFilter(self, obj, event):
+        # The loading mask belongs to the grid viewport, never underneath it.
+        if (hasattr(self, 'chord_loading') and obj is self.chord_scroll.viewport()
+                and event.type() == event.Type.Resize):
+            self.chord_loading.setGeometry(obj.rect())
+            if self.chord_loading.isVisible():
+                self.chord_loading.raise_()
         if (hasattr(self, 'mixer_overlay') and obj is self.stem_panel
                 and event.type() == event.Type.Resize):
             self.mixer_overlay.setGeometry(self.stem_panel.rect())
@@ -4146,9 +4214,8 @@ class Window(QMainWindow):
             if response == QMessageBox.Yes:
                 self.tuner_preset.setCurrentIndex(
                     7 if self.tuner_preset.currentIndex() >= 6 else 2)
-        self.tuner_dialog.show()
+        self.tabs.setCurrentWidget(self.tuner_dialog)
         self.tuner_dialog.raise_()
-        self.tuner_dialog.activateWindow()
         self.status_message(
             'Tuning is a manual instrument choice. Transpose changes notation only.')
 
