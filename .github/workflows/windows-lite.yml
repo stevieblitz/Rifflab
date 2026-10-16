@@ -158,7 +158,7 @@ jobs:
               $assets += @('--add-data', "assets/$file;assets")
             }
           }
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab @assets --collect-all qtawesome --collect-all yt_dlp app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup (required)
@@ -171,11 +171,8 @@ jobs:
           import subprocess, time, os, sys
           exe = os.path.abspath('dist/RiffLab/RiffLab.exe')
           base = os.environ.copy()
-          variants = [
-              ('offscreen', {'QT_QPA_PLATFORM':'offscreen'}),
-              ('minimal', {'QT_QPA_PLATFORM':'minimal'}),
-              ('windows', {'QT_QPA_PLATFORM':'windows'})
-          ]
+          # Only real Windows platform success qualifies a usable Windows build.
+          variants = [('windows', {'QT_QPA_PLATFORM':'windows'})]
           success = False
           for label, changes in variants:
               env = base.copy()
@@ -199,7 +196,7 @@ jobs:
                       try: proc.wait(timeout=5)
                       except subprocess.TimeoutExpired: proc.kill()
           if not success:
-              print('ERROR: RiffLab.exe failed all three startup checks. This build is NOT usable.', flush=True)
+              print('ERROR: RiffLab.exe failed native Windows startup. No download will be published.', flush=True)
               sys.exit(1)
           '@ | python -
 
