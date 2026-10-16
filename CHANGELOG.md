@@ -1,6 +1,6 @@
-# StevieBlitz's RiffLab — release overview
+# StevieBlitz's RiffLab: release overview
 
-## Alpha v0.2.0 — current public Windows alpha (16 October 2026)
+## Alpha v0.2.0: current public Windows alpha (16 October 2026)
 
 [Download and full release notes](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1)
 
@@ -12,7 +12,7 @@
 - Added a chromatic tuner, project/workspace persistence, and more robust Windows packaging.
 - Retained synchronized header/transport time displays and original RiffLab branding.
 
-## Alpha v0.1.0 — older public Windows alpha
+## Alpha v0.1.0: older public Windows alpha
 
 [Older download and release notes](https://github.com/stevieblitz/Rifflab/releases/tag/v0.1.0-alpha.1)
 
@@ -20,13 +20,13 @@
 
 ---
 
-# StevieBlitz's RiffLab — Development Changelog
+# StevieBlitz's RiffLab: Development Changelog
 
 Historical alpha development notes preserved from the original README.
 
 ---
 
-# StevieBlitz's RiffLab Alpha 1.0.2 — Minimal panel dividers
+# StevieBlitz's RiffLab Alpha 1.0.2: Minimal panel dividers
 
 - Removed thick/gradient-like splitter styling.
 - PLAY and Export splitters now have a single centered 1px muted blue-gray divider, brighter on hover and blue while dragging.
@@ -81,7 +81,7 @@ Alpha 1.1.7: Compact instrument icons beside channel names in both PLAY and Expo
 Alpha 1.1.8: Mute and Solo buttons both 28x26 px, grouped and right-aligned in each stem header, in PLAY and Export. No audio behavior changes.
 
 
-Alpha 1.1.9 — compact workspace:
+Alpha 1.1.9: compact workspace:
 - PROJECT / Save / Open / Recent integrated into the main tab-header strip, with tabs and tuner at the right.
 - Chord analysis controls regrouped in a compact two-row toolbar; NEXT, lookahead and grid hint on second row.
 - Subtle consistent blue borders and dark panel background; no extra banner or unused top row.
@@ -89,7 +89,7 @@ Alpha 1.1.9 — compact workspace:
 - Reference mockup's waveform is not implemented; the actual working timeline stays below the grid.
 
 
-Alpha 1.2.0 — waveform seeking:
+Alpha 1.2.0: waveform seeking:
 - Removed PROJECT label; Save/Open remain in top header.
 - Added clickable and draggable waveform with time marks and live playhead above the chord controls.
 - Waveform preview decoded asynchronously from source audio or mixed four stems using FFmpeg; no Demucs rerun.
@@ -130,7 +130,7 @@ Alpha 1.3.1: IN/OUT buttons are clean opposing bracket-only icons, no arrows. He
 Alpha 1.3.2: larger transparent header song title, auto-scrolling marquee for long titles only.
 
 
-## Alpha 1.3.3 — Layout polish
+## Alpha 1.3.3: Layout polish
 Consistent padding and alignment across PLAY header, analysis panel, grid, mixer, transport, and status bar. No changes to analysis or audio processing.
 
 Alpha 1.3.4: Larger 17pt song title, transparent background without blue rectangle.
@@ -141,7 +141,7 @@ Alpha 1.3.5: Removed the lighter blue header background behind Recent and the so
 Alpha 1.3.6: Removed PLAYBACK GRID heading while keeping Bass/Chords controls.
 
 
-## Alpha 1.3.7 — UI typography and mixer cleanup
+## Alpha 1.3.7: UI typography and mixer cleanup
 - Removed the PLAYBACK GRID heading (already hidden in 1.3.6).
 - Removed the PLAY stem mixer's darker boxed background and border.
 - Unified general interface text to Segoe UI 12px, with consistent mixer heading and labels.
