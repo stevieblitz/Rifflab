@@ -919,9 +919,11 @@ class Window(QMainWindow):
             (self.library_remove, 'fa5s.trash-alt', 'Remove selected song from Library (keeps files)'),
         ):
             button.setText('')
-            button.setIcon(qta.icon(icon_name, color='#b9ddf0'))
-            button.setIconSize(QSize(15, 15))
-            button.setFixedSize(30, 28)
+            button.setIcon(qta.icon(icon_name, color='#7bd6ff'))
+            button.setIconSize(QSize(16, 16))
+            button.setFixedSize(26, 26)
+            button.setObjectName('libraryIconAction')
+            button.setCursor(Qt.PointingHandCursor)
             button.setToolTip(hint)
             button.setAccessibleName(hint)
             library_icons.addWidget(button)
@@ -1832,6 +1834,9 @@ class Window(QMainWindow):
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
+          QPushButton#libraryIconAction{background:transparent;border:0;border-radius:3px;padding:3px;min-width:0;min-height:0}
+          QPushButton#libraryIconAction:hover{background:#203547;border:0}
+          QPushButton#libraryIconAction:pressed{background:#29465b;border:0}
           QPushButton#headerTuner,QPushButton#practiceNav{background:#1b2938;border:1px solid #304a60;padding:4px 8px;border-radius:4px}
           QPushButton#headerTuner:hover,QPushButton#practiceNav:hover{background:#294e69}
           QPushButton[gridModeButton='true']{padding:2px 5px;min-height:20px}
