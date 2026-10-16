@@ -833,6 +833,9 @@ class Window(QMainWindow):
         tuner_layout.setSpacing(12)
         # Local searchable song library, backed by SQLite.
         library_filters = QVBoxLayout()
+        library_filters.setSpacing(6)
+        advanced_filters = QVBoxLayout()
+        advanced_filters.setSpacing(5)
         self.library_search = QLineEdit()
         self.library_search.setPlaceholderText('Search song, artist or album…')
         self.library_search.textChanged.connect(self.refresh_library)
@@ -841,44 +844,68 @@ class Window(QMainWindow):
         self.library_tuning.addItems(['All tunings', 'Unknown', 'E Standard', 'Eb Standard', 'D Standard',
                                       'Drop D', 'Drop C#', 'Drop C', 'Other'])
         self.library_tuning.currentIndexChanged.connect(self.refresh_library)
-        library_filters.addWidget(self.library_tuning)
+        advanced_filters.addWidget(self.library_tuning)
         self.library_min_bpm = QSpinBox()
         self.library_min_bpm.setRange(0, 300)
         self.library_min_bpm.setValue(0)
         self.library_min_bpm.setPrefix('From ')
         self.library_min_bpm.setSuffix(' BPM')
         self.library_min_bpm.valueChanged.connect(self.refresh_library)
-        library_filters.addWidget(self.library_min_bpm)
+        bpm_filter_row = QHBoxLayout()
+        bpm_filter_row.setSpacing(5)
+        bpm_filter_row.addWidget(self.library_min_bpm)
         self.library_max_bpm = QSpinBox()
         self.library_max_bpm.setRange(0, 300)
         self.library_max_bpm.setValue(300)
         self.library_max_bpm.setPrefix('To ')
         self.library_max_bpm.setSuffix(' BPM')
         self.library_max_bpm.valueChanged.connect(self.refresh_library)
-        library_filters.addWidget(self.library_max_bpm)
+        bpm_filter_row.addWidget(self.library_max_bpm)
+        advanced_filters.addLayout(bpm_filter_row)
+        self.library_advanced_panel = QWidget()
+        self.library_advanced_panel.setObjectName('libraryAdvanced')
+        self.library_advanced_panel.setLayout(advanced_filters)
+        self.library_advanced_panel.hide()
+        self.library_filter_toggle = QPushButton('Filters  ▾')
+        self.library_filter_toggle.setObjectName('libraryFilterToggle')
+        self.library_filter_toggle.setCheckable(True)
+        self.library_filter_toggle.setToolTip('Show or hide tuning and BPM filters')
+        self.library_filter_toggle.toggled.connect(self.library_advanced_panel.setVisible)
+        self.library_filter_toggle.toggled.connect(
+            lambda checked: self.library_filter_toggle.setText('Filters  ▴' if checked else 'Filters  ▾'))
+        library_filters.addWidget(self.library_filter_toggle)
+        library_filters.addWidget(self.library_advanced_panel)
         library_layout.addLayout(library_filters)
         library_toolbar = QVBoxLayout()
+        library_toolbar.setSpacing(6)
+        library_filter_row = QHBoxLayout()
+        library_filter_row.setSpacing(6)
+        library_actions = QGridLayout()
+        library_actions.setSpacing(5)
         self.library_favorites = QCheckBox('Favorites only')
         self.library_favorites.toggled.connect(self.refresh_library)
-        library_toolbar.addWidget(self.library_favorites)
+        library_filter_row.addWidget(self.library_favorites)
         self.library_sort = QComboBox()
         self.library_sort.addItems(['Title', 'Artist', 'Original BPM', 'Recently played'])
         self.library_sort.currentIndexChanged.connect(self.refresh_library)
-        library_toolbar.addWidget(self.library_sort)
-        self.library_add = QPushButton('Add Current')
+        self.library_sort.setMinimumWidth(110)
+        library_filter_row.addWidget(self.library_sort, 1)
+        library_toolbar.addLayout(library_filter_row)
+        self.library_add = QPushButton('Add')
         self.library_add.setToolTip('Save the current song as a project and add it to Library')
         self.library_add.clicked.connect(self.add_current_to_library)
-        library_toolbar.addWidget(self.library_add)
-        self.library_edit = QPushButton('Edit Details')
+        library_actions.addWidget(self.library_add, 0, 0)
+        self.library_edit = QPushButton('Details')
         self.library_edit.clicked.connect(self.edit_library_song)
-        library_toolbar.addWidget(self.library_edit)
-        self.library_star = QPushButton('Toggle Favorite')
+        library_actions.addWidget(self.library_edit, 0, 1)
+        self.library_star = QPushButton('Favorite')
         self.library_star.clicked.connect(self.toggle_library_favorite)
-        library_toolbar.addWidget(self.library_star)
+        library_actions.addWidget(self.library_star, 1, 0)
         self.library_remove = QPushButton('Remove')
         self.library_remove.setToolTip('Remove from library only; keep project and audio files')
         self.library_remove.clicked.connect(self.remove_library_song)
-        library_toolbar.addWidget(self.library_remove)
+        library_actions.addWidget(self.library_remove, 1, 1)
+        library_toolbar.addLayout(library_actions)
         library_layout.addLayout(library_toolbar)
         self.library_table = LibraryDragTable(0, 8)
         self.library_table.setHorizontalHeaderLabels(
@@ -899,6 +926,7 @@ class Window(QMainWindow):
         self.library_table.setColumnWidth(0, 28)
         self.library_table.horizontalHeader().setStretchLastSection(False)
         self.library_table.setToolTip('Double-click to open; drag a song onto the waveform or grid to load.')
+        self.library_table.setMinimumHeight(140)
         self.library_table.doubleClicked.connect(self.open_library_song)
         self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
@@ -1161,14 +1189,14 @@ class Window(QMainWindow):
         self.reanalyze_button.setMinimumWidth(110)
         self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
         self.reanalyze_button.setToolTip('Run analysis again using the selected accuracy. Display filters update immediately.')
-        self.reanalyze_button.clicked.connect(self.reanalyze_current)
+        self.reanalyze_button.clicked.connect(self.toggle_analysis_action)
         options.addWidget(self.reanalyze_button)
         self.cancel_analysis_button = QPushButton('Stop Analyze')
         self.cancel_analysis_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
         self.cancel_analysis_button.setToolTip('Stop the running AI analysis while keeping the current song.')
         self.cancel_analysis_button.clicked.connect(self.stop_analysis)
         self.cancel_analysis_button.hide()
-        options.addWidget(self.cancel_analysis_button)
+        # Legacy stop widget remains as a signal/status hook, not a second toolbar button.
         # Root-note display is independent of NoteGuard and comes first.
         self.root_notes_only = QCheckBox('Root notes')
         self.root_notes_only.setToolTip('Display note roots only, without chord quality. Does not affect analysis.')
@@ -2768,6 +2796,7 @@ class Window(QMainWindow):
         self._generating_stems = False
         self.analysis_running = False
         self.cancel_analysis_button.hide()
+        self.update_analysis_action()
         self.set_chord_loading(False)
         self.set_busy(False)
         self.mixing = False
@@ -2988,6 +3017,37 @@ class Window(QMainWindow):
         self.set_stage('1/3 · Preparing stem separation…')
         self.start_split(self.source_audio)
 
+    def update_analysis_action(self):
+        """One stable toolbar action for Analyze / Stop / stopping."""
+        if not hasattr(self, 'reanalyze_button'):
+            return
+        if self.analysis_running:
+            stopping = self.analysis_cancel.is_set()
+            self.reanalyze_button.setText('Stopping…' if stopping else 'Stop Analyze')
+            self.reanalyze_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
+            self.reanalyze_button.setEnabled(not stopping)
+            self.reanalyze_button.setToolTip('Cancel current analysis without closing this song')
+        else:
+            self.reanalyze_button.setText('Re-analyze')
+            self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
+            self.reanalyze_button.setEnabled(True)
+            self.reanalyze_button.setToolTip('Analyze the current song using the chosen accuracy')
+
+    def toggle_analysis_action(self):
+        if self.analysis_running:
+            self.stop_analysis()
+        else:
+            self.reanalyze_current()
+
+    def pause_for_reanalysis(self):
+        """Pause current music before starting analysis; never auto-resume."""
+        if self.live:
+            if self.live.playing:
+                self.live.pause()
+                self.update_live_button()
+        elif self.player.playbackState() == QMediaPlayer.PlayingState:
+            self.player.pause()
+
     def stop_analysis(self):
         """Ask the running worker to exit; its completion unlocks the UI."""
         if not self.analysis_running:
@@ -2995,6 +3055,7 @@ class Window(QMainWindow):
         self.analysis_cancel.set()
         self.status_message('Stopping analysis…')
         self.cancel_analysis_button.setEnabled(False)
+        self.update_analysis_action()
         self.chord_loading_label.setText('Stopping analysis…')
         self.chord_loading_stop.setEnabled(False)
 
@@ -3002,7 +3063,8 @@ class Window(QMainWindow):
         self.analysis_cancel = threading.Event()
         self.analysis_running = True
         self.cancel_analysis_button.setEnabled(True)
-        self.cancel_analysis_button.show()
+        self.cancel_analysis_button.hide()
+        self.update_analysis_action()
         self.chord_loading_stop.setEnabled(True)
         self.chord_loading_stop.show()
 
@@ -3016,9 +3078,10 @@ class Window(QMainWindow):
         if not self.stems and self.source_audio is None:
             self.status_message('Open a song before re-analyzing.')
             return
+        self.pause_for_reanalysis()
         self._start_analysis_ui()
         self.set_chord_loading(True, 'Re-analyzing notes…')
-        self.reanalyze_button.setEnabled(False)
+        self.update_analysis_action()
         self.analyze_local.setEnabled(False)
         self.status_message('Re-analyzing audio with ' + self.accuracy.currentText() + ' accuracy…')
         if self.stems and self.folder:
@@ -3076,6 +3139,7 @@ class Window(QMainWindow):
         was_cancelled = self.analysis_cancel.is_set()
         self.analysis_running = False
         self.cancel_analysis_button.hide()
+        self.update_analysis_action()
         self.set_chord_loading(False)
         if self.processing:
             self.set_busy(False)
