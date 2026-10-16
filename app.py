@@ -1335,10 +1335,6 @@ class Window(QMainWindow):
         grid_column = QVBoxLayout()
         grid_column.setContentsMargins(0, 0, 0, 0)
         grid_column.setSpacing(4)
-        grid_header = QHBoxLayout()
-        grid_header.setContentsMargins(4, 1, 4, 1)
-        grid_header.setSpacing(0)
-        grid_header.addStretch(1)
         self.bass_mode_button = QPushButton('Root notes')
         self.bass_mode_button.setIcon(qta.icon('fa5s.music', color='#a9d9ef'))
         self.chord_mode_button = QPushButton('Chords')
@@ -1355,10 +1351,6 @@ class Window(QMainWindow):
         self.bass_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(0))
         self.chord_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(1))
         self.analysis_mode.currentIndexChanged.connect(self.update_grid_mode_buttons)
-        grid_header.addWidget(self.bass_mode_button)
-        grid_header.addSpacing(3)
-        grid_header.addWidget(self.chord_mode_button)
-        grid_column.addLayout(grid_header)
         self.update_grid_mode_buttons()
         self.chord_scroll = QScrollArea()
         self.chord_scroll.setAcceptDrops(True)
@@ -1398,6 +1390,19 @@ class Window(QMainWindow):
         loading_layout.addWidget(self.chord_loading_stop, alignment=Qt.AlignHCenter)
         self.chord_loading.hide()
         self.chord_scroll.viewport().installEventFilter(self)
+        # Dock mode controls in the measure-ruler strip itself, not a separate
+        # full-width row above the timeline. This saves vertical grid space.
+        self.grid_mode_overlay = QWidget(self.chord_scroll.viewport())
+        self.grid_mode_overlay.setObjectName('gridModeOverlay')
+        mode_row = QHBoxLayout(self.grid_mode_overlay)
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(3)
+        mode_row.addWidget(self.bass_mode_button)
+        mode_row.addWidget(self.chord_mode_button)
+        self.grid_mode_overlay.setFixedSize(214, 27)
+        self.grid_mode_overlay.setStyleSheet('QWidget#gridModeOverlay{background:#111923;border:0;}')
+        self.grid_mode_overlay.move(max(0, self.chord_scroll.viewport().width() - 219), 2)
+        self.grid_mode_overlay.raise_()
         # Only the grid area is horizontally split with the compact stem mixer.
         self.play_splitter = MinimalSplitter(Qt.Horizontal)
         self.play_splitter.setObjectName('playSplitter')
@@ -2799,6 +2804,9 @@ class Window(QMainWindow):
         if (hasattr(self, 'chord_loading') and obj is self.chord_scroll.viewport()
                 and event.type() == event.Type.Resize):
             self.chord_loading.setGeometry(obj.rect())
+            if hasattr(self, 'grid_mode_overlay'):
+                self.grid_mode_overlay.move(max(0, obj.width() - self.grid_mode_overlay.width() - 5), 2)
+                self.grid_mode_overlay.raise_()
             if self.chord_loading.isVisible():
                 self.chord_loading.raise_()
         if (hasattr(self, 'mixer_overlay') and obj is self.stem_panel
@@ -4280,7 +4288,7 @@ class Window(QMainWindow):
             for offset in range(0, min(16, beats-row_start), 4):
                 measure = QLabel(f'{(row_start+offset)//4 + 1:02d}')
                 measure.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-                measure.setFixedHeight(16)
+                measure.setFixedHeight(28)
                 measure.setStyleSheet(
                     'background:transparent;color:#a8c8dc;font-size:11px;font-weight:600;'
                     'border-left:2px solid #8fc4e3;padding-left:7px;')
