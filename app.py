@@ -1078,8 +1078,11 @@ class Window(QMainWindow):
         analysis_options.setSpacing(12)
         analysis_options.setContentsMargins(0, 0, 0, 0)
         playback_options = QHBoxLayout()
-        playback_options.setSpacing(12)
+        playback_options.setSpacing(8)
         playback_options.setContentsMargins(0, 0, 0, 0)
+        navigation_options = QHBoxLayout()
+        navigation_options.setSpacing(8)
+        navigation_options.setContentsMargins(0, 0, 0, 0)
         options = analysis_options
         self.analysis_mode = QComboBox()
         self.analysis_mode.addItems(['Bass Mode', 'Chord Mode'])
@@ -1105,22 +1108,25 @@ class Window(QMainWindow):
         self.cancel_analysis_button.clicked.connect(self.stop_analysis)
         self.cancel_analysis_button.hide()
         options.addWidget(self.cancel_analysis_button)
-        # Visible and independent: choose how aggressively to reject note glitches.
+        # Root-note display is independent of NoteGuard and comes first.
+        self.root_notes_only = QCheckBox('Root notes')
+        self.root_notes_only.setToolTip('Display note roots only, without chord quality. Does not affect analysis.')
+        self.root_notes_only.toggled.connect(self.rebuild_chords)
+        options.addWidget(self.root_notes_only)
         options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
-        self.noteguard.addItems(['Off', 'Light', 'Normal · recommended', 'Strong', 'Roots only'])
+        self.noteguard.addItems(['Off', 'Light', 'Normal · recommended', 'Strong'])
         self.noteguard.setCurrentIndex(2)
         self.noteguard.setMinimumWidth(162)
         self.noteguard.setToolTip(
             'Filter uncertain notes in the timeline (no re-analysis).\n'
             'Off: all detections. Light: preserve fast riffs. Normal: recommended.\n'
-            'Strong: remove more short glitches. Roots only: show pitch roots without chord quality.')
+            'Strong: remove more short glitches. Use Root notes for pitch-only display.')
         for index, explanation in enumerate((
             'Off — Show every detected note, including uncertain ones.',
             'Light — Reduce obvious errors while keeping fast passages.',
             'Normal — Balanced filtering, recommended for most songs.',
-            'Strong — Suppress more short notes; may also hide real quick changes.',
-            'Roots only — Show pitch roots without chord types (with normal filtering).'
+            'Strong — Suppress more short notes; may also hide real quick changes.'
         )):
             self.noteguard.setItemData(index, explanation, Qt.ToolTipRole)
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
@@ -1130,7 +1136,7 @@ class Window(QMainWindow):
             'Not sure? Start with Normal.\n'
             'Missing fast notes? Try Light or Off.\n'
             'Too many false notes? Try Strong.\n'
-            'Only want the root notes? Choose Roots only.')
+            'Only want the root notes? Enable Root notes.')
         options.addWidget(noteguard_help)
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
@@ -1193,6 +1199,7 @@ class Window(QMainWindow):
         self.reset_bpm_button.setAccessibleName('Reset BPM')
         self.reset_bpm_button.clicked.connect(self.reset_bpm)
         options.addWidget(self.reset_bpm_button)
+        options = navigation_options
         self.follow = QCheckBox('↧ Auto-scroll')
         self.follow.setChecked(True)
         options.addWidget(self.follow)
@@ -1320,7 +1327,7 @@ class Window(QMainWindow):
         controls.setContentsMargins(4, 4, 4, 2)
         controls.setHorizontalSpacing(8)
         controls.setColumnStretch(0, 1)
-        controls.setColumnStretch(3, 1)
+        controls.setColumnStretch(2, 1)
         transport_buttons = QHBoxLayout()
         transport_buttons.setSpacing(6)
         self.play = QPushButton()
@@ -1364,7 +1371,7 @@ class Window(QMainWindow):
         zoom_controls.setSpacing(6)
         zoom_minus = QPushButton('−')
         zoom_minus.setObjectName('gridZoomStep')
-        zoom_minus.setFixedSize(22, 24)
+        zoom_minus.setFixedSize(18, 20)
         zoom_minus.setToolTip('Zoom out horizontally')
         zoom_controls.addStretch(1)
         zoom_controls.addWidget(zoom_minus)
@@ -1374,7 +1381,7 @@ class Window(QMainWindow):
         self.grid_zoom.setSingleStep(1)
         self.grid_zoom.setPageStep(5)
         self.grid_zoom.setValue(max(65, min(200, int(self.layout_settings.value('grid_zoom', 100)))))
-        self.grid_zoom.setFixedWidth(184)
+        self.grid_zoom.setFixedWidth(160)
         self.grid_zoom.setToolTip('Adjust note-block width by dragging or scrolling')
         self.grid_zoom.valueChanged.connect(self.apply_grid_zoom)
         self.grid_zoom.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_zoom', value))
@@ -1382,7 +1389,7 @@ class Window(QMainWindow):
         zoom_controls.addWidget(self.grid_zoom)
         zoom_plus = QPushButton('+')
         zoom_plus.setObjectName('gridZoomStep')
-        zoom_plus.setFixedSize(22, 24)
+        zoom_plus.setFixedSize(18, 20)
         zoom_plus.setToolTip('Zoom in horizontally')
         zoom_controls.addWidget(zoom_plus)
         zoom_minus.clicked.connect(lambda: self.grid_zoom.setValue(max(self.grid_zoom.minimum(), self.grid_zoom.value() - 5)))
@@ -1401,13 +1408,13 @@ class Window(QMainWindow):
         height_column.addStretch(1)
         height_plus = QPushButton('+')
         height_plus.setObjectName('gridZoomStep')
-        height_plus.setFixedSize(26, 24)
+        height_plus.setFixedSize(22, 20)
         height_plus.setToolTip('Increase note row height')
         height_column.addWidget(height_plus, 0, Qt.AlignHCenter)
         self.grid_row_height = QSlider(Qt.Vertical)
         self.grid_row_height.setObjectName('gridRowHeight')
         self.grid_row_height.setRange(24, 96)
-        self.grid_row_height.setFixedHeight(180)
+        self.grid_row_height.setFixedHeight(160)
         self.grid_row_height.setFixedWidth(26)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
@@ -1419,7 +1426,7 @@ class Window(QMainWindow):
         height_column.addWidget(self.grid_row_height, 0, Qt.AlignHCenter)
         height_minus = QPushButton('−')
         height_minus.setObjectName('gridZoomStep')
-        height_minus.setFixedSize(26, 24)
+        height_minus.setFixedSize(22, 20)
         height_minus.setToolTip('Decrease note row height')
         height_column.addWidget(height_minus, 0, Qt.AlignHCenter)
         height_plus.clicked.connect(lambda: self.grid_row_height.setValue(min(self.grid_row_height.maximum(), self.grid_row_height.value() + 4)))
@@ -1439,13 +1446,19 @@ class Window(QMainWindow):
         time_controls = QHBoxLayout()
         time_controls.setContentsMargins(12, 0, 12, 0)
         time_controls.addWidget(self.time_label)
+        # Equal-width outer columns keep transport geometrically centered.
+        controls.addLayout(playback_options, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
-        controls.addLayout(time_controls, 0, 2, Qt.AlignCenter | Qt.AlignVCenter)
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
         self.loop_info.hide()  # Retain state; the single-row controlbar stays uncluttered.
-        # One bottom controlbar: transport, prominent clock, then display controls.
-        controls.addLayout(playback_options, 0, 3, Qt.AlignRight | Qt.AlignVCenter)
+        # Clock follows transport; navigation controls align to far right.
+        right_controls = QHBoxLayout()
+        right_controls.setSpacing(8)
+        right_controls.addLayout(time_controls)
+        right_controls.addStretch(1)
+        right_controls.addLayout(navigation_options)
+        controls.addLayout(right_controls, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
         layout.addLayout(controls, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
@@ -1674,7 +1687,7 @@ class Window(QMainWindow):
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
         self.setStyleSheet('''
           QMainWindow,QWidget{background:#111923;color:#e8edf2;font-family:'Segoe UI';font-size:13px}
-          QPushButton#gridZoomStep{background:transparent;border:0;color:#7bd6ff;font-size:17px;font-weight:600;padding:0}
+          QPushButton#gridZoomStep{background:transparent;border:0;color:#7bd6ff;font-size:14px;font-weight:500;padding:0}
           QPushButton#gridZoomStep:hover{color:#c5f1ff;background:transparent;border:0}
           QPushButton#gridZoomStep:pressed{color:#4daedb;background:transparent;border:0}
           QLabel#makerCredit{font-size:10px;color:#71889b;background:transparent;padding-right:3px}
@@ -3472,12 +3485,11 @@ class Window(QMainWindow):
         # Never expose harmonic chord suffixes in Bass Mode, even for old
         # projects/caches or results arriving while switching modes.
         bass_mode = self.analysis_mode.currentIndex() == 0
-        roots_only = self.noteguard.currentIndex() == 4
+        roots_only = self.root_notes_only.isChecked()
         raw = [(float(t), re.match(r'^[A-G](?:#|b)?', str(c)).group(0)
                 if (bass_mode or roots_only) and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
                for t, c in self.chord_data]
-        # Roots only uses balanced filtering, not the stricter Strong threshold.
-        guard_level = 2 if roots_only else self.noteguard.currentIndex()
+        guard_level = self.noteguard.currentIndex()
         raw = self.verify_note_events(raw, guard_level, bass_mode)
         if bass_mode:
             # A bass-root timeline has one event per root change, not per pluck.
