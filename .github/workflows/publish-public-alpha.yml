@@ -1,0 +1,62 @@
+name: Publish RiffLab Public Alpha
+on:
+  push:
+    branches: [feature/dev85-rebuild]
+    paths: ['.github/workflows/publish-public-alpha.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified Windows build 91
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-files
+          gh run download 38947130208 --repo stevieblitz/Rifflab --name RiffLab-Complete-91 --dir release-files
+          test -s release-files/RiffLab-Complete-91.zip
+          unzip -t release-files/RiffLab-Complete-91.zip >/dev/null
+          mv release-files/RiffLab-Complete-91.zip release-files/RiffLab-Windows-v0.2.0-alpha.1.zip
+      - name: Publish pre-release and attach complete Windows ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          # RiffLab Alpha v0.2.0 — Windows
+          
+          First public alpha release from the current RiffLab development series. Built from the successful Windows build #91 (`dccb0e0`). This is experimental software: features, UI and analysis results may change.
+          
+          ## Highlights
+          - Audio import, saved projects and searchable song Library with drag-and-drop.
+          - AI stem separation and per-stem mixer with volume, mute and solo.
+          - Bass/root-note and chord analysis with a continuous note timeline.
+          - Playback, looping, BPM adjustment, waveform seeking and independent H/V grid zoom.
+          - Chromatic tuner, tuning guide, Play Along, and accessible Import / Export.
+          - Refined dark interface, compact notes/chords switch, original RiffLab branding.
+          
+          ## Windows installation
+          1. Download **RiffLab-Windows-v0.2.0-alpha.1.zip** below.
+          2. Extract the **entire** ZIP into a folder.
+          3. Run **RiffLab.exe**, keeping the `RiffLabAI` and `bin` folders alongside it.
+          4. First-time stem separation may download AI model weights and can take time.
+          
+          This package was produced by GitHub Actions with syntax, dependency, regression and Windows startup checks. Real-world audio detection accuracy and full manual Windows UI testing are not guaranteed. Only analyze audio you are allowed to use.
+          
+          ## Credits
+          **RiffLab by Stevie Blitz (Teun Verhoeven)** — Graphic & Motion Design  
+          https://teunverhoeven.nl
+          
+          Built with open-source audio/AI tooling and AI-assisted development.
+          NOTES
+          gh release create v0.2.0-alpha.1 release-files/RiffLab-Windows-v0.2.0-alpha.1.zip \
+            --repo stevieblitz/Rifflab \
+            --target dccb0e0d826693694c32af373fa7edcaa64b3722 \
+            --title "RiffLab Alpha v0.2.0 — Windows" \
+            --prerelease --notes-file release-notes.md
