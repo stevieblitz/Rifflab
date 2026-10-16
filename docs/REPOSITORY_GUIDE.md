@@ -1,6 +1,6 @@
 # Repository guide — current, historical and development files
 
-**Current public build:** [StevieBlitz's RIFFLAB Alpha v0.2.0 for Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). Older releases remain on the [Releases](https://github.com/stevieblitz/Rifflab/releases) page.
+**Current public build:** [StevieBlitz's RiffLab Alpha v0.2.0 for Windows](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1). Older releases remain on the [Releases](https://github.com/stevieblitz/Rifflab/releases) page.
 
 ## Branches and preservation
 
