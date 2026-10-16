@@ -15,17 +15,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > release-notes.md <<'NOTES'
-          # RiffLab Alpha v0.2.0 — Windows
+          # StevieBlitz's RIFFLAB Alpha v0.2.0 — Windows
           
           First public alpha release from the current RiffLab development series. Built from the successful Windows build #91 (`dccb0e0`). This is experimental software: features, UI and analysis results may change.
           
           **LESS GUESSING. MORE PLAYING.**
           
-          RiffLab is a Windows music-practice and analysis app for musicians who want to hear what's really going on in a song. Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
+          StevieBlitz's RIFFLAB is a Windows music-practice and analysis app for musicians who want to hear what's really going on in a song. Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
           
           It combines local audio analysis, source separation, a synchronized note grid, and practical playback controls in one desktop application. Built for practice and exploration — not guaranteed sheet-music transcription.
           
-          ## What RiffLab does
+          ## What StevieBlitz's RIFFLAB does
           - **Stem separation:** split a track into drums, bass, vocals, and other instruments with Demucs.
           - **Bass Mode:** follow detected bass notes, preferably from the isolated bass stem; semitone changes are tracked rather than assumed away.
           - **Chord Mode:** explore estimated harmony and repeated patterns.
@@ -67,7 +67,7 @@ jobs:
           This package was produced by GitHub Actions with syntax, dependency, regression and Windows startup checks. Real-world audio detection accuracy and full manual Windows UI testing are not guaranteed. Only analyze audio you are allowed to use.
           
           ## Credits
-          **RiffLab by Stevieblitz [Teun Verhoeven]**  
+          **StevieBlitz's RIFFLAB by Teun Verhoeven**  
           https://teunverhoeven.nl
           
           ## Technology and acknowledgements
@@ -80,4 +80,4 @@ jobs:
           
           Built with AI-assisted development as a tool, not the headline. **Less guessing. More playing.**
           NOTES
-          gh release edit v0.2.0-alpha.1 --repo stevieblitz/Rifflab --notes-file release-notes.md --title "RiffLab | Alpha v0.2.0 - Windows" --prerelease
+          gh release edit v0.2.0-alpha.1 --repo stevieblitz/Rifflab --notes-file release-notes.md --title "StevieBlitz's RIFFLAB | Alpha v0.2.0 - Windows" --prerelease
