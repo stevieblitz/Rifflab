@@ -15,7 +15,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > release-notes.md <<'NOTES'
-          # RiffLab | Alpha v0.1.0 - Windows
+          # StevieBlitz's RIFFLAB | Alpha v0.1.0 - Windows
 
           The original RiffLab public alpha. An early experimental build of the audio-analysis and musician practice application, preserved for historical downloads.
 
@@ -41,9 +41,9 @@ jobs:
           This is an archived experimental alpha. Note and chord detection may be inaccurate; audio compatibility, Windows support and startup behavior may vary. For ongoing development and the newer Windows package, see [Alpha v0.2.0](https://github.com/stevieblitz/Rifflab/releases/tag/v0.2.0-alpha.1).
 
           ## Credits
-          **RiffLab by Stevieblitz [Teun Verhoeven]**  
+          **StevieBlitz's RIFFLAB by Teun Verhoeven**  
           https://teunverhoeven.nl
 
           Built with open-source audio/AI tooling and AI-assisted development.
           NOTES
-          gh release edit v0.1.0-alpha.1 --repo stevieblitz/Rifflab --title "RiffLab | Alpha v0.1.0 - Windows" --notes-file release-notes.md --prerelease
+          gh release edit v0.1.0-alpha.1 --repo stevieblitz/Rifflab --title "StevieBlitz's RIFFLAB | Alpha v0.1.0 - Windows" --notes-file release-notes.md --prerelease
