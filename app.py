@@ -1105,13 +1105,33 @@ class Window(QMainWindow):
         self.cancel_analysis_button.clicked.connect(self.stop_analysis)
         self.cancel_analysis_button.hide()
         options.addWidget(self.cancel_analysis_button)
-        # Advanced filters remain connected internally, controlled by Complexity.
+        # Visible and independent: choose how aggressively to reject note glitches.
+        options.addWidget(QLabel('◇ NoteGuard'))
         self.noteguard = QComboBox()
-        self.noteguard.addItems(['Off · all notes', 'Light · quick riffs', 'Normal · reliable', 'Strong · root notes'])
-        self.noteguard.setCurrentIndex(0)
-        self.noteguard.setMinimumWidth(175)
-        self.noteguard.setToolTip('Filter uncertain short notes in the display without reanalyzing the audio.')
+        self.noteguard.addItems(['Off', 'Light', 'Normal · recommended', 'Strong', 'Roots only'])
+        self.noteguard.setCurrentIndex(2)
+        self.noteguard.setMinimumWidth(162)
+        self.noteguard.setToolTip(
+            'Filter uncertain notes in the timeline (no re-analysis).\n'
+            'Off: all detections. Light: preserve fast riffs. Normal: recommended.\n'
+            'Strong: remove more short glitches. Roots only: show pitch roots without chord quality.')
+        for index, explanation in enumerate((
+            'Off — Show every detected note, including uncertain ones.',
+            'Light — Reduce obvious errors while keeping fast passages.',
+            'Normal — Balanced filtering, recommended for most songs.',
+            'Strong — Suppress more short notes; may also hide real quick changes.',
+            'Roots only — Show pitch roots without chord types (with normal filtering).'
+        )):
+            self.noteguard.setItemData(index, explanation, Qt.ToolTipRole)
         self.noteguard.currentIndexChanged.connect(self.rebuild_chords)
+        options.addWidget(self.noteguard)
+        noteguard_help = QLabel('ⓘ')
+        noteguard_help.setToolTip(
+            'Not sure? Start with Normal.\n'
+            'Missing fast notes? Try Light or Off.\n'
+            'Too many false notes? Try Strong.\n'
+            'Only want the root notes? Choose Roots only.')
+        options.addWidget(noteguard_help)
         self.sensitivity = QSlider(Qt.Horizontal)
         self.sensitivity.setRange(0, 20)  # minimum duration of a displayed segment, 0-2 seconds
         self.sensitivity.setValue(0)
@@ -1127,26 +1147,15 @@ class Window(QMainWindow):
         self.complexity.setRange(0, 100)
         self.complexity.setFixedWidth(110)
         self.complexity.setValue(25)
-        self.complexity.setToolTip('Amount of note detail (visual only). Audio pitch is unchanged.')
+        self.complexity.setToolTip('How much short-note detail to display. Lower = simpler. Higher = more detail. Does not change NoteGuard or audio pitch.')
         self.complexity_label = QLabel('25%')
         def apply_complexity(value):
             self.complexity_label.setText(f'{value}%')
-            guard = 3 if value <= 20 else 2 if value <= 45 else 1 if value <= 70 else 0
-            stability = round((100 - value) * 0.16)
-            self.noteguard.blockSignals(True)
-            self.sensitivity.blockSignals(True)
-            self.noteguard.setCurrentIndex(guard)
-            self.sensitivity.setValue(stability)
-            self.noteguard.blockSignals(False)
-            self.sensitivity.blockSignals(False)
-            self.rebuild_chords()
+            # Complexity only adjusts minimum segment duration (Stability);
+            # changing it must not silently override the user's NoteGuard choice.
+            self.sensitivity.setValue(round((100 - value) * 0.16))
         self.complexity.valueChanged.connect(apply_complexity)
-        self.noteguard.blockSignals(True)
-        self.sensitivity.blockSignals(True)
-        self.noteguard.setCurrentIndex(2)
-        self.sensitivity.setValue(12)
-        self.noteguard.blockSignals(False)
-        self.sensitivity.blockSignals(False)
+        self.sensitivity.setValue(round((100 - self.complexity.value()) * 0.16))
         options.addWidget(self.complexity)
         options.addWidget(self.complexity_label)
         # Tuning belongs inline with the main analysis actions at the top.
@@ -1311,7 +1320,7 @@ class Window(QMainWindow):
         controls.setContentsMargins(4, 4, 4, 2)
         controls.setHorizontalSpacing(8)
         controls.setColumnStretch(0, 1)
-        controls.setColumnStretch(2, 1)
+        controls.setColumnStretch(3, 1)
         transport_buttons = QHBoxLayout()
         transport_buttons.setSpacing(6)
         self.play = QPushButton()
@@ -1424,17 +1433,19 @@ class Window(QMainWindow):
         grid_column.addLayout(zoom_controls)
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
-        self.time_label.setMinimumWidth(85)
+        self.time_label.setMinimumWidth(125)
+        self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        self.time_label.setToolTip('Current playback position / track duration')
         time_controls = QHBoxLayout()
-        time_controls.setContentsMargins(4, 0, 0, 0)
+        time_controls.setContentsMargins(12, 0, 12, 0)
         time_controls.addWidget(self.time_label)
-        controls.addLayout(time_controls, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         controls.addLayout(transport_buttons, 0, 1, Qt.AlignCenter)
+        controls.addLayout(time_controls, 0, 2, Qt.AlignCenter | Qt.AlignVCenter)
         self.loop_info = QLabel('Whole track')
         self.loop_info.setObjectName('loopInfo')
         self.loop_info.hide()  # Retain state; the single-row controlbar stays uncluttered.
-        # One bottom controlbar: clock left, transport center, display controls right.
-        controls.addLayout(playback_options, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
+        # One bottom controlbar: transport, prominent clock, then display controls.
+        controls.addLayout(playback_options, 0, 3, Qt.AlignRight | Qt.AlignVCenter)
         layout.addLayout(controls, 0)
         # Compact left-hand mixer beside the grid only; waveform remains full width.
         stem_panel = QWidget()
@@ -1677,7 +1688,8 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#timeLabel,QLabel#loopInfo{background:transparent}
+          QLabel#timeLabel{background:transparent;color:#d8edfc;font-size:16px;font-weight:600}
+          QLabel#loopInfo{background:transparent}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
           QTabBar#mainTabBar::tab{margin-top:2px}
@@ -3460,10 +3472,13 @@ class Window(QMainWindow):
         # Never expose harmonic chord suffixes in Bass Mode, even for old
         # projects/caches or results arriving while switching modes.
         bass_mode = self.analysis_mode.currentIndex() == 0
+        roots_only = self.noteguard.currentIndex() == 4
         raw = [(float(t), re.match(r'^[A-G](?:#|b)?', str(c)).group(0)
-                if bass_mode and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
+                if (bass_mode or roots_only) and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
                for t, c in self.chord_data]
-        raw = self.verify_note_events(raw, self.noteguard.currentIndex(), bass_mode)
+        # Roots only uses balanced filtering, not the stricter Strong threshold.
+        guard_level = 2 if roots_only else self.noteguard.currentIndex()
+        raw = self.verify_note_events(raw, guard_level, bass_mode)
         if bass_mode:
             # A bass-root timeline has one event per root change, not per pluck.
             root_changes = []
