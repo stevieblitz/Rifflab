@@ -1,11 +1,8 @@
 # StevieBlitz's RiffLab
-
 **LESS GUESSING. MORE PLAYING.**
 
 **StevieBlitz's RiffLab**: the musician-focused audio practice and analysis tool.
-
 A Windows music practice and analysis app for musicians who want to hear what's really going on in a song.
-
 Isolate the bass. Follow the chords. Loop the tricky bit until it clicks.
 
 **StevieBlitz's RiffLab: by Teun Verhoeven.** [teunverhoeven.nl](https://teunverhoeven.nl)
