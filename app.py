@@ -726,7 +726,7 @@ class Window(QMainWindow):
         self.header_practice.setObjectName('practiceNav')
         self.header_practice.setAccessibleName('Practice timeline')
         self.project_save = QPushButton('Save')
-        self.project_save.setIcon(qta.icon('fa5s.save', color='#e5f4ff'))
+        self.project_save.setIcon(qta.icon('fa5s.save', color='#7bd6ff'))
         self.project_save.setToolTip('Save project (Ctrl+S)')
         self.project_save.clicked.connect(self.save_project)
         self.project_save.setText('')
@@ -734,7 +734,7 @@ class Window(QMainWindow):
         self.project_save.setAccessibleName('Save project')
         project_row.addWidget(self.project_save)
         self.project_load = QPushButton('Open')
-        self.project_load.setIcon(qta.icon('fa5s.folder-open', color='#e5f4ff'))
+        self.project_load.setIcon(qta.icon('fa5s.folder-open', color='#7bd6ff'))
         self.project_load.setToolTip('Open a saved project (Ctrl+O)')
         self.project_load.clicked.connect(self.open_project)
         self.project_load.setText('')
@@ -950,6 +950,7 @@ class Window(QMainWindow):
         for column in range(2, 8):
             self.library_table.setColumnHidden(column, True)
         self.library_table.setColumnWidth(0, 22)
+        self.library_table.horizontalHeader().setFixedHeight(22)
         self.library_table.horizontalHeader().setStretchLastSection(False)
         self.library_table.setToolTip('Double-click to open; drag a song onto the waveform or grid to load.')
         self.library_table.setMinimumHeight(180)
@@ -1064,7 +1065,7 @@ class Window(QMainWindow):
         header.addWidget(title)
         header.addStretch()
         self.export_reset_mixer = QPushButton()
-        self.export_reset_mixer.setIcon(qta.icon('fa5s.undo', color='#b8cbdc'))
+        self.export_reset_mixer.setIcon(qta.icon('fa5s.undo', color='#7bd6ff'))
         self.export_reset_mixer.setToolTip('Reset all stem volumes; mute bass by default')
         self.export_reset_mixer.setFixedSize(25, 24)
         self.export_reset_mixer.clicked.connect(self.reset_mixer)
@@ -1080,10 +1081,10 @@ class Window(QMainWindow):
             channel = QWidget()
             channel_layout = QVBoxLayout(channel)
             channel_layout.setContentsMargins(0, 0, 0, 0)
-            channel_layout.setSpacing(5)
+            channel_layout.setSpacing(3)
             heading = QHBoxLayout()
             stem_icon = QLabel()
-            stem_icon.setPixmap(qta.icon(STEM_ICONS[stem], color='#91b6ce').pixmap(16, 16))
+            stem_icon.setPixmap(qta.icon(STEM_ICONS[stem], color='#7bd6ff').pixmap(16, 16))
             stem_icon.setFixedSize(19, 20)
             stem_icon.setAlignment(Qt.AlignCenter)
             stem_icon.setToolTip(stem.title())
@@ -1108,7 +1109,7 @@ class Window(QMainWindow):
             solo = QPushButton('S')
             solo.setCheckable(True)
             solo.setEnabled(False)
-            solo.setFixedSize(28, 26)
+            solo.setFixedSize(24, 23)
             solo.setProperty('soloToggle', True)
             solo.setToolTip(f'Solo {stem.title()} (exclusive)')
             heading.addWidget(solo)
@@ -1596,8 +1597,8 @@ class Window(QMainWindow):
         stem_panel.setMinimumWidth(165)
         stem_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         panel = QVBoxLayout(stem_panel)
-        panel.setContentsMargins(8, 8, 8, 8)
-        panel.setSpacing(9)
+        panel.setContentsMargins(7, 6, 7, 6)
+        panel.setSpacing(5)
         mixer_header = QHBoxLayout()
         mixer_header.setContentsMargins(0, 0, 0, 0)
         mixer_title = QLabel('STEM MIXER')
@@ -1607,7 +1608,8 @@ class Window(QMainWindow):
         self.reset_mixer_button = QPushButton()
         self.reset_mixer_button.setIcon(qta.icon('fa5s.undo', color='#b8cbdc'))
         self.reset_mixer_button.setToolTip('Reset to default: bass muted, all levels 100%')
-        self.reset_mixer_button.setFixedSize(25, 24)
+        self.reset_mixer_button.setFixedSize(24, 22)
+        self.reset_mixer_button.setObjectName('mixerIconAction')
         self.reset_mixer_button.clicked.connect(self.reset_mixer)
         mixer_header.addWidget(self.reset_mixer_button)
         panel.addLayout(mixer_header)
@@ -1638,7 +1640,7 @@ class Window(QMainWindow):
             cb.setCheckable(True)
             cb.setChecked(stem != 'bass')
             cb.setEnabled(False)
-            cb.setFixedSize(28, 26)
+            cb.setFixedSize(24, 23)
             cb.setProperty('stemToggle', True)
             cb.setToolTip(f'Mute {stem.title()} (M)')
             cb.setAccessibleName(f'Mute {stem}')
@@ -1840,6 +1842,8 @@ class Window(QMainWindow):
           QTableWidget#librarySongTable{background:transparent;border:0;gridline-color:transparent;font-size:11px;outline:0}
           QTableWidget#librarySongTable::item{padding:0px 3px;border:0}
           QTableWidget#librarySongTable::item:selected{background:#223e54;color:#e9f7ff}
+          QTableWidget#librarySongTable::item:alternate{background:#142333}
+          QTableWidget#librarySongTable::item:selected{border-left:2px solid #7bd6ff}
           QTableWidget#librarySongTable QHeaderView::section{background:transparent;border:0;border-bottom:1px solid #304559;color:#819cac;font-size:10px;padding:2px 4px}
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
@@ -1847,6 +1851,8 @@ class Window(QMainWindow):
           QPushButton#libraryIconAction{background:transparent;border:0;border-radius:3px;padding:3px;min-width:0;min-height:0}
           QPushButton#libraryIconAction:hover{background:#203547;border:0}
           QPushButton#libraryIconAction:pressed{background:#29465b;border:0}
+          QPushButton#mixerIconAction{background:transparent;border:0;border-radius:3px;padding:2px}
+          QPushButton#mixerIconAction:hover{background:#203d51;border:0}
           QPushButton#headerTuner,QPushButton#practiceNav{background:#1b2938;border:1px solid #304a60;padding:4px 8px;border-radius:4px}
           QPushButton#headerTuner:hover,QPushButton#practiceNav:hover{background:#294e69}
           QPushButton[gridModeButton='true']{padding:2px 5px;min-height:20px}
@@ -1878,7 +1884,7 @@ class Window(QMainWindow):
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
           QTabBar#headerWorkspaceTabs{background:transparent}
-          QTabBar#headerWorkspaceTabs::tab{padding:7px 13px;min-width:80px;border:1px solid #314b60;border-bottom:2px solid transparent;background:#1b2938;color:#c9dae6}
+          QTabBar#headerWorkspaceTabs::tab{padding:6px 11px;min-width:74px;border:1px solid #25455c;border-bottom:2px solid transparent;background:#122638;color:#c9dae6}
           QTabBar#headerWorkspaceTabs::tab:selected{background:#254d6d;color:#e8f6ff;border-bottom:2px solid #7bd6ff}
           QTabBar#headerWorkspaceTabs::tab:hover:!selected{background:#263e51}
           QTabBar#mainTabBar::tab{margin-top:2px;padding:7px 15px;min-width:90px;border-bottom:2px solid transparent}
@@ -1895,7 +1901,7 @@ class Window(QMainWindow):
           QTabBar#mainTabBar::tab:first:selected{background:#254d6d;border-bottom:2px solid #7bd6ff}
           QPushButton#tunerQuickButton{background:#1b2938;border:1px solid #34495d;border-radius:4px;padding:0px;min-height:0px;min-width:0px}
           QPushButton#tunerQuickButton:hover{background:#294d70;border-color:#7bd6ff}
-          QPushButton{background:#294d70;border:1px solid #41617b;padding:5px 10px;border-radius:4px;min-height:19px}
+          QPushButton{background:#172d40;border:1px solid #31516a;padding:4px 8px;border-radius:4px;min-height:19px}
           QPushButton:hover{background:#366b9a}
           QPushButton[transportIcon='true']{padding:2px;min-width:30px;min-height:28px;max-height:30px}
           QPushButton:disabled{background:#28333e;color:#7d8a96;border-color:#34404c}
@@ -1912,27 +1918,27 @@ class Window(QMainWindow):
           QLabel#stemName{background:transparent;font-size:12px;font-weight:400;color:#d5e1ed}
           QWidget#playStemPanel QLabel{background:transparent}
           QWidget#noteGridPanel QLabel{background:transparent}
-          QPushButton[stemToggle='true']{background:#263c51;padding:1px;border:1px solid #36536b;border-radius:4px}
-          QPushButton[soloToggle='true']{background:#263c51;padding:1px;border:1px solid #36536b;border-radius:4px;color:#a9c2d5;font-weight:700}
+          QPushButton[stemToggle='true']{background:transparent;padding:1px;border:1px solid #294559;border-radius:3px;color:#7bd6ff}
+          QPushButton[soloToggle='true']{background:transparent;padding:1px;border:1px solid #294559;border-radius:3px;color:#7bd6ff;font-weight:700}
           QLabel[soloDimmed='true']{color:#657686}
           QSlider[soloDimmed='true']::groove:horizontal{background:#25313c}
           QSlider[soloDimmed='true']::sub-page:horizontal{background:#344656}
           QSlider[soloDimmed='true']::handle:horizontal{background:#5b6e7d}
           QPushButton[stemToggle='true'][soloDimmed='true']{color:#667989;border-color:#2a3947}
-          QPushButton[soloToggle='true']:checked{background:#263c51;border-bottom:3px solid #7bd6ff;color:#d4f3ff}
+          QPushButton[soloToggle='true']:checked{background:#214662;border-bottom:2px solid #7bd6ff;color:#d4f3ff}
           QPushButton[stemToggle='true']:!checked{background:#263c51;color:#ffe0c8;border-bottom:3px solid #e5a37b;font-weight:700}
-          QPushButton[stemToggle='true']:checked{background:#263c51;color:#a9c2d5;border:1px solid #36536b}
+          QPushButton[stemToggle='true']:checked{background:transparent;color:#7bd6ff;border:1px solid #294559}
           QPushButton#resetBpmButton{background:transparent;border:0;padding:2px;border-radius:3px}
           QPushButton#resetBpmButton:hover{background:#243e51;border:0}
           QLabel#gridNotice{color:#819aad;font-size:11px}
           QLabel#loopInfo{color:#a2b8ca;font-size:11px}
           /* Uniform subtle housing for all sliders: stem mixer, export, complexity, zoom. */
-          QSlider{background:#172838;border:1px solid #294357;border-radius:4px;padding:2px}
-          QSlider:hover{border-color:#36546a;background:#192c3d}
+          QSlider{background:transparent;border:0;border-radius:2px;padding:2px}
+          QSlider:hover{background:transparent;border:0}
           QSlider:disabled{background:#15222f;border-color:#253645}
           QSlider::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
           QSlider::sub-page:horizontal{background:#64b9e9;border-radius:2px}
-          QSlider::handle:horizontal{background:#d5ecfa;border:1px solid #72bde9;width:11px;margin:-5px 0;border-radius:6px}
+          QSlider::handle:horizontal{background:#7bd6ff;border:1px solid #48a6d9;width:11px;margin:-5px 0;border-radius:6px}
           /* Both zoom axes share exactly the same rail, thumb, and accent. */
           QSlider#gridZoom,QSlider#gridRowHeight{background:transparent;border:0;padding:0}
           QSlider#gridZoom::groove:horizontal,QSlider#gridRowHeight::groove:horizontal{height:5px;background:#2b4052;border-radius:2px}
@@ -1946,8 +1952,8 @@ class Window(QMainWindow):
           QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical,QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;height:0;border:0;background:transparent}
           QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical,QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent}
           QScrollArea{background:#141e2a}
-          QPushButton[transportIcon='true']{background:#1d3042;border:1px solid #34526b;border-radius:6px}
-          QPushButton[transportIcon='true']:hover{background:#263d52;border-color:#47657c}
+          QPushButton[transportIcon='true']{background:#122638;border:1px solid #28506a;border-radius:4px;color:#7bd6ff}
+          QPushButton[transportIcon='true']:hover{background:#1d4157;border-color:#7bd6ff}
           /* Hardware-style status LED: same button face, only a slim light at its foot. */
           QPushButton[transportIcon='true']:checked{background:#1d3042;border:1px solid #34526b;border-bottom:3px solid #7bd6ff;border-radius:6px}
           QPushButton[transportIcon='true']:checked:hover{background:#263d52;border:1px solid #47657c;border-bottom:3px solid #9ce4ff}
