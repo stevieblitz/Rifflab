@@ -1,0 +1,45 @@
+name: Publish Cyan Compact Alpha Release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-cyan-alpha.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified Windows package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 39025772893 --repo ${{ github.repository }} --name RiffLab-Complete-97 --dir release-files
+          test -s release-files/RiffLab-Complete-97.zip
+          unzip -t release-files/RiffLab-Complete-97.zip | tail -n 2
+          mv release-files/RiffLab-Complete-97.zip release-files/StevieBlitz-RiffLab-Windows-v0.2.0-alpha.2.zip
+      - name: Publish separate release, preserving earlier alphas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          # StevieBlitz's RiffLab Alpha v0.2.0.2
+
+          Windows alpha from tested build #97. A portable Windows application with AI stem separation, bass and chord analysis, a note timeline, and Play Along practice tools.
+
+          ## What's new
+          - More compact Library with artist and song on one line, slim rows and cyan icon actions.
+          - Refined cyan controls for the header, transport and Stem Mixer, with compact mute, solo and volume controls.
+          - Grid row-height correction for vertical zoom after loading or re-analysis, with a taller default.
+          - An always-visible **Back to Play Along** button in Import / Export.
+
+          ## Installing
+          Download the Windows ZIP below, extract everything to one folder and start RiffLab.exe. Keep the RiffLabAI and bin folders together with the application. Some AI model weights may download on first analysis.
+
+          The native Windows startup smoke test passed in GitHub Actions. Visual pixel-by-pixel fidelity and the vertical-zoom behavior still need hands-on testing.
+
+          Built by StevieBlitz / Teun Verhoeven. Powered by AI.
+          NOTES
+          gh release create v0.2.0-alpha.2 release-files/StevieBlitz-RiffLab-Windows-v0.2.0-alpha.2.zip --title "StevieBlitz's RiffLab | Alpha v0.2.0.2 - Windows" --notes-file notes.md --target ${{ github.sha }} --prerelease
