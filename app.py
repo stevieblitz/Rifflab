@@ -974,6 +974,18 @@ class Window(QMainWindow):
         self.refresh_library()
         # Migrate the existing Recent list and default projects without moving audio.
         self.discover_existing_projects()
+        # Always-visible return path from Import / Export to the practice view.
+        io_navigation = QHBoxLayout()
+        io_navigation.setContentsMargins(0, 0, 0, 0)
+        self.io_back_to_play = QPushButton('Play Along')
+        self.io_back_to_play.setObjectName('ioBackToPlay')
+        self.io_back_to_play.setIcon(qta.icon('fa5s.arrow-left', color='#7bd6ff'))
+        self.io_back_to_play.setToolTip('Back to Play Along (Esc)')
+        self.io_back_to_play.setAccessibleName('Back to Play Along')
+        self.io_back_to_play.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
+        io_navigation.addWidget(self.io_back_to_play)
+        io_navigation.addStretch(1)
+        io_layout.addLayout(io_navigation)
         # Import and Export have distinct workspaces inside the main I/O tab.
         self.io_sections = QTabWidget()
         self.io_sections.setObjectName('ioSections')
@@ -1851,6 +1863,8 @@ class Window(QMainWindow):
           QPushButton#libraryIconAction{background:transparent;border:0;border-radius:3px;padding:3px;min-width:0;min-height:0}
           QPushButton#libraryIconAction:hover{background:#203547;border:0}
           QPushButton#libraryIconAction:pressed{background:#29465b;border:0}
+          QPushButton#ioBackToPlay{background:transparent;border:1px solid #294559;border-radius:4px;color:#d2edfc;padding:4px 10px}
+          QPushButton#ioBackToPlay:hover{background:#203d51;border-color:#7bd6ff}
           QPushButton#mixerIconAction{background:transparent;border:0;border-radius:3px;padding:2px}
           QPushButton#mixerIconAction:hover{background:#203d51;border:0}
           QPushButton#headerTuner,QPushButton#practiceNav{background:#1b2938;border:1px solid #304a60;padding:4px 8px;border-radius:4px}
