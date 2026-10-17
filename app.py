@@ -1372,6 +1372,8 @@ class Window(QMainWindow):
         self.chord_grid.setVerticalSpacing(5)
         self.chord_grid.setSpacing(5)
         self.chord_grid.setAlignment(Qt.AlignTop)
+        # Keep the note rows' intrinsic height when the scroll area is resized.
+        self.grid_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.chord_scroll.setWidget(self.grid_host)
         self.grid_host.setAcceptDrops(True)
         self.grid_host.installEventFilter(self)
@@ -1540,7 +1542,7 @@ class Window(QMainWindow):
         self.grid_row_height.setFixedWidth(74)
         self.grid_row_height.setSingleStep(1)
         self.grid_row_height.setPageStep(4)
-        self.grid_row_height.setValue(max(24, min(96, int(self.layout_settings.value('grid_row_height', 38)))))
+        self.grid_row_height.setValue(max(24, min(96, int(self.layout_settings.value('grid_row_height', 52)))))
         self.grid_row_height.setToolTip('Adjust note row height')
         self.grid_row_height.valueChanged.connect(self.apply_grid_row_height)
         self.grid_row_height.valueChanged.connect(lambda value: self.layout_settings.setValue('grid_row_height', value))
@@ -4110,6 +4112,20 @@ class Window(QMainWindow):
         for section in getattr(self,'grid_section_buttons',()):
             section.setFixedHeight(height+16)
         if hasattr(self,'chord_grid'):
+            # A resizable QScrollArea otherwise compresses the fresh grid on
+            # import/reanalysis until the next manual V-slider interaction.
+            rows = (len(getattr(self, 'grid_buttons', ())) + 15) // 16
+            for row in range(rows):
+                self.chord_grid.setRowMinimumHeight(row * 2, 28)
+                self.chord_grid.setRowMinimumHeight(row * 2 + 1, height)
+            if rows:
+                margins = self.chord_grid.contentsMargins()
+                minimum = (rows * (height + 28)
+                           + max(0, rows * 2 - 1) * self.chord_grid.verticalSpacing()
+                           + margins.top() + margins.bottom())
+                self.grid_host.setMinimumHeight(minimum)
+            else:
+                self.grid_host.setMinimumHeight(0)
             self.chord_grid.invalidate()
             self.grid_host.updateGeometry()
 
