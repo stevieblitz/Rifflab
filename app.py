@@ -837,7 +837,7 @@ class Window(QMainWindow):
         tuner_layout.setSpacing(12)
         # Local searchable song library, backed by SQLite.
         library_filters = QVBoxLayout()
-        library_filters.setSpacing(6)
+        library_filters.setSpacing(3)
         advanced_filters = QVBoxLayout()
         advanced_filters.setSpacing(5)
         self.library_search = QLineEdit()
@@ -881,9 +881,9 @@ class Window(QMainWindow):
         library_filters.addWidget(self.library_advanced_panel)
         library_layout.addLayout(library_filters)
         library_toolbar = QVBoxLayout()
-        library_toolbar.setSpacing(6)
+        library_toolbar.setSpacing(3)
         library_filter_row = QHBoxLayout()
-        library_filter_row.setSpacing(6)
+        library_filter_row.setSpacing(4)
         library_actions = QGridLayout()
         library_actions.setSpacing(5)
         self.library_favorites = QCheckBox('Favorites only')
@@ -911,7 +911,7 @@ class Window(QMainWindow):
         library_actions.addWidget(self.library_remove, 1, 1)
         # Compact icon-only actions; the existing callbacks and confirmation stay.
         library_icons = QHBoxLayout()
-        library_icons.setSpacing(5)
+        library_icons.setSpacing(3)
         for button, icon_name, hint in (
             (self.library_add, 'fa5s.plus', 'Add current song to Library'),
             (self.library_edit, 'fa5s.edit', 'Edit selected song details'),
@@ -930,8 +930,9 @@ class Window(QMainWindow):
         library_icons.addStretch(1)
         library_toolbar.addLayout(library_icons)
         self.library_table = LibraryDragTable(0, 8)
+        self.library_table.setObjectName('librarySongTable')
         self.library_table.setHorizontalHeaderLabels(
-            ['★', 'Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
+            ['★', 'Artist · Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
         self.library_table.setDragEnabled(True)
         self.library_table.setDragDropMode(QAbstractItemView.DragOnly)
         self.library_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -939,13 +940,16 @@ class Window(QMainWindow):
         self.library_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.library_table.setAlternatingRowColors(True)
         self.library_table.verticalHeader().hide()
+        self.library_table.verticalHeader().setDefaultSectionSize(24)
+        self.library_table.setShowGrid(False)
+        self.library_table.setWordWrap(False)
         self.library_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.library_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         # Narrow sidebar: retain every data column for existing actions, but show a clean list.
         for column in range(2, 8):
             self.library_table.setColumnHidden(column, True)
-        self.library_table.setColumnWidth(0, 28)
+        self.library_table.setColumnWidth(0, 22)
         self.library_table.horizontalHeader().setStretchLastSection(False)
         self.library_table.setToolTip('Double-click to open; drag a song onto the waveform or grid to load.')
         self.library_table.setMinimumHeight(180)
@@ -1833,6 +1837,10 @@ class Window(QMainWindow):
           QWidget#bottomControlBar{background:#111923;border:1px solid #304559;border-radius:5px}
           QWidget#bottomControlBar QLabel,QWidget#bottomControlBar QCheckBox{background:transparent;border:0}
           QTabWidget#sidebarTabs::pane{background:#111923;border:1px solid #304559;border-radius:5px}
+          QTableWidget#librarySongTable{background:transparent;border:0;gridline-color:transparent;font-size:11px;outline:0}
+          QTableWidget#librarySongTable::item{padding:0px 3px;border:0}
+          QTableWidget#librarySongTable::item:selected{background:#223e54;color:#e9f7ff}
+          QTableWidget#librarySongTable QHeaderView::section{background:transparent;border:0;border-bottom:1px solid #304559;color:#819cac;font-size:10px;padding:2px 4px}
           QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
@@ -2327,16 +2335,18 @@ class Window(QMainWindow):
                       song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
             for col, value in enumerate(values):
-                # Sidebar list shows a clean title + artist on two lines.
+                # One line per song: artist and title, no stacked labels.
                 display_value = str(value)
                 if col == 1 and song['artist']:
-                    display_value += '\n' + str(song['artist'])
+                    display_value = f"{song['artist']} · {song['title']}"
                 item = QTableWidgetItem(display_value)
+                if col == 1:
+                    item.setToolTip(display_value)
                 item.setData(Qt.UserRole, song['project_path'])
                 if col in (5, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.library_table.setItem(row_index, col, item)
-            self.library_table.setRowHeight(row_index, 44)
+            self.library_table.setRowHeight(row_index, 24)
         self.library_table.setSortingEnabled(False)
         self.library_summary.setText(
             f'{len(rows)} songs · Double-click or drag to open')
