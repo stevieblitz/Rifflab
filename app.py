@@ -2166,9 +2166,10 @@ class Window(QMainWindow):
         bar = self.menuBar()
         if not hasattr(self, 'song_tabs'):
             return
-        left_reserved = 170  # File/View and a little breathing room
-        width = max(0, bar.width() - left_reserved)
-        self.song_tabs.setGeometry(left_reserved, 0, width, bar.height())
+        left_reserved = 155  # leave room for File/View
+        available = max(0, bar.width() - left_reserved)
+        width = min(available, self.song_tabs.sizeHint().width()) if self.song_tabs.count() else 0
+        self.song_tabs.setGeometry(bar.width() - width, 0, width, bar.height())
         self.song_tabs.setVisible(self.song_tabs.count() > 0 and width > 0)
         self.song_tabs.setStyleSheet(
             'QTabBar#songTabs{background:transparent;border:0;}'
@@ -2178,7 +2179,7 @@ class Window(QMainWindow):
             'background:#172a3b;color:#cee4f1;}'
             'QTabBar#songTabs::tab:selected{background:#245777;color:#fff;'
             'border-bottom:2px solid #7bd6ff;}'
-            'QTabBar#songTabs::close-button{image:none;}'
+            'QTabBar#songTabs::close-button{border:0;background:transparent;}'
             'QTabBar#songTabs QToolButton{background:#132637;border:0;'
             'color:#7bd6ff;min-width:20px;}'
         )
@@ -2189,6 +2190,12 @@ class Window(QMainWindow):
                 button.setIcon(qta.icon('fa5s.chevron-left', color='#7bd6ff'))
             elif button.objectName() == 'ScrollRightButton':
                 button.setIcon(qta.icon('fa5s.chevron-right', color='#7bd6ff'))
+        for index in range(self.song_tabs.count()):
+            close_button = self.song_tabs.tabButton(index, QTabBar.RightSide)
+            if close_button is not None:
+                close_button.setIcon(qta.icon('fa5s.times', color='#7bd6ff'))
+                close_button.setIconSize(QSize(11, 11))
+                close_button.setStyleSheet('border:0;background:transparent;margin:0;padding:0;')
         self.song_tabs.raise_()
 
     def setup_developer_menus(self):
