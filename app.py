@@ -4265,7 +4265,7 @@ class Window(QMainWindow):
             background = 'rgba(49,93,123,56)'
         foreground = '#ffffff' if active else '#e9f5fd'
         # Top edge carries pitch information. No vertical color strips or glow.
-        border_top = f'3px solid {accent}' if active else f'2px solid {accent}'
+        border_top = f'2px solid {accent}'
         return (
             f'background-color:{background};'
             'border:0px;'
@@ -4278,7 +4278,7 @@ class Window(QMainWindow):
             f'border-top-right-radius:{5 if ending else 0}px;'
             f'border-bottom-right-radius:{5 if ending else 0}px;'
             f'font-size:{self._grid_note_font_px()}px;'
-            f'font-weight:{"800" if active else ("650" if self.grid_buttons[index].text().strip() else "400")};'
+            f'font-weight:{"650" if self.grid_buttons[index].text().strip() else "400"};'
             f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
             f'{max(3, round(5 * self.grid_zoom.value() / 100))}px;'
             f'text-align:left;color:{foreground};'
@@ -4624,7 +4624,7 @@ class Window(QMainWindow):
         row = idx//16
         if self.follow.isChecked() and (row != self.grid_row or getattr(self, '_force_note_focus', False)):
             self.grid_row = row
-            self.focus_active_note(force=True)
+            self.chord_scroll.ensureWidgetVisible(current, 0, 0)
             self._force_note_focus = False
 
 
