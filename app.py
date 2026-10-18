@@ -2156,13 +2156,21 @@ class Window(QMainWindow):
     def layout_menu_song_tabs(self):
         bar = self.menuBar()
         title_width = 120
-        # Keep File/View on the left; retain a readable title and tabs in one row.
-        title_x = max(125, min((bar.width()-title_width)//2, max(125, bar.width()//3)))
+        # The title stays centered. Song tabs dock to the far right of the
+        # menu row and grow leftwards; they never push the title off-center.
+        title_x = max(110, (bar.width() - title_width) // 2)
         self.menu_title_label.setGeometry(title_x, 0, title_width, bar.height())
         if not hasattr(self, 'song_tabs'):
             return
-        tab_x = title_x + title_width + 9
-        self.song_tabs.setGeometry(tab_x, 0, max(0, bar.width()-tab_x-12), bar.height())
+        right_margin = 8
+        gap_after_title = 16
+        start_limit = title_x + title_width + gap_after_title
+        available = max(0, bar.width() - right_margin - start_limit)
+        preferred = self.song_tabs.sizeHint().width() if self.song_tabs.count() else 0
+        tab_width = min(available, preferred)
+        self.song_tabs.setGeometry(bar.width() - right_margin - tab_width, 0,
+                                   tab_width, bar.height())
+        self.song_tabs.setVisible(bool(self.song_tabs.count()) and tab_width > 0)
 
     def setup_developer_menus(self):
         bar = self.menuBar()
@@ -2808,6 +2816,7 @@ class Window(QMainWindow):
             self.song_tabs.setTabToolTip(index, label)
         finally:
             self.song_tabs.blockSignals(False)
+            self.layout_menu_song_tabs()
 
     def activate_song_tab(self, index):
         if index < 0 or self._song_tab_switching or self.processing or self.analysis_running:
@@ -2840,6 +2849,7 @@ class Window(QMainWindow):
         self.song_tabs.removeTab(index)
         self.song_tabs.blockSignals(False)
         self._song_tab_positions.pop(path, None)
+        self.layout_menu_song_tabs()
         if path == str(self.project_file or '') and self.song_tabs.count():
             self.activate_song_tab(self.song_tabs.currentIndex())
 
