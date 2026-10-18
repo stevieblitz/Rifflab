@@ -2055,6 +2055,19 @@ class Window(QMainWindow):
             lambda index: self.header_tabs.setCurrentIndex(
                 1 if self.tabs.widget(index) is self.tuner_dialog else 0))
         project_row.addWidget(self.header_tabs, 0, Qt.AlignVCenter)
+        self._song_tab_positions = {}
+        self._song_tab_switching = False
+        self.song_tabs = QTabBar(project_header)
+        self.song_tabs.setObjectName('songTabs')
+        self.song_tabs.setExpanding(False)
+        self.song_tabs.setDrawBase(False)
+        self.song_tabs.setTabsClosable(True)
+        self.song_tabs.setMovable(True)
+        self.song_tabs.setUsesScrollButtons(True)
+        self.song_tabs.setMaximumWidth(570)
+        self.song_tabs.currentChanged.connect(self.activate_song_tab)
+        self.song_tabs.tabCloseRequested.connect(self.close_song_tab)
+        project_row.insertWidget(max(0, project_row.count()-1), self.song_tabs, 1)
 
     def compare_with_isophonics(self):
         """Benchmark the original Beatles recording against verified chord labels."""
@@ -2743,6 +2756,55 @@ class Window(QMainWindow):
             QMessageBox.warning(self, 'Save project', str(exc))
         return False
 
+    def register_song_tab(self, path):
+        if not hasattr(self, 'song_tabs'):
+            return
+        path = str(Path(path).resolve())
+        self.song_tabs.blockSignals(True)
+        try:
+            index = next((i for i in range(self.song_tabs.count()) if self.song_tabs.tabData(i) == path), -1)
+            if index < 0:
+                index = self.song_tabs.addTab(Path(path).stem)
+                self.song_tabs.setTabData(index, path)
+            self.song_tabs.setCurrentIndex(index)
+            self.song_tabs.setTabToolTip(index, path)
+        finally:
+            self.song_tabs.blockSignals(False)
+
+    def activate_song_tab(self, index):
+        if index < 0 or self._song_tab_switching or self.processing or self.analysis_running:
+            return
+        path = self.song_tabs.tabData(index)
+        if not path or str(self.project_file or '') == path:
+            return
+        previous = str(self.project_file or '')
+        previous_index = next((i for i in range(self.song_tabs.count()) if self.song_tabs.tabData(i) == previous), -1)
+        if previous:
+            self._song_tab_positions[previous] = self.live.position_ms if self.live else self.player.position()
+        self._song_tab_switching = True
+        try:
+            self.load_project(path)
+            if str(self.project_file or '') == path:
+                self.seek_waveform(self._song_tab_positions.get(path, self.live.position_ms if self.live else self.player.position()))
+                self.focus_active_note(force=True)
+            elif previous_index >= 0:
+                self.song_tabs.setCurrentIndex(previous_index)
+        finally:
+            self._song_tab_switching = False
+
+    def close_song_tab(self, index):
+        if index < 0 or self.processing or self.analysis_running:
+            return
+        path = self.song_tabs.tabData(index)
+        if path == str(self.project_file or '') and not self._confirm_unsaved_changes():
+            return
+        self.song_tabs.blockSignals(True)
+        self.song_tabs.removeTab(index)
+        self.song_tabs.blockSignals(False)
+        self._song_tab_positions.pop(path, None)
+        if path == str(self.project_file or '') and self.song_tabs.count():
+            self.activate_song_tab(self.song_tabs.currentIndex())
+
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open RiffLab Project',
                                               str(ROOT / 'projects'), 'RiffLab Projects (*.riff)')
@@ -2777,6 +2839,7 @@ class Window(QMainWindow):
             return
         self.speed_generation += 1  # invalidate previous tempo renders
         self.project_file = str(path)
+        self.register_song_tab(path)
         self.url.setText(str(data.get('youtube_url') or ''))
         self.song_metadata = dict(data.get('metadata') or {})
         self.update_now_playing()
@@ -4317,12 +4380,9 @@ class Window(QMainWindow):
             return
         ms = max(0, min(int(ms), self._duration))
         self.timeline.setValue(ms)
-        if self.live:
-            self.live.seek(ms)
-            self.on_position(self.live.position_ms)
-        else:
-            self.player.setPosition(ms)
-            self.on_position(ms)
+        self._force_note_focus = True
+        self.seek_and_play(ms)
+        self.focus_active_note(force=True)
 
     def seek(self):
         if self.live:
@@ -4521,6 +4581,17 @@ class Window(QMainWindow):
             ms = self.live.position_ms if self.live else self.player.position()
             self.update_grid_position(ms / 1000.0)
 
+    def focus_active_note(self, force=False):
+        if not self.grid_buttons or self.grid_active < 0:
+            return
+        current = self.grid_buttons[self.grid_active]
+        viewport = self.chord_scroll.viewport()
+        local = current.mapTo(self.grid_host, current.rect().center())
+        vbar = self.chord_scroll.verticalScrollBar()
+        hbar = self.chord_scroll.horizontalScrollBar()
+        vbar.setValue(max(0, local.y() - viewport.height() // 3))
+        hbar.setValue(max(0, local.x() - viewport.width() // 3))
+
     def update_grid_position(self, seconds):
         if not self.grid_buttons:
             return
@@ -4551,10 +4622,10 @@ class Window(QMainWindow):
             self._note_progress[run_start] = progress
             current.setStyleSheet(self._chord_segment_style(run_start, True))
         row = idx//16
-        if self.follow.isChecked() and row != self.grid_row:
+        if self.follow.isChecked() and (row != self.grid_row or getattr(self, '_force_note_focus', False)):
             self.grid_row = row
-            scrollbar = self.chord_scroll.verticalScrollBar()
-            scrollbar.setValue(max(0, current.y()-int(self.chord_scroll.viewport().height()*.25)))
+            self.focus_active_note(force=True)
+            self._force_note_focus = False
 
 
     def find_devices(self):
