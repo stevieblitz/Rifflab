@@ -1976,6 +1976,36 @@ class Window(QMainWindow):
           QProgressBar{max-height:4px;background:#202d3b;border:0}
           QProgressBar::chunk{background:#7bd6ff}
         ''')
+        # Flat Adobe-style controls: keep native functionality, replace only
+        # indicators with frameless cyan chevrons and clear blue checkmarks.
+        control_icons = self.assets_dir
+        qss_path = lambda filename: (control_icons / filename).as_posix()
+        self.setStyleSheet(self.styleSheet() + f"""
+          QSpinBox::up-button,QDoubleSpinBox::up-button,QSpinBox::down-button,QDoubleSpinBox::down-button{{
+              background:transparent;border:0;width:16px;
+          }}
+          QSpinBox::up-arrow,QDoubleSpinBox::up-arrow{{
+              image:url("{qss_path('ui-chevron-up.svg')}");width:12px;height:12px;
+          }}
+          QSpinBox::down-arrow,QDoubleSpinBox::down-arrow{{
+              image:url("{qss_path('ui-chevron-down.svg')}");width:12px;height:12px;
+          }}
+          QComboBox::drop-down{{background:transparent;border:0;width:21px}}
+          QComboBox::down-arrow{{
+              image:url("{qss_path('ui-chevron-down.svg')}");width:12px;height:12px;
+          }}
+          QCheckBox{{background:transparent;border:0;spacing:5px}}
+          QCheckBox::indicator{{
+              width:15px;height:15px;border:1px solid #456072;
+              border-radius:3px;background:transparent;
+          }}
+          QCheckBox::indicator:hover{{border-color:#7bd6ff}}
+          QCheckBox::indicator:checked{{
+              background:#183950;border:1px solid #4c91b4;
+              image:url("{qss_path('ui-check.svg')}");
+          }}
+          QCheckBox::indicator:disabled{{border-color:#324657;background:transparent}}
+        """)
         self.setup_developer_menus()
         # No duplicate top navigation: existing workspaces remain accessible
         # through Import / Export, Practice, the sidebar and the tuner.
