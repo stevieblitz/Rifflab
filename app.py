@@ -2069,6 +2069,7 @@ class Window(QMainWindow):
         self.song_tabs.setStyleSheet('QTabBar#songTabs::tab{min-width:145px;max-width:260px;padding:8px 22px 8px 12px;margin-right:3px;background:#15283a;color:#c9dfeb;border:1px solid #31516a;border-bottom:2px solid #31516a;border-top-left-radius:5px;border-top-right-radius:5px;}QTabBar#songTabs::tab:selected{background:#204962;color:white;border-bottom:2px solid #7bd6ff;}')
         self.song_tabs.currentChanged.connect(self.activate_song_tab)
         self.song_tabs.tabCloseRequested.connect(self.close_song_tab)
+        QTimer.singleShot(0, self.attach_song_tabs_to_menu)
         # Song tabs are positioned in the top menu row after RiffLab, not the project toolbar.
 
     def compare_with_isophonics(self):
@@ -2142,12 +2143,23 @@ class Window(QMainWindow):
         except (OSError, ValueError, IndexError) as exc:
             QMessageBox.warning(self, 'Chord comparison failed', str(exc))
 
+    def attach_song_tabs_to_menu(self):
+        if not hasattr(self, 'song_tabs'):
+            return
+        self.song_tabs.setParent(self.menuBar())
+        self.song_tabs.setMinimumWidth(0)
+        self.song_tabs.setMaximumWidth(16777215)
+        self.song_tabs.show()
+        self.layout_menu_song_tabs()
+
     def layout_menu_song_tabs(self):
         bar = self.menuBar()
         title_width = 120
         # Keep File/View on the left; retain a readable title and tabs in one row.
         title_x = max(125, min((bar.width()-title_width)//2, max(125, bar.width()//3)))
         self.menu_title_label.setGeometry(title_x, 0, title_width, bar.height())
+        if not hasattr(self, 'song_tabs'):
+            return
         tab_x = title_x + title_width + 9
         self.song_tabs.setGeometry(tab_x, 0, max(0, bar.width()-tab_x-12), bar.height())
 
@@ -2167,6 +2179,9 @@ class Window(QMainWindow):
         self.menu_title_label.setAlignment(Qt.AlignCenter)
         self.menu_title_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         bar.installEventFilter(self)
+        if not hasattr(self, 'song_tabs'):
+            QTimer.singleShot(0, self.attach_song_tabs_to_menu)
+            return
         self.song_tabs.setParent(bar)
         self.song_tabs.setMinimumWidth(0)
         self.song_tabs.setMaximumWidth(16777215)
@@ -4654,9 +4669,9 @@ class Window(QMainWindow):
             self._note_progress[run_start] = progress
             current.setStyleSheet(self._chord_segment_style(run_start, True))
         row = idx//16
-        if self.follow.isChecked() and (row != self.grid_row or getattr(self, '_force_note_focus', False)):
+        if (row != self.grid_row or getattr(self, '_force_note_focus', False)) and (self.follow.isChecked() or getattr(self, '_force_note_focus', False)):
             self.grid_row = row
-            self.focus_active_note(force=True)
+            QTimer.singleShot(0, lambda: self.focus_active_note(force=True))
             self._force_note_focus = False
 
 
