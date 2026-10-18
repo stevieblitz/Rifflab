@@ -955,6 +955,7 @@ class Window(QMainWindow):
         self.library_table.setToolTip('Double-click to open; drag a song onto the waveform or grid to load.')
         self.library_table.setMinimumHeight(180)
         self.library_table.doubleClicked.connect(self.open_library_song)
+        self.library_table.cellClicked.connect(self.library_cell_clicked)
         self.library_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.library_table.customContextMenuRequested.connect(self.show_library_context_menu)
         for sequence, callback in (
@@ -2398,7 +2399,7 @@ class Window(QMainWindow):
         self.library_table.setSortingEnabled(False)
         self.library_table.setRowCount(len(rows))
         for row_index, song in enumerate(rows):
-            values = ('★' if song['favorite'] else '', song['title'], song['artist'],
+            values = ('★' if song['favorite'] else '☆', song['title'], song['artist'],
                       song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
             for col, value in enumerate(values):
@@ -2407,6 +2408,10 @@ class Window(QMainWindow):
                 if col == 1 and song['artist']:
                     display_value = f"{song['artist']} · {song['title']}"
                 item = QTableWidgetItem(display_value)
+                if col == 0:
+                    item.setTextAlignment(Qt.AlignCenter)
+                    item.setForeground(QColor('#7bd6ff' if song['favorite'] else '#8fa8b9'))
+                    item.setToolTip('Toggle favorite')
                 if col == 1:
                     item.setToolTip(display_value)
                 item.setData(Qt.UserRole, song['project_path'])
@@ -2447,6 +2452,12 @@ class Window(QMainWindow):
             self.status_message('Project path copied.')
         elif selected == remove_action:
             self.remove_library_song()
+
+    def library_cell_clicked(self, row, column):
+        # Click the left-hand outline star to toggle a favorite immediately.
+        if column == 0:
+            self.library_table.selectRow(row)
+            self.toggle_library_favorite()
 
     def selected_library_path(self):
         row = self.library_table.currentRow()
