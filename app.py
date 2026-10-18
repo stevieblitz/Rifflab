@@ -2149,6 +2149,7 @@ class Window(QMainWindow):
         self.song_tabs.setParent(self.menuBar())
         self.song_tabs.setMinimumWidth(0)
         self.song_tabs.setMaximumWidth(16777215)
+        self.song_tabs.setStyleSheet('QTabBar#songTabs::tab{min-width:110px;max-width:220px;padding:3px 19px 3px 9px;margin-right:2px;background:#182b3d;color:#c9dfeb;border:0;border-bottom:2px solid #38576c;}QTabBar#songTabs::tab:selected{background:#204962;color:white;border-bottom:2px solid #7bd6ff;}')
         self.song_tabs.show()
         self.layout_menu_song_tabs()
 
@@ -2179,15 +2180,7 @@ class Window(QMainWindow):
         self.menu_title_label.setAlignment(Qt.AlignCenter)
         self.menu_title_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         bar.installEventFilter(self)
-        if not hasattr(self, 'song_tabs'):
-            QTimer.singleShot(0, self.attach_song_tabs_to_menu)
-            return
-        self.song_tabs.setParent(bar)
-        self.song_tabs.setMinimumWidth(0)
-        self.song_tabs.setMaximumWidth(16777215)
-        self.song_tabs.setStyleSheet('QTabBar#songTabs::tab{min-width:110px;max-width:220px;padding:3px 19px 3px 9px;margin-right:2px;background:#182b3d;color:#c9dfeb;border:0;border-bottom:2px solid #38576c;}QTabBar#songTabs::tab:selected{background:#204962;color:white;border-bottom:2px solid #7bd6ff;}')
-        self.song_tabs.show()
-        QTimer.singleShot(0, self.layout_menu_song_tabs)
+        QTimer.singleShot(0, self.attach_song_tabs_to_menu)
         file_menu = bar.addMenu('&File')
         file_menu.addAction('Open Project…', self.open_project)
         file_menu.addAction('Save Project', self.save_project)
