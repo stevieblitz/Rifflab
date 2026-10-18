@@ -622,6 +622,7 @@ class Signals(QObject):
     analysis_done = Signal()
     speed_ready = Signal(object, float, int)
     downloaded_metadata = Signal(object)
+    playlist_finished = Signal(object)
     waveform_ready = Signal(str, object)
 
 
@@ -656,6 +657,8 @@ class Window(QMainWindow):
         self.signals.analysis_done.connect(self.on_analysis_done)
         self.signals.speed_ready.connect(self.on_speed_ready)
         self.signals.downloaded_metadata.connect(self.on_downloaded_metadata)
+        self.signals.playlist_finished.connect(self.on_playlist_finished)
+        self.playlist_cancel = threading.Event()
         self.signals.waveform_ready.connect(self.on_waveform_ready)
         self._waveform_source = None
         self.song_metadata = {}
@@ -1013,6 +1016,21 @@ class Window(QMainWindow):
         self.url.returnPressed.connect(self.download_url)
         url_row.addWidget(self.load_url)
         import_layout.addLayout(url_row)
+        playlist_row = QHBoxLayout()
+        playlist_row.setSpacing(5)
+        self.playlist_download = QPushButton('Download Playlist')
+        self.playlist_download.setIcon(qta.icon('fa5s.list', color='#7bd6ff'))
+        self.playlist_download.setToolTip('Download every available audio track from a YouTube playlist; stems are generated later per song.')
+        self.playlist_download.clicked.connect(self.download_playlist)
+        playlist_row.addWidget(self.playlist_download)
+        self.playlist_stop = QPushButton('Stop')
+        self.playlist_stop.setIcon(qta.icon('fa5s.stop', color='#7bd6ff'))
+        self.playlist_stop.setToolTip('Stop playlist downloads after the current item')
+        self.playlist_stop.setEnabled(False)
+        self.playlist_stop.clicked.connect(self.playlist_cancel.set)
+        playlist_row.addWidget(self.playlist_stop)
+        playlist_row.addStretch()
+        import_layout.addLayout(playlist_row)
         local_row = QHBoxLayout()
         self.load_file = QPushButton('Open Audio')
         self.load_file.clicked.connect(self.open_file)
@@ -2930,6 +2948,8 @@ class Window(QMainWindow):
             self.split_local.setEnabled(self.source_audio is not None)
             self.analyze_local.setEnabled(self.source_audio is not None)
             self.reanalyze_button.setEnabled(True)
+            if hasattr(self, 'playlist_download'):
+                self.playlist_download.setEnabled(True)
 
     def on_error(self, message):
         self._generating_stems = False
@@ -3032,6 +3052,99 @@ class Window(QMainWindow):
             self.url.setFocus()
         else:
             self.status_message('Ctrl+V: copy a local audio file or YouTube link.')
+
+    def download_playlist(self):
+        url = self.url.text().strip()
+        if not valid_youtube_url(url) or 'list=' not in url:
+            self.on_error('Paste a valid YouTube playlist URL with a list= ID.')
+            return
+        if self.processing or self.analysis_running:
+            self.status_message('Wait for the current import or analysis.')
+            return
+        answer = QMessageBox.question(
+            self, 'Download entire playlist?',
+            'Download available playlist audio into RiffLab/downloads?\n'
+            'This can take a long time and use significant disk space.\n'
+            'Stem separation and analysis run later, one song at a time.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        self.playlist_cancel.clear()
+        self.set_busy(True)
+        self.playlist_stop.setEnabled(True)
+        self.playlist_download.setEnabled(False)
+        threading.Thread(target=self._download_playlist, args=(url,), daemon=True).start()
+
+    def _download_playlist(self, url):
+        completed = 0
+        failed = 0
+        total = 0
+        cancelled = False
+        try:
+            from yt_dlp import YoutubeDL
+            output = ROOT / 'downloads'
+            output.mkdir(exist_ok=True)
+            common = {
+                'quiet': True, 'no_warnings': False,
+                'ignoreerrors': True, 'noplaylist': False,
+                'js_runtimes': {'deno': {}},
+                'remote_components': ['ejs:github'],
+            }
+            self.signals.stage.emit('Reading playlist…')
+            with YoutubeDL({**common, 'extract_flat': 'in_playlist', 'skip_download': True}) as reader:
+                playlist = reader.extract_info(url, download=False)
+            if not playlist or 'entries' not in playlist:
+                raise RuntimeError('The URL did not return a playlist.')
+            entries = [item for item in playlist['entries'] if item and item.get('id')]
+            total = len(entries)
+            if not total:
+                raise RuntimeError('No downloadable videos found in this playlist.')
+            opts = {
+                **common,
+                'format': 'bestaudio/best', 'noplaylist': True,
+                'restrictfilenames': True,
+                'outtmpl': str(output / '%(id)s.%(ext)s'),
+                'download_archive': str(output / 'playlist-download-archive.txt'),
+                'ffmpeg_location': ffmpeg_path(),
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
+            }
+            with YoutubeDL(opts) as downloader:
+                for position, entry in enumerate(entries, 1):
+                    if self.playlist_cancel.is_set():
+                        cancelled = True
+                        break
+                    video_url = entry.get('url') or ('https://www.youtube.com/watch?v=' + entry['id'])
+                    if not str(video_url).startswith('https://'):
+                        video_url = 'https://www.youtube.com/watch?v=' + entry['id']
+                    name = str(entry.get('title') or entry['id'])[:65]
+                    self.signals.stage.emit(f'Playlist {position}/{total}: {name}')
+                    try:
+                        result = downloader.download([video_url])
+                        if result == 0:
+                            completed += 1
+                        else:
+                            failed += 1
+                    except Exception:
+                        failed += 1
+                        self._log_exception()
+        except Exception as exc:
+            self.signals.error.emit(f'Playlist download failed: {exc}')
+            self._log_exception()
+        finally:
+            self.signals.playlist_finished.emit({
+                'completed': completed, 'failed': failed, 'total': total,
+                'cancelled': cancelled,
+            })
+
+    def on_playlist_finished(self, result):
+        self.playlist_stop.setEnabled(False)
+        self.playlist_download.setEnabled(True)
+        self.set_busy(False)
+        suffix = ' (stopped)' if result['cancelled'] else ''
+        self.status_message(
+            f"Playlist: {result['completed']} saved/skipped, "
+            f"{result['failed']} failed of {result['total']} entries{suffix}. "
+            "Files are in downloads; open a track to analyze.")
 
     def download_url(self):
         url = self.url.text().strip()
