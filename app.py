@@ -3140,6 +3140,1852 @@ class Window(QMainWindow):
                 raise RuntimeError('The URL did not return a playlist.')
             entries = [item for item in playlist['entries'] if item and item.get('id')]
             total = len(entries)
+            # Keep display metadata separate from stable downloaded filenames.
+            manifest_file = output / 'playlist-titles.json'
+            try:
+                manifest = json.loads(manifest_file.read_text(encoding='utf-8')) if manifest_file.is_file() else {}
+            except (OSError, ValueError):
+                manifest = {}
+            for entry in entries:
+                video_id = str(entry.get('id') or '')
+                title = str(entry.get('title') or video_id).strip()
+                artist = str(entry.get('artist') or entry.get('creator') or '').strip()
+                if not artist:
+                    match = re.match(r'^(.+?)\s+[-–—]\s+(.+)
+                raise RuntimeError('No downloadable videos found in this playlist.')
+            opts = {
+                **common,
+                'format': 'bestaudio/best', 'noplaylist': True,
+                'restrictfilenames': True,
+                'outtmpl': str(output / '%(id)s.%(ext)s'),
+                'download_archive': str(output / 'playlist-download-archive.txt'),
+                'ffmpeg_location': ffmpeg_path(),
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
+            }
+            with YoutubeDL(opts) as downloader:
+                for position, entry in enumerate(entries, 1):
+                    if self.playlist_cancel.is_set():
+                        cancelled = True
+                        break
+                    video_url = entry.get('url') or ('https://www.youtube.com/watch?v=' + entry['id'])
+                    if not str(video_url).startswith('https://'):
+                        video_url = 'https://www.youtube.com/watch?v=' + entry['id']
+                    name = str(entry.get('title') or entry['id'])[:65]
+                    self.signals.stage.emit(f'Playlist {position}/{total}: {name}')
+                    try:
+                        result = downloader.download([video_url])
+                        if result == 0:
+                            completed += 1
+                        else:
+                            failed += 1
+                    except Exception:
+                        failed += 1
+                        self._log_exception()
+        except Exception as exc:
+            self.signals.error.emit(f'Playlist download failed: {exc}')
+            self._log_exception()
+        finally:
+            self.signals.playlist_finished.emit({
+                'completed': completed, 'failed': failed, 'total': total,
+                'cancelled': cancelled,
+            })
+
+    def refresh_download_queue(self):
+        if not hasattr(self, 'download_queue'):
+            return
+        current = self.download_queue.currentItem()
+        selected = current.data(Qt.UserRole) if current else None
+        self.download_queue.clear()
+        folder = ROOT / 'downloads'
+        files = sorted(folder.glob('*.wav'), key=lambda path: path.stat().st_mtime, reverse=True) if folder.is_dir() else []
+        try:
+            manifest = json.loads((folder / 'playlist-titles.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            manifest = {}
+        for path in files:
+            item = QListWidgetItem(manifest.get(path.stem, path.stem.replace('_', ' ')))
+            item.setToolTip(str(path))
+            item.setData(Qt.UserRole, str(path))
+            self.download_queue.addItem(item)
+            if selected == str(path):
+                self.download_queue.setCurrentItem(item)
+        self.download_queue_open.setEnabled(bool(files))
+        self.download_queue_analyze.setEnabled(bool(files))
+
+    def open_download_queue_item(self):
+        item = self.download_queue.currentItem()
+        if item is None or self.processing or self.analysis_running:
+            return
+        path = Path(item.data(Qt.UserRole))
+        if not path.is_file():
+            self.refresh_download_queue()
+            return
+        self.tabs.setCurrentIndex(0)
+        self.load_local(path)
+
+    def analyze_download_queue_item(self):
+        item = self.download_queue.currentItem()
+        if item is None or self.processing or self.analysis_running:
+            return
+        path = Path(item.data(Qt.UserRole))
+        if not path.is_file():
+            self.refresh_download_queue()
+            return
+        if not self._confirm_unsaved_changes():
+            return
+        self.tabs.setCurrentIndex(0)
+        self.load_local(path, check_unsaved=False)
+        # load_local starts automatic analysis, as with any local import.
+
+    def on_playlist_finished(self, result):
+        self.playlist_stop.setEnabled(False)
+        self.playlist_download.setEnabled(True)
+        self.refresh_download_queue()
+        self.set_busy(False)
+        suffix = ' (stopped)' if result['cancelled'] else ''
+        self.status_message(
+            f"Playlist: {result['completed']} saved/skipped, "
+            f"{result['failed']} failed of {result['total']} entries{suffix}. "
+            "Files are in downloads; open a track to analyze.")
+
+    def download_url(self):
+        url = self.url.text().strip()
+        if not valid_youtube_url(url):
+            self.on_error('Please paste a valid HTTPS YouTube URL.')
+            return
+        if self.processing:
+            return
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Question)
+        confirm.setWindowTitle('Download audio?')
+        confirm.setText('Download and split audio from this YouTube link?')
+        confirm.setInformativeText(url)
+        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm.setDefaultButton(QMessageBox.Yes)
+        if confirm.exec() != QMessageBox.Yes:
+            return
+        self.set_busy(True)
+        threading.Thread(target=self._download, args=(url,), daemon=True).start()
+
+    def _download(self, url):
+        try:
+            self.signals.stage.emit('1/3 · Downloading audio…')
+            output = ROOT / 'downloads'
+            output.mkdir(exist_ok=True)
+            # Print the actual destination, never guess by modification time.
+            from yt_dlp import YoutubeDL
+            opts = {
+                'format': 'bestaudio/best', 'noplaylist': True,
+                'restrictfilenames': True, 'outtmpl': str(output / '%(id)s.%(ext)s'),
+                'ffmpeg_location': ffmpeg_path(),
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
+                'quiet': True,
+                'no_warnings': False,
+                'js_runtimes': {'deno': {}},
+                'remote_components': ['ejs:github'],
+            }
+            # yt-dlp/FFmpeg subprocesses must see the bundled tools on PATH,
+            # even when the app was launched from Explorer without a shell.
+            bundled_ffmpeg = ffmpeg_path()
+            if bundled_ffmpeg:
+                opts['ffmpeg_location'] = bundled_ffmpeg
+                os.environ['PATH'] = bundled_ffmpeg + os.pathsep + os.environ.get('PATH', '')
+            with YoutubeDL(opts) as downloader:
+                info = downloader.extract_info(url, download=True)
+                video_id = re.sub(r'[^A-Za-z0-9_-]', '_', info['id'])
+                raw_title = str(info.get('track') or info.get('title') or '').strip()
+                artist = str(info.get('artist') or info.get('creator') or '').strip()
+                album = str(info.get('album') or '').strip()
+                if not artist:
+                    match = re.match(r'^(.+?)\s+[-–—]\s+(.+)$', raw_title)
+                    if match:
+                        artist, raw_title = match.group(1).strip(), match.group(2).strip()
+                # A channel/uploader is not necessarily the recording artist.
+                # Leave Artist editable rather than silently claiming the uploader is the artist.
+                self.signals.downloaded_metadata.emit({
+                    'title': raw_title, 'artist': artist, 'album': album,
+                    'tuning': 'Unknown', 'musical_key': ''})
+            wav = output / f'{video_id}.wav'
+            if not wav.is_file():
+                raise RuntimeError('Download finished but no WAV file was found.')
+            self.signals.stage.emit('2/3 · Separating stems…')
+            self._split(wav)
+        except Exception as exc:
+            self.signals.error.emit(f'{exc}\n\nTechnical details saved in the RiffLab log.')
+            self._log_exception()
+
+    def _log_exception(self):
+        with (ROOT / 'rifflab-errors.log').open('a', encoding='utf-8') as logfile:
+            logfile.write(traceback.format_exc() + '\n')
+
+    def on_downloaded_metadata(self, metadata):
+        self.song_metadata = dict(metadata)
+        self.update_now_playing()
+
+    def load_local(self, path, check_unsaved=True):
+        """Play immediately and automatically analyze a newly imported audio file."""
+        if self.processing or self.analysis_running:
+            return
+        if check_unsaved and not self._confirm_unsaved_changes():
+            return
+        self.stop_live()
+        self.source_audio = Path(path)
+        self.load_waveform(path)
+        self.waveform.set_duration(0)
+        # YouTube tags are supplied by yt-dlp; local files use embedded audio tags.
+        downloaded = self.song_metadata if self.processing and self.url.text().strip() else None
+        self.song_metadata = dict(downloaded or infer_song_metadata(path))
+        self.update_now_playing()
+        self.project_file = None
+        self.stems = {}
+        self.folder = None
+        self.refresh_stems_led()
+        self.chord_data = []
+        self.display_chords = []
+        self.display_times = []
+        self.beat_times = []
+        self.section_overrides = {}
+        self.player.stop()
+        self.clear_loop()
+        self.speed_generation += 1
+        self.speed_ratio = 1.0
+        self.detected_bpm = 130.0
+        self.grid_bpm.blockSignals(True)
+        self.grid_bpm.setValue(130)
+        self.grid_bpm.blockSignals(False)
+        self.player.setPlaybackRate(1.0)
+        self.player.setSource(QUrl.fromLocalFile(str(path)))
+        self.status_message(f'Opened: {path.name} — ready to play.')
+        self.chord.setText('—')
+        self.render_grid()
+        for cb in self.checks.values():
+            cb.setEnabled(False)
+        for cb in self.solos.values():
+            cb.setEnabled(False)
+        for slider in self.volumes.values():
+            slider.setEnabled(False)
+        self.export.setEnabled(False)
+        self.split_local.setEnabled(True)
+        self.analyze_local.setEnabled(True)
+        # Always separate first. Never analyze full-mix transients or vocals.
+        self.set_stage('1/3 · Preparing stem separation…')
+        self.start_split(self.source_audio)
+
+    def update_analysis_action(self):
+        """One stable toolbar action for Analyze / Stop / stopping."""
+        if not hasattr(self, 'reanalyze_button'):
+            return
+        if self.analysis_running:
+            stopping = self.analysis_cancel.is_set()
+            self.reanalyze_button.setText('Stopping…' if stopping else 'Stop Analyze')
+            self.reanalyze_button.setIcon(qta.icon('fa5s.stop-circle', color='#ffbdab'))
+            self.reanalyze_button.setEnabled(not stopping)
+            self.reanalyze_button.setToolTip('Cancel current analysis without closing this song')
+        else:
+            self.reanalyze_button.setText('Re-analyze')
+            self.reanalyze_button.setIcon(qta.icon('fa5s.sync-alt', color='#b6dcf2'))
+            self.reanalyze_button.setEnabled(True)
+            self.reanalyze_button.setToolTip('Analyze the current song using the chosen accuracy')
+
+    def toggle_analysis_action(self):
+        if self.analysis_running:
+            self.stop_analysis()
+        else:
+            self.reanalyze_current()
+
+    def pause_for_reanalysis(self):
+        """Pause current music before starting analysis; never auto-resume."""
+        if self.live:
+            if self.live.playing:
+                self.live.pause()
+                self.update_live_button()
+        elif self.player.playbackState() == QMediaPlayer.PlayingState:
+            self.player.pause()
+
+    def stop_analysis(self):
+        """Ask the running worker to exit; its completion unlocks the UI."""
+        if not self.analysis_running:
+            return
+        self.analysis_cancel.set()
+        self.status_message('Stopping analysis…')
+        self.cancel_analysis_button.setEnabled(False)
+        self.update_analysis_action()
+        self.chord_loading_label.setText('Stopping analysis…')
+        self.chord_loading_stop.setEnabled(False)
+
+    def _start_analysis_ui(self):
+        self.analysis_cancel = threading.Event()
+        self.analysis_running = True
+        self.cancel_analysis_button.setEnabled(True)
+        self.cancel_analysis_button.hide()
+        self.update_analysis_action()
+        self.chord_loading_stop.setEnabled(True)
+        self.chord_loading_stop.show()
+
+    def _accuracy_key(self):
+        """Stable worker/cache identifier independent of translated UI labels."""
+        return ('fast', 'balanced', 'detailed')[self.accuracy.currentIndex()]
+
+    def reanalyze_current(self):
+        if self.analysis_running:
+            return
+        if not self.stems and self.source_audio is None:
+            self.status_message('Open a song before re-analyzing.')
+            return
+        self.pause_for_reanalysis()
+        self._start_analysis_ui()
+        self.set_chord_loading(True, 'Re-analyzing notes…')
+        self.update_analysis_action()
+        self.analyze_local.setEnabled(False)
+        self.status_message('Re-analyzing audio with ' + self.accuracy.currentText() + ' accuracy…')
+        if self.stems and self.folder:
+            threading.Thread(target=self._reanalyze_stems, daemon=True).start()
+        else:
+            threading.Thread(target=self._analyze_source, args=(self.source_audio, True), daemon=True).start()
+
+    def _reanalyze_stems(self):
+        try:
+            self._analyze_mode(force=True)
+            beats = json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
+            (self.folder / 'beats_drums_v2.json').write_text(json.dumps(beats), encoding='utf-8')
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+        except AnalysisCancelled:
+            pass
+        except Exception as exc:
+            self.signals.error.emit(f'Re-analysis failed: {exc}')
+            self._log_exception()
+        finally:
+            self.signals.analysis_done.emit()
+
+    def analyze_current(self):
+        if self.source_audio is None or self.analysis_running:
+            return
+        self._start_analysis_ui()
+        self.set_chord_loading(True)
+        self.analyze_local.setEnabled(False)
+        self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
+        threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
+
+    def _analyze_source(self, path, force=False):
+        try:
+            cache = ROOT / 'analysis' / (path.stem + '_' + str(path.stat().st_size))
+            cache.mkdir(parents=True, exist_ok=True)
+            beats_file = cache / 'beats.json'
+            bass_mode = self.analysis_mode.currentIndex() == 0
+            chords_file = cache / f"{'bass_notes_v4' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
+            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
+            if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
+            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
+            if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+                self.signals.chords.emit(chords)
+        except AnalysisCancelled:
+            pass
+        except Exception as exc:
+            self.signals.error.emit(f'Analysis failed: {exc}\nDetails: {ROOT / "rifflab-errors.log"}')
+            self._log_exception()
+        finally:
+            self.signals.analysis_done.emit()
+
+    def on_analysis_done(self):
+        was_cancelled = self.analysis_cancel.is_set()
+        self.analysis_running = False
+        self.cancel_analysis_button.hide()
+        self.update_analysis_action()
+        self.set_chord_loading(False)
+        if self.processing:
+            self.set_busy(False)
+            self.status_message('Analysis stopped.' if was_cancelled else 'Import complete — notes and stems ready.')
+        self.analyze_local.setEnabled(self.source_audio is not None)
+        self.reanalyze_button.setEnabled(True)
+        if was_cancelled:
+            self.status_message('Analysis stopped. Existing audio remains available.')
+
+    def reset_bpm(self):
+        # Use the actual detected BPM, rather than a fixed 130 BPM default.
+        original = max(self.grid_bpm.minimum(),
+                       min(self.grid_bpm.maximum(), round(self.detected_bpm)))
+        if self.grid_bpm.value() != original:
+            self.grid_bpm.setValue(original)  # triggers bpm_changed once
+        else:
+            self.bpm_changed(original)
+        self.status_message(f'BPM reset to {original} (original tempo).')
+
+    def bpm_changed(self, bpm):
+        """BPM changes the actual audio rate, never just the grid."""
+        self.speed_ratio = max(0.5, min(1.5, float(bpm) / max(1.0, self.detected_bpm)))
+        if self.live and self.stems:
+            self.speed_generation += 1
+            generation = self.speed_generation
+            self.status_message(f'Preparing pitch-preserving playback at {self.speed_ratio:.0%}…')
+            threading.Thread(target=self._prepare_speed, args=(self.speed_ratio, generation), daemon=True).start()
+        else:
+            self.player.setPlaybackRate(self.speed_ratio)
+            # Qt pitch compensation availability depends on the multimedia backend.
+            if hasattr(self.player, 'setPitchCompensation'):
+                try:
+                    self.player.setPitchCompensation(True)
+                except Exception:
+                    pass
+            self.status_message(f'Playback speed: {self.speed_ratio:.0%}.')
+        self.render_grid()
+
+    def _prepare_speed(self, ratio, generation):
+        try:
+            if abs(ratio - 1.0) < 0.0001:
+                paths = dict(self.stems)
+            else:
+                exe = shutil.which('ffmpeg')
+                if not exe:
+                    raise RuntimeError('FFmpeg is required for pitch-preserving speed control.')
+                folder = self.folder / 'tempo_cache' / f'{ratio:.5f}'
+                folder.mkdir(parents=True, exist_ok=True)
+                paths = {}
+                for name, original in self.stems.items():
+                    target = folder / f'{name}.wav'
+                    if not target.exists() or target.stat().st_size < 1024:
+                        temp = folder / f'{name}.tmp.wav'
+                        command([exe, '-hide_banner', '-loglevel', 'error', '-y', '-i', str(original),
+                                 '-af', f'atempo={ratio:.6f}', '-c:a', 'pcm_f32le', str(temp)])
+                        temp.replace(target)
+                    paths[name] = target
+            self.signals.speed_ready.emit(paths, ratio, generation)
+        except Exception as exc:
+            self.signals.status.emit(f'Playback speed unavailable: {exc}')
+            self._log_exception()
+
+    def on_speed_ready(self, paths, ratio, generation):
+        if generation != self.speed_generation or not self.stems or abs(ratio-self.speed_ratio)>0.0001:
+            return
+        old = self.live
+        position = old.position_ms if old else 0
+        playing = old.playing if old else False
+        try:
+            replacement = LiveStemPlayer(paths, time_scale=1.0/ratio)
+            replacement.set_levels(self.get_levels())
+            replacement.seek(position)
+            self.live = replacement
+            self._sync_loop()
+            self._duration = replacement.duration_ms
+            self.timeline.setRange(0, self._duration)
+            self.waveform.set_duration(self._duration)
+            if old:
+                old.close()
+            if playing:
+                replacement.play()
+            self.update_live_button()
+            self.on_position(position)
+            self.status_message(f'Playback speed: {ratio:.0%} (pitch preserved).')
+        except Exception as exc:
+            self.live = old
+            self.status_message(f'Cannot switch playback speed: {exc}')
+
+    def on_beats(self, data):
+        if self.analysis_cancel.is_set():
+            return
+        self.beat_times = [float(t) for t in data.get('beats', [])]
+        bpm = round(float(data.get('bpm', 130)))
+        self.grid_bpm.blockSignals(True)
+        self.grid_bpm.setValue(max(40, min(250, bpm)))
+        self.grid_bpm.blockSignals(False)
+        self.detected_bpm = float(data.get('bpm', 130)) or 130.0
+        self.speed_ratio = 1.0
+        self.player.setPlaybackRate(1.0)
+        self.render_grid()
+        self.grid_notice.setText(f'Auto BPM: {bpm}. Playback speed: 100%.')
+        self.grid_bpm.setToolTip(self.grid_notice.text())
+        if self.project_file:
+            try:
+                with sqlite3.connect(self.library_db) as db:
+                    db.execute('UPDATE songs SET original_bpm=?, practice_bpm=? WHERE project_path=?',
+                               (self.detected_bpm, float(self.grid_bpm.value()), str(Path(self.project_file).resolve())))
+            except sqlite3.Error:
+                pass
+
+    def refresh_stems_led(self):
+        if not hasattr(self, 'stems_led'):
+            return
+        ready = all(name in self.stems and Path(self.stems[name]).is_file() for name in STEMS)
+        creating = bool(getattr(self, '_generating_stems', False) and self.processing)
+        label, color = (('● STEMS READY', '#6dd2aa') if ready else
+                        ('● CREATING', '#efb760') if creating else
+                        ('● STEMS OFF', '#92a1ad'))
+        self.stems_led.setText(label)
+        self.stems_led.setStyleSheet(f'color:{color};font-size:11px;font-weight:700;')
+        self.mixer_overlay.setVisible(not ready)
+        if not ready:
+            self.mixer_overlay.raise_()
+        self.generate_stems_button.setEnabled(
+            not self.processing and self.source_audio is not None
+            and Path(self.source_audio).is_file())
+        self.generate_stems_button.setText('Generating Stems…' if creating else 'Generate Stems')
+
+    def generate_stems_clicked(self):
+        if self.processing or self.analysis_running:
+            self.status_message('Wait for the current import or analysis to finish.')
+            return
+        if self.source_audio and Path(self.source_audio).is_file():
+            self.start_split(Path(self.source_audio))
+        else:
+            self.status_message('Open an audio file to create stems.')
+
+    def start_split(self, path):
+        if self.processing:
+            return
+        self._generating_stems = True
+        self.set_busy(True)
+        threading.Thread(target=self._split_safe, args=(path,), daemon=True).start()
+
+    def _split_safe(self, path):
+        try:
+            self._split(path)
+        except Exception as exc:
+            self.signals.error.emit(f'{exc}\n\nTechnical details saved in the RiffLab log.')
+            self._log_exception()
+
+    def _split(self, path):
+        self.signals.stage.emit('2/3 · Separating 4 stems (Demucs)…')
+        output = ROOT / 'separated'
+        output.mkdir(exist_ok=True)
+        worker_command('split', str(path), str(output))
+        folder = output / 'htdemucs' / path.stem
+        if not all((folder / f'{stem}.wav').is_file() for stem in STEMS):
+            raise RuntimeError('Demucs did not produce all four WAV stems.')
+        self.signals.separated.emit(str(folder))
+
+    def on_separated(self, folder):
+        self._generating_stems = False
+        self.project_file = None
+        self.folder = Path(folder)
+        self.source_audio = None
+        self.beat_times = []
+        self.section_overrides = {}
+        self.stems = {stem: self.folder / f'{stem}.wav' for stem in STEMS}
+        self.refresh_stems_led()
+        self.load_waveform(self.stems)
+        self.chord_data = []
+        self.chord_times = []
+        self.display_chords = []
+        self.display_times = []
+        self.chord.setText('…')
+        for cb in self.checks.values():
+            cb.setEnabled(True)
+        for cb in self.solos.values():
+            cb.setEnabled(True)
+        self.export.setEnabled(True)
+        for slider in self.volumes.values():
+            slider.setEnabled(True)
+        self.set_stage('3/3 · Analyzing notes and beats…')
+        self.set_chord_loading(True, 'Analyzing stems, notes and beats…')
+        self.split_local.setEnabled(False)
+        self.analyze_local.setEnabled(False)
+        self.clear_loop()
+        self.speed_generation += 1
+        self.speed_ratio = 1.0
+        self.detected_bpm = 130.0
+        self.grid_bpm.blockSignals(True)
+        self.grid_bpm.setValue(130)
+        self.grid_bpm.blockSignals(False)
+        self.status_message('Stems ready — Bass Mode analyzes the isolated bass stem only.')
+        self.start_live()
+        self._start_analysis_ui()
+        threading.Thread(target=self._analyze, daemon=True).start()
+
+    def update_grid_mode_buttons(self, _index=None):
+        mode = self.analysis_mode.currentIndex()
+        for index, button in enumerate((self.bass_mode_button, self.chord_mode_button)):
+            button.blockSignals(True)
+            button.setChecked(index == mode)
+            button.blockSignals(False)
+
+    def switch_analysis_mode(self, _index=None):
+        if self.analysis_running:
+            self.status_message('Stop the current analysis before changing modes.')
+            return
+        if not self.stems and not self.source_audio:
+            self.rebuild_chords()
+            return
+        self._start_analysis_ui()
+        self.set_chord_loading(True, 'Analyzing selected mode…')
+        if self.stems and self.folder:
+            threading.Thread(target=self._switch_analysis_mode_worker, daemon=True).start()
+        elif self.source_audio and self.source_audio.is_file():
+            self.set_chord_loading(False)
+            self.analysis_running = False
+            self.status_message('Generate stems before analyzing notes.')
+            self.start_split(self.source_audio)
+
+    def _switch_analysis_mode_worker(self):
+        try:
+            self._analyze_mode()
+        finally:
+            self.signals.analysis_done.emit()
+
+    def _analyze_mode(self, force=False):
+        try:
+            if self.analysis_mode.currentIndex() == 0:
+                cache = self.folder / f'bass_stem_only_v1_{self._accuracy_key()}.json'
+                task, paths = 'bass_notes', [str(self.stems['bass']), self._accuracy_key()]
+            else:
+                cache = self.folder / f'chords_instruments_v6_patterns_{self._accuracy_key()}.json'
+                task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self._accuracy_key()]
+            if cache.exists() and not force:
+                result = json.loads(cache.read_text(encoding='utf-8'))
+            else:
+                result = json.loads(worker_command(task, *paths, cancel_event=self.analysis_cancel))
+                cache.write_text(json.dumps(result), encoding='utf-8')
+            if not self.analysis_cancel.is_set():
+                self.signals.chords.emit(result)
+        except AnalysisCancelled:
+            pass
+        except Exception as exc:
+            self.signals.status.emit(f'Analysis failed: {exc}')
+            self._log_exception()
+
+    def _analyze(self):
+        try:
+            self.signals.stage.emit('3/3 · Analyzing notes and beats…')
+            self._analyze_mode()
+            # Drums are used for beat detection, not for chord recognition.
+            beats_cache = self.folder / 'beats_drums_v2.json'
+            beats = json.loads(beats_cache.read_text(encoding='utf-8')) if beats_cache.exists() else json.loads(worker_command('beats', str(self.stems['drums']), cancel_event=self.analysis_cancel))
+            if not beats_cache.exists():
+                beats_cache.write_text(json.dumps(beats), encoding='utf-8')
+            if not self.analysis_cancel.is_set():
+                self.signals.beats.emit(beats)
+        except AnalysisCancelled:
+            pass
+        except Exception as exc:
+            self.signals.error.emit(f'Chord analysis failed: {exc}')
+            self._log_exception()
+        finally:
+            self.signals.analysis_done.emit()
+
+    def auto_index_analyzed_song(self):
+        """Add analyzed songs as saved projects, without opening a save dialog."""
+        if self.project_file or (not self.stems and not self.source_audio):
+            return
+        song_name = self.folder.name if self.folder else self.source_audio.stem
+        safe_name = re.sub(r'[^a-zA-Z0-9._ -]+', '_', song_name).strip(' .') or 'Untitled'
+        folder = ROOT / 'projects'
+        folder.mkdir(parents=True, exist_ok=True)
+        project_path = folder / f'{safe_name}.riff'
+        source_path = str(self.source_audio.resolve()) if self.source_audio else None
+        stem_path = str(self.folder.resolve()) if self.stems and self.folder else None
+        if project_path.exists():
+            try:
+                previous = json.loads(project_path.read_text(encoding='utf-8'))
+                if previous.get('source_audio') != source_path or previous.get('stem_folder') != stem_path:
+                    # Avoid overwriting another song with the same title.
+                    import hashlib
+                    suffix = hashlib.sha256(str(stem_path or source_path).encode()).hexdigest()[:8]
+                    project_path = folder / f'{safe_name}-{suffix}.riff'
+            except (OSError, ValueError):
+                return
+        data = {
+            'format': 'RiffLab Project', 'version': 1,
+            'metadata': dict(self.song_metadata),
+            'source_audio': source_path, 'stem_folder': stem_path,
+            'youtube_url': self.url.text().strip(), 'position_ms': 0,
+            'in_ms': None, 'out_ms': None, 'loop': False,
+            'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
+            'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
+            'stability': self.sensitivity.value(), 'transpose': self.transpose.value(),
+            'zoom': self.grid_zoom.value(), 'row_height': self.grid_row_height.value(), 'lookahead_ms': self.chord_lookahead.value(),
+            'auto_scroll': self.follow.isChecked(),
+            'levels': {name: self.volumes[name].value() for name in STEMS},
+            'enabled': {name: self.checks[name].isChecked() for name in STEMS},
+            'solo': {name: self.solos[name].isChecked() for name in STEMS},
+            'chord_data': self.chord_data, 'beat_times': self.beat_times,
+        }
+        try:
+            temp = project_path.with_suffix('.riff.tmp')
+            temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.replace(project_path)
+            self.project_file = str(project_path)
+            self.index_library_project(project_path, data)
+            self.remember_project(project_path)
+        except OSError as exc:
+            self.status_message(f'Could not add song to Library: {exc}')
+
+    def on_chords(self, chords):
+        self.set_chord_loading(False)
+        if self.analysis_cancel.is_set():
+            return
+        self.chord_data = chords
+        self.chord_times = [float(item[0]) for item in chords]
+        self.rebuild_chords()
+        self.auto_index_analyzed_song()
+        self.status_message('Bass notes ready (estimates).' if self.analysis_mode.currentIndex() == 0 else 'Chord grid ready. Chord changes are estimates.')
+
+    def connect_export_mixer(self):
+        for stem in STEMS:
+            main_mute = self.checks[stem]
+            export_mute = self.export_checks[stem]
+            self.export_solos[stem].toggled.connect(
+                lambda checked, name=stem: self.solos[name].setChecked(checked))
+            self.solos[stem].toggled.connect(
+                lambda _checked, name=stem: self.sync_export_mixer(name))
+            main_volume = self.volumes[stem]
+            export_volume = self.export_volumes[stem]
+            export_mute.toggled.connect(
+                lambda checked, name=stem: self.checks[name].setChecked(checked))
+            export_volume.valueChanged.connect(
+                lambda value, name=stem: self.volumes[name].setValue(value))
+            main_mute.toggled.connect(
+                lambda checked, name=stem: self.sync_export_mixer(name))
+            main_volume.valueChanged.connect(
+                lambda _value, name=stem: self.sync_export_mixer(name))
+            self.sync_export_mixer(stem)
+
+    def sync_export_mixer(self, stem):
+        if not hasattr(self, 'export_checks'):
+            return
+        main_mute = self.checks[stem]
+        main_volume = self.volumes[stem]
+        export_mute = self.export_checks[stem]
+        export_volume = self.export_volumes[stem]
+        export_mute.blockSignals(True)
+        export_volume.blockSignals(True)
+        export_mute.setChecked(main_mute.isChecked())
+        export_mute.setEnabled(main_mute.isEnabled())
+        export_solo = self.export_solos[stem]
+        export_solo.blockSignals(True)
+        export_solo.setChecked(self.solos[stem].isChecked())
+        export_solo.setEnabled(self.solos[stem].isEnabled())
+        export_solo.blockSignals(False)
+        export_volume.setValue(main_volume.value())
+        export_volume.setEnabled(main_volume.isEnabled())
+        export_mute.blockSignals(False)
+        export_volume.blockSignals(False)
+        enabled = main_mute.isChecked()
+        export_mute.setAccessibleName(f'Mute {stem}' if enabled else f'Unmute {stem}')
+        self.export_volume_labels[stem].setText(f'{main_volume.value()}%')
+
+    def refresh_solo_visuals(self):
+        """Dim non-solo channels visually without disabling Solo switching."""
+        solo_stem = next((name for name in STEMS if self.solos[name].isChecked()), None)
+        for stem in STEMS:
+            dimmed = solo_stem is not None and stem != solo_stem
+            for widget in (self.stem_names[stem], self.stem_icons[stem],
+                           self.export_stem_icons[stem], self.volume_labels[stem],
+                           self.volumes[stem], self.checks[stem],
+                           self.export_stem_names[stem],
+                           self.export_volume_labels[stem],
+                           self.export_volumes[stem], self.export_checks[stem]):
+                widget.setProperty('soloDimmed', dimmed)
+                style = widget.style()
+                style.unpolish(widget)
+                style.polish(widget)
+                widget.update()
+            for icon_label in (self.stem_icons[stem], self.export_stem_icons[stem]):
+                icon_label.setEnabled(not dimmed)
+            # Other S buttons must remain fully visible and clickable.
+            self.solos[stem].setToolTip(
+                f'Switch solo to {stem.title()}' if dimmed else f'Solo {stem.title()} (exclusive)')
+            self.export_solos[stem].setToolTip(
+                f'Switch solo to {stem.title()}' if dimmed else f'Solo {stem.title()} (exclusive)')
+
+    def sync_all_export_mixer(self):
+        if hasattr(self, 'export_checks'):
+            for stem in STEMS:
+                self.sync_export_mixer(stem)
+            self.refresh_solo_visuals()
+
+    def stem_toggled(self, stem, checked):
+        # M buttons use checked=audible. Muting a soloed channel cancels solo.
+        if not checked and self.solos[stem].isChecked():
+            solo = self.solos[stem]
+            solo.blockSignals(True)
+            solo.setChecked(False)
+            solo.blockSignals(False)
+        self.checks[stem].setAccessibleName(
+            f'Unmute {stem}' if not checked else f'Mute {stem}')
+        self.sync_all_export_mixer()
+        self.apply_mixer_levels()
+
+    def apply_mixer_levels(self):
+        """Single realtime path for M, S and volume controls."""
+        levels = self.get_levels()
+        if self.live:
+            self.live.set_levels(levels)
+        else:
+            self.request_mix()
+
+    def reset_mixer(self):
+        # Suppress four individual mix requests; update playback once at the end.
+        for stem in STEMS:
+            slider = self.volumes[stem]
+            button = self.checks[stem]
+            slider.blockSignals(True)
+            button.blockSignals(True)
+            slider.setValue(100)
+            button.setChecked(stem != 'bass')
+            slider.blockSignals(False)
+            button.blockSignals(False)
+            button.setAccessibleName(f'Mute {stem}' if stem != 'bass' else 'Unmute bass')
+        for solo in self.solos.values():
+            solo.blockSignals(True)
+            solo.setChecked(False)
+            solo.blockSignals(False)
+        self.sync_all_export_mixer()
+        self.volume_changed()
+        if not self.live and self.stems:
+            self.request_mix()
+
+    def solo_toggled(self, stem):
+        # Exclusive solo; its own channel is always audible.
+        if self.solos[stem].isChecked():
+            for other, button in self.solos.items():
+                if other != stem:
+                    button.blockSignals(True)
+                    button.setChecked(False)
+                    button.blockSignals(False)
+            mute = self.checks[stem]
+            if not mute.isChecked():
+                mute.blockSignals(True)
+                mute.setChecked(True)
+                mute.blockSignals(False)
+                mute.setAccessibleName(f'Mute {stem}')
+        self.sync_all_export_mixer()
+        self.apply_mixer_levels()
+
+    def get_levels(self):
+        solo_stem = next(
+            (name for name, button in self.solos.items() if button.isChecked()),
+            None)
+        return {
+            stem: (self.volumes[stem].value() / 100.0
+                   if self.checks[stem].isChecked()
+                   and (solo_stem is None or stem == solo_stem)
+                   else 0.0)
+            for stem in STEMS
+        }
+
+    def volume_changed(self, _value=None):
+        for stem, slider in self.volumes.items():
+            self.volume_labels[stem].setText(f'{slider.value()}%')
+        if self.live:
+            self.live.set_levels(self.get_levels())
+        else:
+            self.mix_debounce.start(350)
+
+    def transpose_changed(self, _value=None):
+        """Notation-only transpose: never restart, repitch or remix playback."""
+        self.render_grid()
+        self.on_position(self.live.position_ms if self.live else self.player.position())
+
+    def note_spelling_changed(self, index):
+        self.layout_settings.setValue('note_spelling', index)
+        self.render_grid()
+        self.on_position(self.live.position_ms if self.live else self.player.position())
+
+    def transpose_chord(self, chord):
+        match = re.fullmatch(r'([A-G])([#b]?)(.*)', chord)
+        if not match:
+            return chord
+        root, accidental, suffix = match.groups()
+        offsets = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
+        idx = (offsets[root] + (1 if accidental == '#' else -1 if accidental == 'b' else 0)
+               + self.transpose.value()) % 12
+        names = ('C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B') if self.note_spelling.currentIndex() == 0 else ('C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B')
+        return names[idx] + suffix
+
+    @staticmethod
+    def verify_note_events(events, level, bass_mode):
+        """Remove isolated low-duration pitch glitches without inventing notes.
+
+        Keep the original events untouched for instant A/B comparison.
+        Preserve repeated same-note attacks and fast notes corroborated by
+        neighbouring events; never quantize the performance to a beat grid.
+        """
+        if level <= 0 or len(events) < 3:
+            return list(events)
+        minimum = (0, 0.085, 0.14, 0.22)[min(level, 3)]
+        # Full chords need longer evidence than individual bass attacks.
+        if not bass_mode:
+            minimum *= 1.5
+        result = [events[0]]
+        for i in range(1, len(events) - 1):
+            t, note = events[i]
+            prev_t, prev_note = events[i - 1]
+            next_t, next_note = events[i + 1]
+            duration = next_t - t
+            # An isolated A-B-A excursion is the clearest sign of a glitch.
+            isolated = prev_note == next_note and note != prev_note
+            # Short runs in fast passages can be intentional, especially bass.
+            fast_context = (t - prev_t < 0.24 and next_t - t < 0.24)
+            threshold = minimum * (0.65 if fast_context else 1.0)
+            if isolated and duration < threshold:
+                continue
+            # Strict mode can suppress a very short isolated change even
+            # without an A-B-A pattern, but protects dense bass riffs.
+            if level == 3 and not fast_context and duration < minimum * 0.45 and note != prev_note:
+                continue
+            result.append((t, note))
+        result.append(events[-1])
+        # Collapse identical adjacent pitch labels; retain separate bass
+        # attacks because repeated plucks are musically meaningful.
+        if not bass_mode:
+            compact = []
+            for t, note in result:
+                if not compact or compact[-1][1] != note:
+                    compact.append((t, note))
+            return compact
+        return result
+
+    def rebuild_chords(self, _value=None):
+        seconds = self.sensitivity.value() * 0.1
+        self.sensitivity_label.setText(f'≥{seconds:.1f} s')
+        if not self.chord_data:
+            return
+        # Never expose harmonic chord suffixes in Bass Mode, even for old
+        # projects/caches or results arriving while switching modes.
+        bass_mode = self.analysis_mode.currentIndex() == 0
+        roots_only = self.root_notes_only.isChecked()
+        raw = [(float(t), re.match(r'^[A-G](?:#|b)?', str(c)).group(0)
+                if (bass_mode or roots_only) and re.match(r'^[A-G](?:#|b)?', str(c)) else str(c))
+               for t, c in self.chord_data]
+        guard_level = self.noteguard.currentIndex()
+        raw = self.verify_note_events(raw, guard_level, bass_mode)
+        if bass_mode:
+            # A bass-root timeline has one event per root change, not per pluck.
+            root_changes = []
+            for t, note in raw:
+                if not root_changes or note != root_changes[-1][1]:
+                    root_changes.append((t, note))
+            raw = root_changes
+        # Show a *minimum-duration segment*, not an arbitrary skip of its
+        # starting event. Remove short runs in reverse so A-B-A returns to A.
+        # This is a display-only edit: original AI events stay untouched.
+        output = list(raw)
+        if seconds > 0 and len(output) > 1:
+            for _ in range(3):
+                changed = False
+                filtered = [output[0]]
+                for i in range(1, len(output)):
+                    t, note = output[i]
+                    end = output[i + 1][0] if i + 1 < len(output) else float('inf')
+                    if end - t < seconds and filtered:
+                        changed = True
+                        continue
+                    if note != filtered[-1][1]:
+                        filtered.append((t, note))
+                output = filtered
+                if not changed:
+                    break
+        # In Bass Mode a repeated attack on the current root is not a change.
+        if bass_mode:
+            collapsed = []
+            for t, note in output:
+                if not collapsed or collapsed[-1][1] != note:
+                    collapsed.append((t, note))
+            output = collapsed
+        self.display_chords = output
+        self.refresh_tuning_advice()
+        self.display_times = [t for t, _ in output]
+        self.render_grid()
+        self.on_position(self.live.position_ms if self.live else self.player.position())
+
+    def request_mix(self, _checked=None):
+        if self.live:
+            self.live.set_levels(self.get_levels())
+            return
+        if not self.stems:
+            return
+        if self.mixing:
+            self.pending_mix = True
+            return
+        self.mixing = True
+        self.mix_counter += 1
+        seq = self.mix_counter
+        levels = self.get_levels()
+        transpose = 0  # Grid transpose never changes the playback pitch.
+        pos = self.player.position()
+        playing = self.player.playbackState() == QMediaPlayer.PlayingState
+        self.player.pause()
+        self.status_message('Processing mix…')
+        threading.Thread(target=self._mix, args=(levels, transpose, seq, pos, playing), daemon=True).start()
+
+    def _mix(self, levels, transpose, seq, pos, playing):
+        try:
+            output = ROOT / f'mix_{seq % 2}.wav'
+            mix_to_file(self.stems, levels, transpose, output)
+            self.signals.mixed.emit(str(output), pos, playing)
+        except Exception as exc:
+            self.signals.error.emit(f'Mix failed: {exc}')
+            self._log_exception()
+
+    def on_mixed(self, path, pos, playing):
+        self.mixing = False
+        if self.pending_mix:
+            self.pending_mix = False
+            self.request_mix()
+            return
+        self._seek_after_load = pos
+        self._play_after_load = playing
+        self.player.setSource(QUrl.fromLocalFile(path))
+        self.status_message('Mix ready.')
+
+    def on_media_status(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and self.loop_enabled and not self.live:
+            self.player.setPosition(self.loop_a_ms if self.loop_a_ms is not None else 0)
+            self.player.play()
+        if status == QMediaPlayer.MediaStatus.LoadedMedia and self._seek_after_load is not None:
+            self.player.setPosition(self._seek_after_load)
+            self._seek_after_load = None
+            if self._play_after_load:
+                self.player.play()
+            self._play_after_load = False
+
+    def toggle_play(self):
+        if self.live:
+            try:
+                if self.live.playing:
+                    self.live.pause()
+                else:
+                    self.live.play()
+                self.update_live_button()
+            except Exception as exc:
+                self.status_message(f'Audio output: {exc}')
+            return
+        if not self.player.source().isValid():
+            return
+        if self.player.playbackState() == QMediaPlayer.PlayingState:
+            self.player.pause()
+        else:
+            self.player.play()
+
+    def seek_and_play(self, ms):
+        ms = max(0, int(ms))
+        if self.live:
+            self.live.seek(ms)
+            self.live.play()
+            self.update_live_button()
+            self.on_position(self.live.position_ms)
+        elif self.player.source().isValid():
+            self.player.setPosition(ms)
+            self.player.play()
+            self.on_position(ms)
+
+    def stop_playback(self):
+        if self.live:
+            self.live.pause()
+            self.live.seek(0)
+            self.update_live_button()
+        else:
+            self.player.stop()
+        self.on_position(0)
+
+    def toggle_loop(self, enabled):
+        self.loop_enabled = bool(enabled)
+        self.loop_button.setToolTip('Disable loop' if enabled else 'Enable loop')
+        self._sync_loop()
+
+    def set_loop_point(self, which):
+        ms = self.live.position_ms if self.live else self.player.position()
+        if which == 'a':
+            self.loop_a_ms = ms
+        else:
+            self.loop_b_ms = ms
+        self._sync_loop()
+
+    def move_loop_marker(self, which, ms):
+        if which == 'a':
+            self.loop_a_ms = ms
+        else:
+            self.loop_b_ms = ms
+        self._sync_loop()
+
+    def clear_loop(self):
+        self.loop_a_ms = None
+        self.loop_b_ms = None
+        self._sync_loop()
+
+    def _sync_loop(self):
+        a, b = self.loop_a_ms, self.loop_b_ms
+        if hasattr(self, 'waveform'):
+            self.waveform.set_markers(a, b)
+        valid = a is not None and b is not None and b > a
+        if hasattr(self, 'loop_info'):
+            if valid:
+                self.loop_info.setText(f'In {a/1000:.1f}s  /  Out {b/1000:.1f}s')
+            elif a is not None or b is not None:
+                self.loop_info.setText('Set In marker' if a is None else 'Set Out after In')
+            else:
+                self.loop_info.setText('Whole track')
+        if self.live:
+            self.live.set_loop(self.loop_enabled, a if valid else None, b if valid else None)
+
+    def check_qt_loop(self, ms):
+        if not self.loop_enabled or self.live:
+            return
+        a, b = self.loop_a_ms, self.loop_b_ms
+        if a is not None and b is not None and b > a and ms >= b:
+            self.player.setPosition(a)
+
+    def on_duration(self, duration):
+        self._duration = duration
+        self.timeline.setRange(0, duration)
+        self.waveform.set_duration(duration)
+        if abs(duration - self._last_render_duration) > 1000:
+            self._last_render_duration = duration
+            self.render_grid()
+
+    def refresh_chord_indicator(self, *_):
+        ms = self.live.position_ms if self.live else self.player.position()
+        self.update_chord_indicator(ms)
+
+    def update_chord_indicator(self, ms):
+        if not self.display_chords:
+            self._set_current_chord('—')
+            self.next_chords.setText('NEXT: —')
+            return
+        actual_time = max(0.0, ms / 1000.0)
+        # Lookahead changes ONLY the large current-chord label, not playback,
+        # the beat grid, loop markers, or the underlying chord timestamps.
+        preview_time = actual_time + self.chord_lookahead.value() / 1000.0
+        # Match the note sampled by the visible beat grid, not passing notes.
+        if self.grid_cells and self.display_times:
+            times = [cell[0] for cell in self.grid_cells]
+            cell = bisect.bisect_right(times, preview_time) - 1
+            if cell < 0:
+                self._set_current_chord('—')
+                return
+            cell_time = times[min(cell, len(times) - 1)]
+            note_index = bisect.bisect_right(self.display_times, cell_time) - 1
+            current = (self.transpose_chord(self.display_chords[note_index][1])
+                       if note_index >= 0 else '—')
+            self._set_current_chord(current)
+            return
+        idx = bisect.bisect_right(self.display_times, preview_time) - 1
+        self._set_current_chord(self.transpose_chord(self.display_chords[idx][1])
+                           if idx >= 0 else '—')
+
+    def _note_accent(self, chord):
+        """Consistent pitch colors for the grid and current-note display."""
+        root = str(chord).replace('♯', '#').replace('♭', 'b')
+        root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
+        # Enharmonic spellings share the same pitch-class color.
+        root = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#',
+                'Ab': 'G#', 'Bb': 'A#', 'Cb': 'B', 'Fb': 'E'}.get(root, root)
+        return {
+            'C': '#268ed1', 'C#': '#4286df', 'D': '#ce6385',
+            'D#': '#bd68b6', 'E': '#368fc2', 'F': '#8a70d2',
+            'F#': '#7165c8', 'G': '#a76be4', 'G#': '#bb6ad2',
+            'A': '#30bba8', 'A#': '#dc9556', 'B': '#c89b4e',
+        }.get(root, '#56748b')
+
+    def _set_current_chord(self, name):
+        """Match the current-note glass and horizontal accent to the grid."""
+        self.chord.setText(name)
+        accent = self._note_accent(name)
+        # Translucent blue glass: crisp top accent, no glow or neon shadow.
+        self.chord.setStyleSheet(
+            'font-size:23px;font-weight:750;color:#f4faff;'
+            'background-color:rgba(33,64,86,105);'
+            'border:1px solid rgba(165,205,230,80);'
+            f'border-top:3px solid {accent};'
+            'border-radius:7px;padding:4px;'
+        )
+
+    def _grid_note_font_px(self):
+        # Height is the primary legibility control; horizontal zoom makes
+        # smaller proportional changes. Keep large text on tall note rows.
+        height = self.grid_row_height.value()
+        width_factor = 0.88 + 0.12 * self.grid_zoom.value() / 100.0
+        return max(11, min(34, round((12 + (height - 24) * 0.25) * width_factor)))
+
+    def _chord_segment_style(self, index, active=False):
+        """Translucent blue-white glass with horizontal pitch-color accents."""
+        chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
+        accent = self._note_accent(chord)
+        beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
+        ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
+        # Alpha is deliberately low: let the actual app background show through.
+        progress = (getattr(self, '_note_progress', {}).get(index, 0.0) if active else 0.0)
+        # Fill smoothly from left to right; avoid stepwise flashes between beats.
+        ratio = max(0.0, min(1.0, float(progress)))
+        pct = ratio
+        if 0.001 < pct < 0.999:
+            accent_fill = QColor(accent)
+            filled = f'rgba({accent_fill.red()},{accent_fill.green()},{accent_fill.blue()},170)'
+            background = ('qlineargradient(x1:0,y1:0,x2:1,y2:0,'
+                          f'stop:0 {filled},stop:{max(0.0,pct-0.002):.4f} {filled},'
+                          f'stop:{min(1.0,pct+0.002):.4f} rgba(49,93,123,56),'
+                          'stop:1 rgba(49,93,123,56))')
+        elif pct >= 0.999:
+            background = accent
+        else:
+            background = 'rgba(49,93,123,56)'
+        foreground = '#ffffff' if active else '#e9f5fd'
+        # Top edge carries pitch information. No vertical color strips or glow.
+        border_top = f'3px solid {accent}' if active else f'2px solid {accent}'
+        return (
+            f'background-color:{background};'
+            'border:0px;'
+            f'border-top:{border_top};'
+            f'border-bottom:1px solid {"rgba(221,241,255,120)" if active else "rgba(173,211,233,45)"};'
+            f'border-left:{"1px solid rgba(190,223,240,65)" if beginning else "0px"};'
+            f'border-right:{"1px solid rgba(190,223,240,65)" if ending else "0px"};'
+            f'border-top-left-radius:{5 if beginning else 0}px;'
+            f'border-bottom-left-radius:{5 if beginning else 0}px;'
+            f'border-top-right-radius:{5 if ending else 0}px;'
+            f'border-bottom-right-radius:{5 if ending else 0}px;'
+            f'font-size:{self._grid_note_font_px()}px;'
+            f'font-weight:{"800" if active else ("650" if self.grid_buttons[index].text().strip() else "400")};'
+            f'padding:{max(1, round(2 * self.grid_zoom.value() / 100))}px '
+            f'{max(3, round(5 * self.grid_zoom.value() / 100))}px;'
+            f'text-align:left;color:{foreground};'
+        )
+
+    def apply_grid_zoom(self, zoom):
+        """Horizontal zoom changes geometry only, never timing or pitch."""
+        self.grid_zoom_label.setText(f'{zoom}%')
+        scale = zoom / 100.0
+        for index,(end,button) in getattr(self,'grid_segments',{}).items():
+            intended_width = max(38, round(36*scale*(end-index)))
+            button.setMinimumWidth(intended_width)
+            button.setFixedHeight(self.grid_row_height.value())
+            full_label = self.grid_chord_names[index]
+            full_label = '' if full_label == '—' else full_label
+            font = button.font()
+            font.setPixelSize(self._grid_note_font_px())
+            font.setBold(bool(full_label))
+            from PySide6.QtGui import QFontMetrics
+            metrics = QFontMetrics(font)
+            if metrics.horizontalAdvance(full_label) + 14 > intended_width:
+                root_match = re.match(r'^[A-G](?:#|b)?', full_label)
+                short_label = root_match.group(0) if root_match else full_label
+                font.setPixelSize(max(11, min(font.pixelSize(), 13)))
+                button.setText(short_label)
+            else:
+                button.setText(full_label)
+            button.setFont(font)
+            button.setStyleSheet(self._chord_segment_style(index, self.grid_active>=index and self.grid_active<end))
+        self.chord_grid.setHorizontalSpacing(0)
+        self.chord_grid.setVerticalSpacing(3)
+
+    def apply_grid_row_height(self, height):
+        """True vertical zoom of the continuous note bars."""
+        self.grid_row_height_label.setText(f'{round(height / 38 * 100)}%')
+        for index,(end,button) in getattr(self,'grid_segments',{}).items():
+            font = button.font()
+            font.setPixelSize(self._grid_note_font_px())
+            button.setFont(font)
+            button.setStyleSheet(self._chord_segment_style(index, index<=self.grid_active<end))
+            button.setFixedHeight(height)
+        for section in getattr(self,'grid_section_buttons',()):
+            section.setFixedHeight(height+16)
+        if hasattr(self,'chord_grid'):
+            # A resizable QScrollArea otherwise compresses the fresh grid on
+            # import/reanalysis until the next manual V-slider interaction.
+            rows = (len(getattr(self, 'grid_buttons', ())) + 15) // 16
+            for row in range(rows):
+                self.chord_grid.setRowMinimumHeight(row * 2, 28)
+                self.chord_grid.setRowMinimumHeight(row * 2 + 1, height)
+            if rows:
+                margins = self.chord_grid.contentsMargins()
+                minimum = (rows * (height + 28)
+                           + max(0, rows * 2 - 1) * self.chord_grid.verticalSpacing()
+                           + margins.top() + margins.bottom())
+                self.grid_host.setMinimumHeight(minimum)
+            else:
+                self.grid_host.setMinimumHeight(0)
+            self.chord_grid.invalidate()
+            self.grid_host.updateGeometry()
+
+    def on_position(self, ms):
+        if not self.timeline.isSliderDown():
+            self.timeline.setValue(ms)
+        self.waveform.set_position(ms)
+        self.time_label.setText(f'{ms // 60000:02d}:{(ms // 1000) % 60:02d} / '
+                                f'{self._duration // 60000:02d}:{(self._duration // 1000) % 60:02d}')
+        self.header_time_label.setText(self.time_label.text())
+        self.update_chord_indicator(ms)
+        self.update_grid_position(ms / 1000)
+
+    def load_waveform(self, source):
+        if isinstance(source, dict):
+            source = {name: str(Path(source[name]).resolve()) for name in STEMS}
+            key = '|'.join(source[name] for name in STEMS)
+        else:
+            source = str(Path(source).resolve())
+            key = source
+        self._waveform_source = key
+        self.waveform.set_waveform([])
+        self.waveform.set_position(0)
+        def task():
+            try:
+                peaks = extract_waveform_peaks(source)
+                self.signals.waveform_ready.emit(key, peaks)
+            except Exception as exc:
+                self.signals.error.emit(f'Waveform: {exc}')
+                self.signals.waveform_ready.emit(key, [])
+        threading.Thread(target=task, daemon=True).start()
+
+    def on_waveform_ready(self, path, peaks):
+        if path == self._waveform_source:
+            self.waveform.set_waveform(peaks)
+            if not peaks:
+                self.status_message('Waveform unavailable — check FFmpeg and audio file')
+
+    def seek_waveform(self, ms):
+        if self._duration <= 0:
+            return
+        ms = max(0, min(int(ms), self._duration))
+        self.timeline.setValue(ms)
+        if self.live:
+            self.live.seek(ms)
+            self.on_position(self.live.position_ms)
+        else:
+            self.player.setPosition(ms)
+            self.on_position(ms)
+
+    def seek(self):
+        if self.live:
+            self.live.seek(self.timeline.value())
+            self.on_position(self.live.position_ms)
+        else:
+            self.player.setPosition(self.timeline.value())
+
+    def export_mix(self):
+        if not self.stems:
+            return
+        filename, _ = QFileDialog.getSaveFileName(self, 'Export backing track', 'RiffLab-backing.wav', 'WAV (*.wav)')
+        if filename:
+            try:
+                self.status_message('Exporting WAV…')
+                threading.Thread(target=self._export_background, args=(filename,self.get_levels(),0), daemon=True).start()
+            except Exception as exc:
+                self.on_error(str(exc))
+
+
+    def _export_background(self, filename, levels, transpose):
+        try:
+            mix_to_file(self.stems, levels, transpose, Path(filename))
+            self.signals.exported.emit(filename)
+        except Exception as exc:
+            self.signals.error.emit(f'Export failed: {exc}')
+            self._log_exception()
+
+    def on_playback_state(self, state):
+        playing = state == QMediaPlayer.PlayingState
+        self.play.setToolTip('Pause' if playing else 'Play')
+        self.play.setIcon(qta.icon('fa5s.pause' if playing else 'fa5s.play', color='white'))
+
+    def find_riff_patterns(self, beats, beat_length):
+        """Compare two-bar pitch-class sequences on the beat grid.
+
+        Only label repeated phrases with some movement; avoid calling an entire
+        song on one chord a repeated riff. Labels are similarity estimates.
+        """
+        if len(beats) < 32 or not self.display_chords:
+            return {}
+        from difflib import SequenceMatcher
+        notes = []
+        for t in beats:
+            i = bisect.bisect_right(self.display_times, t + beat_length * 0.15) - 1
+            name = self.display_chords[i][1] if i >= 0 else ''
+            m = re.match(r'^([A-G](?:#|b)?)', name)
+            notes.append(m.group(1) if m else '?')
+        # Each block is two bars. Compare aligned, non-overlapping blocks.
+        blocks = [tuple(notes[i:i+8]) for i in range(0, len(notes)-7, 8)]
+        groups = []
+        matches = {}
+        for block_idx, seq in enumerate(blocks):
+            if len(set(seq) - {'?'}) < 2 or seq.count('?') > 2:
+                continue
+            best, score = -1, 0.0
+            for group_idx, reference in enumerate(groups):
+                similarity = sum(a == b and a != '?' for a, b in zip(seq, reference)) / 8
+                if similarity > score:
+                    best, score = group_idx, similarity
+            if score >= 0.75:
+                group_idx = best
+                confidence = score
+            else:
+                if len(groups) >= 8:
+                    continue
+                group_idx = len(groups)
+                groups.append(seq)
+                confidence = 1.0
+            letter = chr(ord('A') + group_idx)
+            matches[block_idx * 8] = (letter, confidence, group_idx)
+        # Only show patterns that actually recur; no speculative A/B labels.
+        counts = Counter(v[0] for v in matches.values())
+        return {beat: info for beat, info in matches.items() if counts[info[0]] >= 2}
+
+    def infer_song_sections(self, beat_count):
+        """Display only user-confirmed sections; do not invent verse/chorus."""
+        rows = (beat_count + 15) // 16
+        return [self.section_overrides.get(row, '') for row in range(rows)]
+
+    def edit_section_label(self, row):
+        choices = ['Intro', 'Verse', 'Chorus', 'Pre-Chorus', 'Bridge',
+                   'Solo', 'Breakdown', 'Outro', 'Instrumental', 'Part A', 'Part B']
+        current = self.section_overrides.get(row, '')
+        label, ok = QInputDialog.getItem(self, 'Song section',
+                                          f'Section starting at bar {row * 4 + 1}:',
+                                          choices, max(0, choices.index(current)) if current in choices else 0,
+                                          True)
+        if ok and label.strip():
+            self.section_overrides[row] = label.strip()
+            self.render_grid()
+
+    def render_grid(self, *_):
+        """Four bars per row, four clickable beat cells per bar. Grid uses a fixed BPM estimate."""
+        while self.chord_grid.count():
+            item = self.chord_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.grid_buttons = []
+        self.grid_cells = []
+        self._note_progress = {}
+        self.grid_chord_names = []
+        self.grid_section_buttons = []
+        bpm = self.grid_bpm.value()
+        beat_length = 60.0 / bpm
+        total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
+        beats = min(800, max(16, len(self.beat_times) if self.beat_times else math.ceil(total / beat_length)))
+        beat_seconds = [self.beat_times[i] if self.beat_times else i * beat_length for i in range(beats)]
+        patterns = {}  # Pattern assistance happens during audio analysis, not in the grid
+        occurrences = Counter()
+        pattern_labels = {}
+        for start, (letter, confidence, group_idx) in sorted(patterns.items()):
+            occurrences[letter] += 1
+            pattern_labels[start] = (f'{letter}{occurrences[letter]}', confidence, group_idx)
+        self.pattern_matches = pattern_labels
+        section_labels = self.infer_song_sections(beats)
+        section_colors = ('#139ed0', '#1886b9', '#087da9', '#2074a2')
+        # Section markers remain editable, but do not spam guessed Part A/B
+        # on every row. Show bar ranges until the user names a section.
+        current_section = 0
+        for section_row, section_label in enumerate(section_labels):
+            if section_label:
+                current_section = (current_section + 1) % len(section_colors)
+            accent = section_colors[current_section]
+            label = section_label or f'{section_row * 4 + 1}–{section_row * 4 + 4}'
+            section = QPushButton(label)
+            section.setToolTip('Click to name this section (Intro, Verse, Chorus, etc.)')
+            section.setFixedWidth(90)
+            section.setStyleSheet(
+                f'background:#152633;color:{"#f2faff" if section_label else "#728c9e"};'
+                f'border:0;border-left:{"4px" if section_label else "2px"} solid {accent};'
+                f'font-size:11px;font-weight:{"700" if section_label else "400"};'
+                'text-align:left;padding:3px 6px;')
+            section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
+            self.chord_grid.addWidget(section, section_row * 2, 0, 2, 1)
+            self.grid_section_buttons.append(section)
+        # Independent bar ruler: measure boundaries stay visible even when
+        # the note above/below is sustained across the bar boundary.
+        for row_start in range(0, beats, 16):
+            header_row = (row_start//16)*2
+            for offset in range(0, min(16, beats-row_start), 4):
+                measure = QLabel(f'{(row_start+offset)//4 + 1:02d}')
+                measure.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                measure.setFixedHeight(28)
+                measure.setStyleSheet(
+                    'background:transparent;color:#a8c8dc;font-size:11px;font-weight:600;'
+                    'border-left:2px solid #8fc4e3;padding-left:7px;')
+                self.chord_grid.addWidget(measure,header_row,offset+1,1,
+                                          min(4,beats-row_start-offset))
+        # One real QWidget per sustained note, not sixteen separately styled
+        # beat buttons. Retain beat-index mapping for existing transport logic.
+        labels = []
+        for beat_index in range(beats):
+            t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
+            idx = bisect.bisect_right(self.display_times, t) - 1
+            labels.append(self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—')
+        self.grid_chord_names = labels
+        self.grid_cells = [(self.beat_times[i] if self.beat_times else i * beat_length, i % 4)
+                           for i in range(beats)]
+        self.grid_buttons = [None] * beats
+        self.grid_segments = {}
+        for start in range(0, beats, 16):
+            end = min(start + 16, beats)
+            i = start
+            while i < end:
+                chord = labels[i]
+                j = i + 1
+                while j < end and labels[j] == chord:
+                    j += 1
+                t = self.grid_cells[i][0]
+                button = QPushButton('' if chord == '—' else chord)
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                button.setToolTip(f'{chord} · {t:.2f}s · {j-i} beats')
+                button.setAcceptDrops(True)
+                button.setProperty('riffDropTarget', True)
+                button.installEventFilter(self)
+                button.clicked.connect(lambda checked=False, seconds=t:
+                                       self.seek_and_play(int(seconds * 1000)))
+                self.chord_grid.addWidget(button, (start//16)*2+1, i-start+1, 1, j-i)
+                self.grid_segments[i] = (j, button)
+                for k in range(i,j):
+                    self.grid_buttons[k] = button
+                i = j
+        self.chord_grid.setColumnStretch(0, 0)
+        for col in range(1, 17):
+            self.chord_grid.setColumnStretch(col, 1)
+        self.apply_grid_zoom(self.grid_zoom.value())
+        self.apply_grid_row_height(self.grid_row_height.value())
+        self.grid_active = -1
+        self.grid_row = -1
+        self.update_grid_position((self.live.position_ms if self.live else self.player.position())/1000)
+
+    def update_note_fill(self):
+        """Smooth playback fill based on absolute audio time; no pitch processing."""
+        if self.grid_buttons:
+            ms = self.live.position_ms if self.live else self.player.position()
+            self.update_grid_position(ms / 1000.0)
+
+    def update_grid_position(self, seconds):
+        if not self.grid_buttons:
+            return
+        idx = max(0, min(len(self.grid_buttons)-1,
+            bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times
+            else int(seconds*self.grid_bpm.value()/60.0)))
+        old_idx = self.grid_active
+        current = self.grid_buttons[idx]
+        old = self.grid_buttons[old_idx] if 0 <= old_idx < len(self.grid_buttons) else None
+        if old is not None and old is not current:
+            self._note_progress = {}
+            old.setStyleSheet(self._chord_segment_style(old_idx, False))
+        self.grid_active = idx
+        # Find beginning/end of the merged note widget in this row.
+        run_start = idx
+        while run_start > (idx//16)*16 and self.grid_buttons[run_start-1] is current:
+            run_start -= 1
+        run_end = idx+1
+        while run_end < min(((idx//16)+1)*16,len(self.grid_buttons)) and self.grid_buttons[run_end] is current:
+            run_end += 1
+        start_sec = self.grid_cells[run_start][0]
+        end_sec = (self.grid_cells[run_end][0] if run_end < len(self.grid_cells)
+                   else self.grid_cells[-1][0] + 60.0/max(1,self.grid_bpm.value()))
+        progress = max(0.0,min(1.0,(seconds-start_sec)/max(0.001,end_sec-start_sec)))
+        # Keep the layout static; only paint progress, no per-beat recoloring.
+        last = self._note_progress.get(run_start, -1.0)
+        if old is not current or abs(last-progress) >= 0.004:
+            self._note_progress[run_start] = progress
+            current.setStyleSheet(self._chord_segment_style(run_start, True))
+        row = idx//16
+        if self.follow.isChecked() and row != self.grid_row:
+            self.grid_row = row
+            scrollbar = self.chord_scroll.verticalScrollBar()
+            scrollbar.setValue(max(0, current.y()-int(self.chord_scroll.viewport().height()*.25)))
+
+
+    def find_devices(self):
+        self.devices.clear()
+        try:
+            import sounddevice as sd
+            for i,d in enumerate(sd.query_devices()):
+                if d['max_input_channels'] > 0:
+                    self.devices.addItem(f'{d["name"]} ({int(d["default_samplerate"])} Hz)',i)
+        except Exception as exc:
+            self.devices.addItem(f'No input: {exc}',None)
+
+    def refresh_tuning_advice(self):
+        """A tentative suggestion only; note names do not establish tuning."""
+        if not hasattr(self, 'tuning_advice'):
+            return
+        roots = []
+        for _, name in getattr(self, 'display_chords', []):
+            match = re.match(r'^([A-G](?:#|b)?)', str(name))
+            if match:
+                roots.append(match.group(1))
+        # Many notes written as sharps/flats can be a *key* instead of a
+        # down-tuned instrument. Therefore never infer or apply a tuning.
+        flat_family = {'Eb', 'Ab', 'Bb', 'Db', 'Gb', 'D#', 'G#', 'A#', 'C#', 'F#'}
+        is_flat_heavy = (len(roots) >= 8
+                         and sum(note in flat_family for note in roots) / len(roots) >= .6)
+        self._suggest_eb_tuning = bool(is_flat_heavy)
+        if is_flat_heavy:
+            self.tuning_advice.setText('Check Eb tuning  ↗')
+            self.tuning_advice.setToolTip(
+                'Many accidentals detected. This can be the musical key, NOT proof '
+                'of Eb tuning. Open the tuner to compare before deciding.')
+        else:
+            self.tuning_advice.setText('Tuning guide  ↗')
+            self.tuning_advice.setToolTip(
+                'Choose instrument tuning manually. Transpose affects notation only.')
+
+    def open_tuning_guide(self):
+        """Explain the difference; never auto-transpose or auto-retune."""
+        if getattr(self, '_suggest_eb_tuning', False):
+            response = QMessageBox.question(
+                self, 'Optional tuning suggestion',
+                'This song contains many sharp/flat note names. That can reflect '
+                'the musical key and does NOT confirm the recording uses Eb tuning.\n\n'
+                'Would you like to compare your instrument with Eb Standard? '
+                'This changes only the tuner preset, never the audio or transpose.',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if response == QMessageBox.Yes:
+                self.tuner_preset.setCurrentIndex(
+                    7 if self.tuner_preset.currentIndex() >= 6 else 2)
+        self.tabs.setCurrentWidget(self.tuner_dialog)
+        self.tuner_dialog.raise_()
+        self.status_message(
+            'Tuning is a manual instrument choice. Transpose changes notation only.')
+
+    def refresh_tuner_strings(self, _index=None):
+        """Per-string reference pitches (MIDI); don't guess a song's tuning."""
+        tunings = {
+            1: (40, 45, 50, 55, 59, 64),  # E A D G B E
+            2: (39, 44, 49, 54, 58, 63),  # Eb Ab Db Gb Bb Eb
+            3: (38, 43, 48, 53, 57, 62),  # D G C F A D
+            4: (38, 45, 50, 55, 59, 64),  # D A D G B E
+            5: (37, 44, 49, 54, 58, 63),  # C# G# C# F# A# D#
+            6: (28, 33, 38, 43),          # E A D G bass
+            7: (27, 32, 37, 42),
+            8: (26, 31, 36, 41),
+        }
+        self._tuning_targets = tunings.get(self.tuner_preset.currentIndex(), ())
+        self.tuner_string.blockSignals(True)
+        self.tuner_string.clear()
+        if not self._tuning_targets:
+            self.tuner_string.addItem('All notes', None)
+        else:
+            for index, midi in enumerate(self._tuning_targets):
+                self.tuner_string.addItem(
+                    f'{index + 1} · {NOTES[midi % 12]}{midi // 12 - 1}', midi)
+        self.tuner_string.blockSignals(False)
+        self.refresh_tuner_target()
+
+    def refresh_tuner_target(self, _index=None):
+        midi = self.tuner_string.currentData()
+        self._tuner_display_cents = None
+        if midi is None:
+            self.tuner_target.setText('Chromatic · no fixed target frequency')
+        else:
+            frequency = 440 * (2 ** ((midi - 69) / 12))
+            self.tuner_target.setText(
+                f'TARGET  {NOTES[midi % 12]}{midi // 12 - 1}  ·  {frequency:.2f} Hz'
+                '    —    tune until the needle reaches 0')
+        if hasattr(self, 'tuner_meter'):
+            self.tuner_meter.set_reading(0, False)
+
+    def toggle_tuner(self):
+        if self.tuner_stream is not None:
+            self.tuner_stream.stop()
+            self.tuner_stream.close()
+            self.tuner_stream = None
+            self._tuner_display_cents = None
+            self.tuner_meter.set_reading(0, False)
+            self.tuner_note.setText('—')
+            self.tuner_details.setText('Tuner stopped')
+            self.tuner_button.setText('Start Tuner')
+            return
+        try:
+            import sounddevice as sd
+            import numpy as np
+            device = self.devices.currentData()
+            if device is None:
+                raise RuntimeError('No input device selected')
+            sr = int(sd.query_devices(device)['default_samplerate'])
+            def callback(indata, frames, time_info, status):
+                x = np.asarray(indata[:,0],dtype=np.float32)
+                self.tuner_level = float(np.sqrt(np.mean(x*x)))
+                if self.tuner_level < .006:
+                    return
+                x = x - np.mean(x)
+                n = len(x)
+                spec = np.fft.rfft(x,n=2*n)
+                corr = np.fft.irfft(spec*np.conj(spec))[:n]
+                sample_rate = float(sr)
+                lo = max(1,int(sample_rate/1000))
+                hi = min(n-1,int(sample_rate/40))
+                if hi <= lo:
+                    return
+                k = lo + int(np.argmax(corr[lo:hi]))
+                freq = sample_rate/k
+                if 40 <= freq <= 1000:
+                    self.tuner_pitch = freq
+                    self.tuner_last = time.monotonic()
+            # 4096 frames (~93 ms at 44.1 kHz) updates more often than 8192.
+            # Autocorrelation still supports low bass notes down to 40 Hz.
+            self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=4096,callback=callback)
+            self.tuner_stream.start()
+            self._tuner_display_cents = None
+            self.tuner_details.setText('Listening… · A4 = 440 Hz')
+            self.tuner_button.setText('Stop Tuner')
+        except Exception as exc:
+            self.tuner_stream = None
+            QMessageBox.warning(self,'Tuner',str(exc))
+
+    def update_tuner(self):
+        if self.tuner_stream is None:
+            return
+        if self.tuner_level < .006 or time.monotonic()-self.tuner_last > .45:
+            self.tuner_note.setText('—')
+            self.tuner_details.setText('Play one string · A4 = 440 Hz')
+            self.tuner_meter.set_reading(0, False)
+            self._tuner_display_cents = None
+            return
+        frequency = self.tuner_pitch
+        if frequency <= 0:
+            return
+        detected = round(69 + 12 * math.log2(frequency / 440))
+        target = self.tuner_string.currentData()
+        # Guide against the selected open string rather than the closest
+        # chromatic note; this makes half-step and drop tuning usable.
+        reference = target if target is not None else detected
+        target_hz = 440 * 2 ** ((reference-69) / 12)
+        cents = 1200 * math.log2(frequency / target_hz)
+        if self._tuner_display_cents is None or abs(cents-self._tuner_display_cents) > 60:
+            self._tuner_display_cents = cents
+        else:
+            self._tuner_display_cents += .42 * (cents-self._tuner_display_cents)
+        smooth = self._tuner_display_cents
+        self.tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}')
+        in_tune = abs(smooth) <= 5 and (target is None or abs(cents) <= 8)
+        self.tuner_note.setStyleSheet(
+            'font-size:46px;font-weight:800;'
+            f'color:{"#69e7cb" if in_tune else "#eaf7ff"};'
+            'background-color:rgba(41,76,99,95);'
+            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
+        direction = ('IN TUNE' if in_tune else '↑ TUNE UP' if smooth < -5
+                     else '↓ TUNE DOWN' if smooth > 5 else 'ALMOST')
+        self.tuner_details.setText(
+            f'{smooth:+.1f} cents   ·   {frequency:.2f} Hz   ·   {direction}')
+        self.tuner_meter.set_reading(smooth)
+
+    def stop_live(self):
+        if self.live:
+            self.live.close()
+            self.live = None
+
+    def start_live(self):
+        self.stop_live()
+        try:
+            self.player.stop()
+            self.player.setSource(QUrl())
+            self.live = LiveStemPlayer(self.stems, time_scale=1.0 / self.speed_ratio)
+            self.live.set_levels(self.get_levels())
+            self._sync_loop()
+            self._duration = self.live.duration_ms
+            self.timeline.setRange(0, self._duration)
+            self.waveform.set_duration(self._duration)
+            self.render_grid()
+            self.status_message('Realtime stems ready. Press Play.')
+        except Exception as exc:
+            self.live = None
+            self.status_message(f'Realtime mixer unavailable: {exc}; creating an offline mix.')
+            self.request_mix()
+
+    def live_tick(self):
+        if not self.live:
+            return
+        self.on_position(self.live.position_ms)
+        self.update_live_button()
+
+    def update_live_button(self):
+        if not self.live:
+            return
+        playing = self.live.playing
+        self.play.setToolTip('Pause' if playing else 'Play')
+        self.play.setIcon(qta.icon('fa5s.pause' if playing else 'fa5s.play', color='white'))
+
+    def restore_splitter(self, splitter, key):
+        saved = self.layout_settings.value(key)
+        if saved:
+            try:
+                splitter.restoreState(saved)
+            except (TypeError, ValueError):
+                pass
+
+    def _has_unsaved_project_changes(self):
+        """Detect changed project data, not playback time or global zoom."""
+        if not self.stems and not self.source_audio:
+            return False
+        if not self.project_file or not Path(self.project_file).is_file():
+            return True
+        try:
+            data = json.loads(Path(self.project_file).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return True
+        values = {
+            'metadata': self.song_metadata,
+            'in_ms': self.loop_a_ms,
+            'out_ms': self.loop_b_ms,
+            'loop': self.loop_enabled,
+            'bpm': self.grid_bpm.value(),
+            'analysis_mode': self.analysis_mode.currentIndex(),
+            'accuracy': self.accuracy.currentIndex(),
+            'stability': self.sensitivity.value(),
+            'transpose': self.transpose.value(),
+            'lookahead_ms': self.chord_lookahead.value(),
+            'auto_scroll': self.follow.isChecked(),
+            'levels': {name: self.volumes[name].value() for name in STEMS},
+            'enabled': {name: self.checks[name].isChecked() for name in STEMS},
+            'solo': {name: self.solos[name].isChecked() for name in STEMS},
+            'section_overrides': {str(k): str(v) for k,v in self.section_overrides.items()},
+            'chord_data': [list(item) for item in self.chord_data],
+        }
+        for key, value in values.items():
+            old = data.get(key)
+            if key == 'section_overrides':
+                old = {str(k): str(v) for k,v in (old or {}).items()}
+            if old != value:
+                return True
+        return False
+
+    def _confirm_unsaved_changes(self):
+        """Save / discard / cancel, without destroying the current project."""
+        if not self._has_unsaved_project_changes():
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle('Unsaved changes')
+        box.setText('Save your project changes?')
+        box.setInformativeText(
+            'Your edits to notes, mixer, analysis settings or song details '
+            'will be lost if you discard them.')
+        box.setStandardButtons(
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        box.setDefaultButton(QMessageBox.Save)
+        answer = box.exec()
+        if answer == QMessageBox.Cancel:
+            return False
+        if answer == QMessageBox.Discard:
+            return True
+        if answer == QMessageBox.Save:
+            if self.processing or self.analysis_running:
+                QMessageBox.information(
+                    self, 'Analysis running',
+                    'Stop or finish the current analysis before saving.')
+                return False
+            return bool(self.save_project())
+        return False
+
+    def closeEvent(self,event):
+        if not self._confirm_unsaved_changes():
+            event.ignore()
+            return
+
+        self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
+        self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
+        self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
+        self.layout_settings.setValue('export_splitter_left_v2', self.export_splitter.saveState())
+        self.stop_live()
+        if self.tuner_stream is not None:
+            self.tuner_stream.stop()
+            self.tuner_stream.close()
+        super().closeEvent(event)
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = Window()
+    window.show()
+    sys.exit(app.exec())
+, title)
+                    if match:
+                        artist, title = match.group(1).strip(), match.group(2).strip()
+                manifest[video_id] = f'{artist} - {title}' if artist else title
+            manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
             if not total:
                 raise RuntimeError('No downloadable videos found in this playlist.')
             opts = {
