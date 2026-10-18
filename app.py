@@ -2077,6 +2077,7 @@ class Window(QMainWindow):
         self.song_tabs.currentChanged.connect(self.activate_song_tab)
         self.song_tabs.tabCloseRequested.connect(self.close_song_tab)
         QTimer.singleShot(0, self.attach_song_tabs_to_menu)
+        QTimer.singleShot(0, self.restore_open_song_tabs)
         # Song tabs are positioned in the top menu row after RiffLab, not the project toolbar.
 
     def compare_with_isophonics(self):
@@ -2793,6 +2794,36 @@ class Window(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, 'Save project', str(exc))
         return False
+
+    def restore_open_song_tabs(self):
+        """Restore saved project tabs lazily; load only the active project."""
+        try:
+            paths = json.loads(str(self.layout_settings.value('ui_open_song_tabs', '[]')))
+        except (ValueError, TypeError):
+            paths = []
+        if not isinstance(paths, list):
+            return
+        active = str(self.layout_settings.value('ui_active_song_tab', ''))
+        for path in paths[:16]:
+            if not isinstance(path, str) or not Path(path).is_file():
+                continue
+            self.song_tabs.blockSignals(True)
+            index = self.song_tabs.addTab(Path(path).stem)
+            self.song_tabs.setTabData(index, path)
+            self.song_tabs.blockSignals(False)
+            try:
+                metadata = json.loads(Path(path).read_text(encoding='utf-8')).get('metadata') or {}
+                title = str(metadata.get('title') or Path(path).stem)
+                artist = str(metadata.get('artist') or '')
+                label = f'{artist} · {title}' if artist and artist.lower() not in title.lower() else title
+                self.song_tabs.setTabText(index, label[:42])
+                self.song_tabs.setTabToolTip(index, label)
+            except (ValueError, OSError, TypeError):
+                pass
+        self.layout_menu_song_tabs()
+        if active and Path(active).is_file():
+            # Loading checks saved source paths and restores project state.
+            self.load_project(active)
 
     def register_song_tab(self, path):
         if not hasattr(self, 'song_tabs'):
@@ -4986,6 +5017,10 @@ class Window(QMainWindow):
             event.ignore()
             return
 
+        self.layout_settings.setValue('ui_open_song_tabs', json.dumps([
+            self.song_tabs.tabData(i) for i in range(self.song_tabs.count())
+            if self.song_tabs.tabData(i)]))
+        self.layout_settings.setValue('ui_active_song_tab', str(self.project_file or ''))
         self.layout_settings.setValue('ui_window_geometry', self.saveGeometry())
         self.layout_settings.setValue('ui_sidebar_tab', self.sidebar_tabs.currentIndex())
         self.layout_settings.setValue('ui_library_search', self.library_search.text())
