@@ -1757,6 +1757,46 @@ class Window(QMainWindow):
         self.sidebar_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
+        # Download queue is a full-height sidebar tab, not a cramped panel
+        # beneath the Library. It lists actual local WAVs from bulk imports.
+        downloads_page = QWidget()
+        downloads_layout = QVBoxLayout(downloads_page)
+        downloads_layout.setContentsMargins(6, 7, 6, 6)
+        downloads_layout.setSpacing(5)
+        downloads_toolbar = QHBoxLayout()
+        downloads_toolbar.setSpacing(4)
+        downloads_label = QLabel('DOWNLOADED AUDIO')
+        downloads_label.setObjectName('mixerTitle')
+        downloads_toolbar.addWidget(downloads_label)
+        downloads_toolbar.addStretch()
+        self.downloads_refresh = QPushButton()
+        self.downloads_refresh.setIcon(qta.icon('fa5s.sync-alt', color='#7bd6ff'))
+        self.downloads_refresh.setObjectName('libraryIconAction')
+        self.downloads_refresh.setFixedSize(26, 26)
+        self.downloads_refresh.setToolTip('Refresh downloaded audio')
+        self.downloads_refresh.clicked.connect(self.refresh_download_queue)
+        downloads_toolbar.addWidget(self.downloads_refresh)
+        downloads_layout.addLayout(downloads_toolbar)
+        self.download_queue = QListWidget()
+        self.download_queue.setObjectName('downloadQueue')
+        self.download_queue.setAlternatingRowColors(True)
+        self.download_queue.setSpacing(0)
+        self.download_queue.itemDoubleClicked.connect(lambda _item: self.open_download_queue_item())
+        downloads_layout.addWidget(self.download_queue, 1)
+        download_actions = QHBoxLayout()
+        download_actions.setSpacing(4)
+        self.download_queue_open = QPushButton('Open')
+        self.download_queue_open.setIcon(qta.icon('fa5s.play', color='#7bd6ff'))
+        self.download_queue_open.clicked.connect(self.open_download_queue_item)
+        download_actions.addWidget(self.download_queue_open)
+        self.download_queue_analyze = QPushButton('Analyze')
+        self.download_queue_analyze.setIcon(qta.icon('fa5s.wave-square', color='#7bd6ff'))
+        self.download_queue_analyze.clicked.connect(self.analyze_download_queue_item)
+        download_actions.addWidget(self.download_queue_analyze)
+        downloads_layout.addLayout(download_actions)
+        self.sidebar_tabs.addTab(downloads_page, 'Downloads')
+        self.sidebar_tabs.setTabIcon(2, qta.icon('fa5s.download', color='#7bd6ff'))
+        self.refresh_download_queue()
         self.sidebar_tabs.setTabIcon(0, qta.icon('fa5s.sliders-h', color='#7bd6ff'))
         self.sidebar_tabs.setTabIcon(1, qta.icon('fa5s.book', color='#7bd6ff'))
         self.sidebar_tabs.setCurrentIndex(0)
@@ -1877,6 +1917,9 @@ class Window(QMainWindow):
           QWidget#bottomControlBar{background:#111923;border:1px solid #304559;border-radius:5px}
           QWidget#bottomControlBar QLabel,QWidget#bottomControlBar QCheckBox{background:transparent;border:0}
           QTabWidget#sidebarTabs::pane{background:#111923;border:1px solid #304559;border-radius:5px}
+          QListWidget#downloadQueue{background:transparent;border:0;font-size:11px;outline:0}
+          QListWidget#downloadQueue::item{height:24px;padding:0 4px}
+          QListWidget#downloadQueue::item:selected{background:#223e54;color:#e9f7ff}
           QTableWidget#librarySongTable{background:transparent;border:0;gridline-color:transparent;font-size:11px;outline:0}
           QTableWidget#librarySongTable::item{padding:0px 3px;border:0}
           QTableWidget#librarySongTable::item:selected{background:#223e54;color:#e9f7ff}
@@ -3136,9 +3179,53 @@ class Window(QMainWindow):
                 'cancelled': cancelled,
             })
 
+    def refresh_download_queue(self):
+        if not hasattr(self, 'download_queue'):
+            return
+        current = self.download_queue.currentItem()
+        selected = current.data(Qt.UserRole) if current else None
+        self.download_queue.clear()
+        folder = ROOT / 'downloads'
+        files = sorted(folder.glob('*.wav'), key=lambda path: path.stat().st_mtime, reverse=True) if folder.is_dir() else []
+        for path in files:
+            item = QListWidgetItem(path.stem.replace('_', ' '))
+            item.setToolTip(str(path))
+            item.setData(Qt.UserRole, str(path))
+            self.download_queue.addItem(item)
+            if selected == str(path):
+                self.download_queue.setCurrentItem(item)
+        self.download_queue_open.setEnabled(bool(files))
+        self.download_queue_analyze.setEnabled(bool(files))
+
+    def open_download_queue_item(self):
+        item = self.download_queue.currentItem()
+        if item is None or self.processing or self.analysis_running:
+            return
+        path = Path(item.data(Qt.UserRole))
+        if not path.is_file():
+            self.refresh_download_queue()
+            return
+        self.tabs.setCurrentIndex(0)
+        self.load_local(path)
+
+    def analyze_download_queue_item(self):
+        item = self.download_queue.currentItem()
+        if item is None or self.processing or self.analysis_running:
+            return
+        path = Path(item.data(Qt.UserRole))
+        if not path.is_file():
+            self.refresh_download_queue()
+            return
+        if not self._confirm_unsaved_changes():
+            return
+        self.tabs.setCurrentIndex(0)
+        self.load_local(path, check_unsaved=False)
+        # load_local starts automatic analysis, as with any local import.
+
     def on_playlist_finished(self, result):
         self.playlist_stop.setEnabled(False)
         self.playlist_download.setEnabled(True)
+        self.refresh_download_queue()
         self.set_busy(False)
         suffix = ' (stopped)' if result['cancelled'] else ''
         self.status_message(
