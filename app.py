@@ -1310,6 +1310,14 @@ class Window(QMainWindow):
         self.transpose.setToolTip('Notation only: changes displayed notes/chords, never the audio pitch or the instrument tuning.')
         self.transpose.valueChanged.connect(self.transpose_changed)
         options.addWidget(self.transpose)
+        self.note_spelling = QComboBox()
+        self.note_spelling.addItems(['♭ Flats (Bb)', '♯ Sharps (A#)'])
+        self.note_spelling.setObjectName('noteSpelling')
+        self.note_spelling.setToolTip('Choose flat or sharp note names without changing detected pitch or audio.')
+        self.note_spelling.setFixedWidth(125)
+        self.note_spelling.setCurrentIndex(max(0, min(1, int(self.layout_settings.value('note_spelling', 0)))))
+        self.note_spelling.currentIndexChanged.connect(self.note_spelling_changed)
+        options.addWidget(self.note_spelling)
         self.tuning_advice = QPushButton('Tuning guide ↗')
         self.tuning_advice.setMinimumWidth(120)
         self.tuning_advice.setToolTip(
@@ -3806,6 +3814,11 @@ class Window(QMainWindow):
         self.render_grid()
         self.on_position(self.live.position_ms if self.live else self.player.position())
 
+    def note_spelling_changed(self, index):
+        self.layout_settings.setValue('note_spelling', index)
+        self.render_grid()
+        self.on_position(self.live.position_ms if self.live else self.player.position())
+
     def transpose_chord(self, chord):
         match = re.fullmatch(r'([A-G])([#b]?)(.*)', chord)
         if not match:
@@ -3814,7 +3827,10 @@ class Window(QMainWindow):
         offsets = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
         idx = (offsets[root] + (1 if accidental == '#' else -1 if accidental == 'b' else 0)
                + self.transpose.value()) % 12
-        return NOTES[idx] + suffix
+        names = (('C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B')
+                 if self.note_spelling.currentIndex() == 0 else
+                 ('C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'))
+        return names[idx] + suffix
 
     @staticmethod
     def verify_note_events(events, level, bass_mode):
@@ -4091,6 +4107,8 @@ class Window(QMainWindow):
         """Consistent pitch colors for the grid and current-note display."""
         root = str(chord).replace('♯', '#').replace('♭', 'b')
         root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
+        root = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#',
+                'Ab': 'G#', 'Bb': 'A#', 'Cb': 'B', 'Fb': 'E'}.get(root, root)
         return {
             'C': '#268ed1', 'C#': '#4286df', 'D': '#ce6385',
             'D#': '#bd68b6', 'E': '#368fc2', 'F': '#8a70d2',
