@@ -972,6 +972,7 @@ class Window(QMainWindow):
         self.library_summary = QLabel('Double-click a song to open its saved project.')
         self.library_summary.setObjectName('ioDescription')
         library_layout.addWidget(self.library_summary)
+        self.restore_library_preferences()
         self.refresh_library()
         # Migrate the existing Recent list and default projects without moving audio.
         self.discover_existing_projects()
@@ -1748,7 +1749,7 @@ class Window(QMainWindow):
         self.sidebar_tabs.addTab(library_page, 'Library')
         self.sidebar_tabs.setTabIcon(0, qta.icon('fa5s.sliders-h', color='#7bd6ff'))
         self.sidebar_tabs.setTabIcon(1, qta.icon('fa5s.book', color='#7bd6ff'))
-        self.sidebar_tabs.setCurrentIndex(0)
+        self.sidebar_tabs.setCurrentIndex(max(0, min(1, int(self.layout_settings.value('ui_sidebar_tab', 1)))))
         self.play_splitter.insertWidget(0, self.sidebar_tabs)
         self.sidebar_tabs.currentChanged.connect(
             lambda _index: self.tabs.setCurrentIndex(0) if self.tabs.currentIndex() == 1 else None)
@@ -2034,6 +2035,9 @@ class Window(QMainWindow):
           QCheckBox::indicator:disabled{{border-color:#324657;background:transparent}}
         """)
         self.setup_developer_menus()
+        saved_geometry = self.layout_settings.value('ui_window_geometry')
+        if saved_geometry:
+            self.restoreGeometry(saved_geometry)
         # No duplicate top navigation: existing workspaces remain accessible
         # through Import / Export, Practice, the sidebar and the tuner.
         self.tabs.setTabVisible(1, False)  # Library uses the left-hand sidebar tabs.
@@ -4964,11 +4968,33 @@ class Window(QMainWindow):
             return bool(self.save_project())
         return False
 
+    def restore_library_preferences(self):
+        """Global Library view state; favorites themselves live in SQLite."""
+        settings = self.layout_settings
+        self.library_search.setText(str(settings.value('ui_library_search', '')))
+        self.library_tuning.setCurrentIndex(max(0, min(self.library_tuning.count() - 1,
+                                    int(settings.value('ui_library_tuning', 0)))))
+        self.library_min_bpm.setValue(int(settings.value('ui_library_min_bpm', 0)))
+        self.library_max_bpm.setValue(int(settings.value('ui_library_max_bpm', 300)))
+        self.library_favorites.setChecked(str(settings.value('ui_library_favorites_only', 'false')).lower() in ('true', '1'))
+        self.library_sort.setCurrentIndex(max(0, min(self.library_sort.count() - 1,
+                                  int(settings.value('ui_library_sort', 0)))))
+        self.library_filter_toggle.setChecked(str(settings.value('ui_library_filters_open', 'false')).lower() in ('true', '1'))
+
     def closeEvent(self,event):
         if not self._confirm_unsaved_changes():
             event.ignore()
             return
 
+        self.layout_settings.setValue('ui_window_geometry', self.saveGeometry())
+        self.layout_settings.setValue('ui_sidebar_tab', self.sidebar_tabs.currentIndex())
+        self.layout_settings.setValue('ui_library_search', self.library_search.text())
+        self.layout_settings.setValue('ui_library_tuning', self.library_tuning.currentIndex())
+        self.layout_settings.setValue('ui_library_min_bpm', self.library_min_bpm.value())
+        self.layout_settings.setValue('ui_library_max_bpm', self.library_max_bpm.value())
+        self.layout_settings.setValue('ui_library_favorites_only', self.library_favorites.isChecked())
+        self.layout_settings.setValue('ui_library_sort', self.library_sort.currentIndex())
+        self.layout_settings.setValue('ui_library_filters_open', self.library_filter_toggle.isChecked())
         self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
         self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
