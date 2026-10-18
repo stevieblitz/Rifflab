@@ -2069,7 +2069,7 @@ class Window(QMainWindow):
         self.song_tabs.setStyleSheet('QTabBar#songTabs::tab{min-width:145px;max-width:260px;padding:8px 22px 8px 12px;margin-right:3px;background:#15283a;color:#c9dfeb;border:1px solid #31516a;border-bottom:2px solid #31516a;border-top-left-radius:5px;border-top-right-radius:5px;}QTabBar#songTabs::tab:selected{background:#204962;color:white;border-bottom:2px solid #7bd6ff;}')
         self.song_tabs.currentChanged.connect(self.activate_song_tab)
         self.song_tabs.tabCloseRequested.connect(self.close_song_tab)
-        project_row.insertWidget(max(0, project_row.count()-1), self.song_tabs, 1)
+        # Song tabs are positioned in the top menu row after RiffLab, not the project toolbar.
 
     def compare_with_isophonics(self):
         """Benchmark the original Beatles recording against verified chord labels."""
@@ -2142,6 +2142,15 @@ class Window(QMainWindow):
         except (OSError, ValueError, IndexError) as exc:
             QMessageBox.warning(self, 'Chord comparison failed', str(exc))
 
+    def layout_menu_song_tabs(self):
+        bar = self.menuBar()
+        title_width = 120
+        # Keep File/View on the left; retain a readable title and tabs in one row.
+        title_x = max(125, min((bar.width()-title_width)//2, max(125, bar.width()//3)))
+        self.menu_title_label.setGeometry(title_x, 0, title_width, bar.height())
+        tab_x = title_x + title_width + 9
+        self.song_tabs.setGeometry(tab_x, 0, max(0, bar.width()-tab_x-12), bar.height())
+
     def setup_developer_menus(self):
         bar = self.menuBar()
         bar.setNativeMenuBar(False)
@@ -2158,8 +2167,12 @@ class Window(QMainWindow):
         self.menu_title_label.setAlignment(Qt.AlignCenter)
         self.menu_title_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         bar.installEventFilter(self)
-        QTimer.singleShot(0, lambda: self.menu_title_label.setGeometry(
-            max(0, (bar.width() - 190) // 2), 0, 190, bar.height()))
+        self.song_tabs.setParent(bar)
+        self.song_tabs.setMinimumWidth(0)
+        self.song_tabs.setMaximumWidth(16777215)
+        self.song_tabs.setStyleSheet('QTabBar#songTabs::tab{min-width:110px;max-width:220px;padding:3px 19px 3px 9px;margin-right:2px;background:#182b3d;color:#c9dfeb;border:0;border-bottom:2px solid #38576c;}QTabBar#songTabs::tab:selected{background:#204962;color:white;border-bottom:2px solid #7bd6ff;}')
+        self.song_tabs.show()
+        QTimer.singleShot(0, self.layout_menu_song_tabs)
         file_menu = bar.addMenu('&File')
         file_menu.addAction('Open Project…', self.open_project)
         file_menu.addAction('Save Project', self.save_project)
@@ -2993,8 +3006,7 @@ class Window(QMainWindow):
                 return True
         if (hasattr(self, 'menu_title_label') and obj is self.menuBar()
                 and event.type() == event.Type.Resize):
-            self.menu_title_label.setGeometry(
-                max(0, (obj.width() - 190) // 2), 0, 190, obj.height())
+            self.layout_menu_song_tabs()
         # The loading mask belongs to the grid viewport, never underneath it.
         if (hasattr(self, 'chord_loading') and obj is self.chord_scroll.viewport()
                 and event.type() == event.Type.Resize):
