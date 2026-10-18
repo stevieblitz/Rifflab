@@ -2162,23 +2162,34 @@ class Window(QMainWindow):
         self.layout_menu_song_tabs()
 
     def layout_menu_song_tabs(self):
+        """Full-height flat tabs, right-aligned, with no center app title."""
         bar = self.menuBar()
-        title_width = 120
-        # The title stays centered. Song tabs dock to the far right of the
-        # menu row and grow leftwards; they never push the title off-center.
-        title_x = max(110, (bar.width() - title_width) // 2)
-        self.menu_title_label.setGeometry(title_x, 0, title_width, bar.height())
         if not hasattr(self, 'song_tabs'):
             return
-        right_margin = 8
-        gap_after_title = 16
-        start_limit = title_x + title_width + gap_after_title
-        available = max(0, bar.width() - right_margin - start_limit)
-        preferred = self.song_tabs.sizeHint().width() if self.song_tabs.count() else 0
-        tab_width = min(available, preferred)
-        self.song_tabs.setGeometry(bar.width() - right_margin - tab_width, 0,
-                                   tab_width, bar.height())
-        self.song_tabs.setVisible(bool(self.song_tabs.count()) and tab_width > 0)
+        left_reserved = 170  # File/View and a little breathing room
+        width = max(0, bar.width() - left_reserved)
+        self.song_tabs.setGeometry(left_reserved, 0, width, bar.height())
+        self.song_tabs.setVisible(self.song_tabs.count() > 0 and width > 0)
+        self.song_tabs.setStyleSheet(
+            'QTabBar#songTabs{background:transparent;border:0;}'
+            'QTabBar#songTabs::tab{min-width:125px;max-width:270px;'
+            'padding:0px 22px 0px 12px;margin:0px;border:0;'
+            'border-bottom:2px solid #33556d;border-radius:0px;'
+            'background:#172a3b;color:#cee4f1;}'
+            'QTabBar#songTabs::tab:selected{background:#245777;color:#fff;'
+            'border-bottom:2px solid #7bd6ff;}'
+            'QTabBar#songTabs::close-button{image:none;}'
+            'QTabBar#songTabs QToolButton{background:#132637;border:0;'
+            'color:#7bd6ff;min-width:20px;}'
+        )
+        # QTabBar uses internal toolbuttons for overflow; style arrow icons.
+        from PySide6.QtWidgets import QToolButton
+        for button in self.song_tabs.findChildren(QToolButton):
+            if button.objectName() == 'ScrollLeftButton':
+                button.setIcon(qta.icon('fa5s.chevron-left', color='#7bd6ff'))
+            elif button.objectName() == 'ScrollRightButton':
+                button.setIcon(qta.icon('fa5s.chevron-right', color='#7bd6ff'))
+        self.song_tabs.raise_()
 
     def setup_developer_menus(self):
         bar = self.menuBar()
@@ -2191,10 +2202,6 @@ class Window(QMainWindow):
                           "QMenu::item:selected{background:#28455b;}")
         # Center brand over the entire menu bar, not just the unused right corner.
         # Mouse-transparent label leaves File / View menus fully interactive.
-        self.menu_title_label = QLabel('RiffLab', bar)
-        self.menu_title_label.setObjectName('menuAppTitle')
-        self.menu_title_label.setAlignment(Qt.AlignCenter)
-        self.menu_title_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         bar.installEventFilter(self)
         QTimer.singleShot(0, self.attach_song_tabs_to_menu)
         file_menu = bar.addMenu('&File')
@@ -3060,8 +3067,7 @@ class Window(QMainWindow):
                 else:
                     event.acceptProposedAction()
                 return True
-        if (hasattr(self, 'menu_title_label') and obj is self.menuBar()
-                and event.type() == event.Type.Resize):
+        if obj is self.menuBar() and event.type() == event.Type.Resize:
             self.layout_menu_song_tabs()
         # The loading mask belongs to the grid viewport, never underneath it.
         if (hasattr(self, 'chord_loading') and obj is self.chord_scroll.viewport()
