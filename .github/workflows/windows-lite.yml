@@ -6,7 +6,7 @@ name: Build RiffLab Complete for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test]
+    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls]
     paths:
       - 'app.py'
       - '.github/workflows/windows-lite.yml'
@@ -170,7 +170,7 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
           $assets = @()
-          foreach ($file in @('rifflab-logo.svg', 'rifflab-window-icon.png', 'rifflab-brand.png')) {
+          foreach ($file in @('rifflab-logo.svg', 'rifflab-window-icon.png', 'rifflab-brand.png', 'ui-chevron-up.svg', 'ui-chevron-down.svg', 'ui-check.svg')) {
             if (Test-Path "assets/$file") {
               $assets += @('--add-data', "assets/$file;assets")
             }
