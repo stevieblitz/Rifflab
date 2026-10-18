@@ -1925,7 +1925,7 @@ class Window(QMainWindow):
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
           QTabBar#headerWorkspaceTabs{background:transparent}
-          QTabBar#headerWorkspaceTabs::tab{padding:6px 11px;min-width:74px;border:1px solid #25455c;border-bottom:2px solid transparent;background:#122638;color:#c9dae6}
+          QTabBar#headerWorkspaceTabs::tab{padding:10px 14px;min-width:84px;min-height:20px;margin:0;border:0;border-bottom:2px solid #29465b;border-radius:0;background:#122638;color:#c9dae6}
           QTabBar#headerWorkspaceTabs::tab:selected{background:#254d6d;color:#e8f6ff;border-bottom:2px solid #7bd6ff}
           QTabBar#headerWorkspaceTabs::tab:hover:!selected{background:#263e51}
           QTabBar#mainTabBar::tab{margin-top:2px;padding:7px 15px;min-width:90px;border-bottom:2px solid transparent}
@@ -2054,7 +2054,10 @@ class Window(QMainWindow):
         self.tabs.currentChanged.connect(
             lambda index: self.header_tabs.setCurrentIndex(
                 1 if self.tabs.widget(index) is self.tuner_dialog else 0))
-        project_row.addWidget(self.header_tabs, 0, Qt.AlignVCenter)
+        # Workspace tabs sit flush on the bottom edge of the project bar.
+        # No button-like vertical margin between the tabs and the workspace.
+        self.header_tabs.setFixedHeight(project_header.height())
+        project_row.addWidget(self.header_tabs, 0, Qt.AlignBottom)
         self._song_tab_positions = {}
         self._song_tab_switching = False
         self.song_tabs = QTabBar(project_header)
