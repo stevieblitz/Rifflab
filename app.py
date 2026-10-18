@@ -4253,6 +4253,9 @@ class Window(QMainWindow):
         """Consistent pitch colors for the grid and current-note display."""
         root = str(chord).replace('♯', '#').replace('♭', 'b')
         root = root[:2] if len(root) > 1 and root[1] in '#b' else root[:1]
+        # Enharmonic spellings share the same pitch-class color.
+        root = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#',
+                'Ab': 'G#', 'Bb': 'A#', 'Cb': 'B', 'Fb': 'E'}.get(root, root)
         return {
             'C': '#268ed1', 'C#': '#4286df', 'D': '#ce6385',
             'D#': '#bd68b6', 'E': '#368fc2', 'F': '#8a70d2',
