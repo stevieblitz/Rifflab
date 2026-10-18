@@ -2064,7 +2064,9 @@ class Window(QMainWindow):
         self.song_tabs.setTabsClosable(True)
         self.song_tabs.setMovable(True)
         self.song_tabs.setUsesScrollButtons(True)
-        self.song_tabs.setMaximumWidth(570)
+        self.song_tabs.setMinimumWidth(320)
+        self.song_tabs.setMaximumWidth(900)
+        self.song_tabs.setStyleSheet('QTabBar#songTabs::tab{min-width:145px;max-width:260px;padding:8px 22px 8px 12px;margin-right:3px;background:#15283a;color:#c9dfeb;border:1px solid #31516a;border-bottom:2px solid #31516a;border-top-left-radius:5px;border-top-right-radius:5px;}QTabBar#songTabs::tab:selected{background:#204962;color:white;border-bottom:2px solid #7bd6ff;}')
         self.song_tabs.currentChanged.connect(self.activate_song_tab)
         self.song_tabs.tabCloseRequested.connect(self.close_song_tab)
         project_row.insertWidget(max(0, project_row.count()-1), self.song_tabs, 1)
@@ -2766,8 +2768,23 @@ class Window(QMainWindow):
             if index < 0:
                 index = self.song_tabs.addTab(Path(path).stem)
                 self.song_tabs.setTabData(index, path)
+            meta = self.song_metadata or {}
+            title = str(meta.get('title') or '').strip()
+            artist = str(meta.get('artist') or '').strip()
+            if not title or re.fullmatch(r'[A-Za-z0-9_-]{11}', title):
+                try:
+                    raw = json.loads(Path(path).read_text(encoding='utf-8'))
+                    data_meta = raw.get('metadata') or {}
+                    title = str(data_meta.get('title') or '').strip()
+                    artist = str(data_meta.get('artist') or '').strip()
+                except (ValueError, OSError):
+                    pass
+            if not title or re.fullmatch(r'[A-Za-z0-9_-]{11}', title):
+                title = Path(path).stem
+            label = f'{artist} · {title}' if artist and artist.lower() not in title.lower() else title
+            self.song_tabs.setTabText(index, label[:42] + ('…' if len(label)>42 else ''))
             self.song_tabs.setCurrentIndex(index)
-            self.song_tabs.setTabToolTip(index, path)
+            self.song_tabs.setTabToolTip(index, label)
         finally:
             self.song_tabs.blockSignals(False)
 
@@ -2839,9 +2856,9 @@ class Window(QMainWindow):
             return
         self.speed_generation += 1  # invalidate previous tempo renders
         self.project_file = str(path)
-        self.register_song_tab(path)
         self.url.setText(str(data.get('youtube_url') or ''))
         self.song_metadata = dict(data.get('metadata') or {})
+        self.register_song_tab(path)
         self.update_now_playing()
         if folder:
             self.stop_live()
@@ -4589,7 +4606,10 @@ class Window(QMainWindow):
         local = current.mapTo(self.grid_host, current.rect().center())
         vbar = self.chord_scroll.verticalScrollBar()
         hbar = self.chord_scroll.horizontalScrollBar()
-        vbar.setValue(max(0, local.y() - viewport.height() // 3))
+        row = self.grid_active // 16
+        row_widget = self.grid_section_buttons[row] if row < len(self.grid_section_buttons) else current
+        row_y = row_widget.mapTo(self.grid_host, row_widget.rect().topLeft()).y()
+        vbar.setValue(max(0, row_y - 4))
         hbar.setValue(max(0, local.x() - viewport.width() // 3))
 
     def update_grid_position(self, seconds):
@@ -4624,7 +4644,7 @@ class Window(QMainWindow):
         row = idx//16
         if self.follow.isChecked() and (row != self.grid_row or getattr(self, '_force_note_focus', False)):
             self.grid_row = row
-            self.chord_scroll.ensureWidgetVisible(current, 0, 0)
+            self.focus_active_note(force=True)
             self._force_note_focus = False
 
 
