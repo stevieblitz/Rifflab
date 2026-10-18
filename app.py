@@ -3151,7 +3151,12 @@ class Window(QMainWindow):
                 title = str(entry.get('title') or video_id).strip()
                 artist = str(entry.get('artist') or entry.get('creator') or '').strip()
                 if not artist:
-                    match = re.match(r'^(.+?)\s+[-–—]\s+(.+)
+                    match = re.match(r'^(.+?)\s+[-–—]\s+(.+)$', title)
+                    if match:
+                        artist, title = match.group(1).strip(), match.group(2).strip()
+                manifest[video_id] = f'{artist} - {title}' if artist else title
+            manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+            if not total:
                 raise RuntimeError('No downloadable videos found in this playlist.')
             opts = {
                 **common,
