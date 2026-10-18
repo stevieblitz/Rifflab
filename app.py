@@ -1736,7 +1736,6 @@ class Window(QMainWindow):
         # A full-height transparent holder lets the mixer itself stay compact.
         mixer_holder = QWidget()
         mixer_holder.setMinimumWidth(165)
-        mixer_holder.setMaximumWidth(850)
         mixer_holder.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         mixer_holder_layout = QVBoxLayout(mixer_holder)
         mixer_holder_layout.setContentsMargins(0, 0, 0, 0)
@@ -1753,7 +1752,6 @@ class Window(QMainWindow):
         self.sidebar_tabs = QTabWidget()
         self.sidebar_tabs.setObjectName('sidebarTabs')
         self.sidebar_tabs.setMinimumWidth(235)
-        self.sidebar_tabs.setMaximumWidth(850)
         self.sidebar_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
@@ -1883,7 +1881,19 @@ class Window(QMainWindow):
           QTableWidget#librarySongTable::item:alternate{background:#142333}
           QTableWidget#librarySongTable::item:selected{border-left:2px solid #7bd6ff}
           QTableWidget#librarySongTable QHeaderView::section{background:transparent;border:0;border-bottom:1px solid #304559;color:#819cac;font-size:10px;padding:2px 4px}
-          QTabWidget#sidebarTabs QTabBar::tab{font-size:12px;padding:5px 9px}
+          QTabWidget#sidebarTabs QTabBar::tab{
+              font-size:12px;padding:6px 12px;margin-right:3px;
+              background:#142638;border:1px solid #2c4659;
+              border-bottom:2px solid #294052;border-top-left-radius:4px;
+              border-top-right-radius:4px;color:#9ab7c9;
+          }
+          QTabWidget#sidebarTabs QTabBar::tab:selected{
+              background:#203e54;border-color:#346581;
+              border-bottom:2px solid #7bd6ff;color:#7bd6ff;font-weight:650;
+          }
+          QTabWidget#sidebarTabs QTabBar::tab:hover:!selected{
+              background:#1c3447;color:#d1ebfa;border-color:#3a6079;
+          }
           QWidget#libraryAdvanced{background:#142432;border:1px solid #31495c;border-radius:4px}
           QPushButton#libraryFilterToggle{background:#1a3041;border:1px solid #2b455a;padding:3px 8px;text-align:left}
           QPushButton#libraryIconAction{background:transparent;border:0;border-radius:3px;padding:3px;min-width:0;min-height:0}
