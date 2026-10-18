@@ -1189,21 +1189,24 @@ class Window(QMainWindow):
         waveform_row.addWidget(self.header_brand)
         self.chord = QLabel('—')
         self.chord.setAlignment(Qt.AlignCenter)
-        self.chord.setFixedSize(100, 72)
+        self.chord.setFixedSize(94, 72)
         self._set_current_chord('—')
         waveform_row.addWidget(self.chord)
+        self.upcoming_notes = []
+        for _ in range(2):
+            preview = QLabel('')
+            preview.setAlignment(Qt.AlignCenter)
+            preview.setFixedSize(39, 48)
+            preview.setStyleSheet('background:#1c3142;border:0;border-radius:4px;color:#a8c3d5;font-size:15px;font-weight:650;')
+            waveform_row.addWidget(preview)
+            self.upcoming_notes.append(preview)
         self.waveform = WaveformTimeline(self)
         self.waveform.setAcceptDrops(True)
         self.waveform.installEventFilter(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
         self.waveform.markerMoved.connect(self.move_loop_marker)
         waveform_row.addWidget(self.waveform, 1)
-        # The waveform and analysis area is a vertically resizable workspace pane.
-        self.waveform_panel = QWidget()
-        waveform_panel_layout = QVBoxLayout(self.waveform_panel)
-        waveform_panel_layout.setContentsMargins(0, 0, 0, 0)
-        waveform_panel_layout.setSpacing(5)
-        waveform_panel_layout.addLayout(waveform_row)
+        layout.addLayout(waveform_row)
         self.next_chords = QLabel('NEXT: —')
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.next_chords.setStyleSheet('font-size:12px;color:#9bb7cb;padding:3px')
@@ -1369,15 +1372,7 @@ class Window(QMainWindow):
         toolbar_layout.setSpacing(0)
         analysis_options.addStretch(1)
         toolbar_layout.addLayout(analysis_options)
-        waveform_panel_layout.addWidget(toolbar_panel)
-        self.workspace_vertical = MinimalSplitter(Qt.Vertical)
-        self.workspace_vertical.setObjectName('workspaceVertical')
-        self.workspace_vertical.setHandleWidth(6)
-        self.workspace_vertical.setChildrenCollapsible(False)
-        self.workspace_vertical.setToolTip('Drag vertically to resize waveform and note workspace')
-        self.waveform_panel.setMinimumHeight(103)
-        self.workspace_vertical.addWidget(self.waveform_panel)
-        layout.addWidget(self.workspace_vertical, 1)
+        layout.addWidget(toolbar_panel)
         # The display mode belongs to the grid, not the analysis controls.
         grid_column = QVBoxLayout()
         grid_column.setContentsMargins(0, 0, 0, 0)
@@ -1470,11 +1465,7 @@ class Window(QMainWindow):
         grid_host_panel.setLayout(grid_column)
         grid_host_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.play_splitter.addWidget(grid_host_panel)
-        self.workspace_vertical.addWidget(self.play_splitter)
-        self.workspace_vertical.setStretchFactor(0, 0)
-        self.workspace_vertical.setStretchFactor(1, 1)
-        self.workspace_vertical.setSizes([140, 540])
-        self.restore_splitter(self.workspace_vertical, 'workspace_vertical_v1')
+        layout.addWidget(self.play_splitter, 1)
         self.grid_notice = QLabel('Open audio to play. Install AI dependencies for automatic beat and chord analysis.')
         self.grid_notice.setWordWrap(True)
         self.grid_notice.setObjectName('gridNotice')
@@ -2162,6 +2153,7 @@ class Window(QMainWindow):
         recent.aboutToShow.connect(lambda: self.fill_recent_file_menu(recent))
         file_menu.addSeparator()
         file_menu.addAction('Import Audio…', self.open_file)
+        file_menu.addAction('Change Music Folder…', self.choose_music_folder)
         file_menu.addAction('Import / Export', lambda: self.tabs.setCurrentIndex(2))
         file_menu.addAction('Export WAV…', self.export_mix)
         file_menu.addAction('Compare Chords with Reference CSV…', self.compare_chords_with_reference)
@@ -2423,8 +2415,10 @@ class Window(QMainWindow):
             for col, value in enumerate(values):
                 # One line per song: artist and title, no stacked labels.
                 display_value = str(value)
-                if col == 1 and song['artist']:
-                    display_value = f"{song['artist']} · {song['title']}"
+                if col == 1:
+                    display_value = (f"{song['artist']} - " if song['artist'] else '') + str(song['title'])
+                    if song['tuning'] and song['tuning'] != 'Unknown':
+                        display_value += f"  ·  {song['tuning']}"
                 item = QTableWidgetItem(display_value)
                 if col == 0:
                     item.setTextAlignment(Qt.AlignCenter)
@@ -3052,10 +3046,22 @@ class Window(QMainWindow):
             self.tabs.setCurrentIndex(0)
             self.load_local(candidate.resolve())
 
+    def music_folder(self):
+        saved = str(self.layout_settings.value('music_folder', str(ROOT / 'downloads')))
+        folder = Path(saved).expanduser()
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def choose_music_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Choose Music Folder', str(self.music_folder()))
+        if folder:
+            self.layout_settings.setValue('music_folder', folder)
+            self.status_message(f'Music folder: {folder}')
+
     def open_file(self):
         if self.processing:
             return
-        path, _ = QFileDialog.getOpenFileName(self, 'Open Audio', '', 'Audio (*.mp3 *.wav *.flac *.m4a *.ogg)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Open Audio', str(self.music_folder()), 'Audio (*.mp3 *.wav *.flac *.m4a *.ogg)')
         if path:
             self.load_local(Path(path))
 
@@ -3117,8 +3123,7 @@ class Window(QMainWindow):
     def _download(self, url):
         try:
             self.signals.stage.emit('1/3 · Downloading audio…')
-            output = ROOT / 'downloads'
-            output.mkdir(exist_ok=True)
+            output = self.music_folder()
             # Print the actual destination, never guess by modification time.
             from yt_dlp import YoutubeDL
             opts = {
@@ -4091,6 +4096,7 @@ class Window(QMainWindow):
         if not self.display_chords:
             self._set_current_chord('—')
             self.next_chords.setText('NEXT: —')
+            self.update_upcoming_notes(-1)
             return
         actual_time = max(0.0, ms / 1000.0)
         # Lookahead changes ONLY the large current-chord label, not playback,
@@ -4102,16 +4108,46 @@ class Window(QMainWindow):
             cell = bisect.bisect_right(times, preview_time) - 1
             if cell < 0:
                 self._set_current_chord('—')
+                self.update_upcoming_notes(-1)
                 return
             cell_time = times[min(cell, len(times) - 1)]
             note_index = bisect.bisect_right(self.display_times, cell_time) - 1
             current = (self.transpose_chord(self.display_chords[note_index][1])
                        if note_index >= 0 else '—')
             self._set_current_chord(current)
+            self.update_upcoming_notes(cell)
             return
         idx = bisect.bisect_right(self.display_times, preview_time) - 1
         self._set_current_chord(self.transpose_chord(self.display_chords[idx][1])
                            if idx >= 0 else '—')
+        self.update_upcoming_notes(-1, idx)
+
+    def update_upcoming_notes(self, beat_index=-1, event_index=-1):
+        upcoming = []
+        if beat_index >= 0 and getattr(self, 'grid_chord_names', None):
+            current = self.grid_chord_names[min(beat_index, len(self.grid_chord_names)-1)]
+            for note in self.grid_chord_names[beat_index+1:]:
+                if note != current and note != '—':
+                    upcoming.append(note)
+                    current = note
+                if len(upcoming) == 2:
+                    break
+        elif event_index >= 0:
+            current = self.transpose_chord(self.display_chords[event_index][1])
+            for _, note in self.display_chords[event_index+1:]:
+                rendered = self.transpose_chord(note)
+                if rendered != current and rendered != '—':
+                    upcoming.append(rendered)
+                    current = rendered
+                if len(upcoming) == 2:
+                    break
+        for index, widget in enumerate(self.upcoming_notes):
+            note = upcoming[index] if index < len(upcoming) else ''
+            widget.setText(note)
+            widget.setVisible(bool(note))
+            if note:
+                widget.setStyleSheet('background:#1a3040;border:0;border-radius:4px;'
+                                     f'color:{self._note_accent(note)};font-size:15px;font-weight:700;')
 
     def _note_accent(self, chord):
         """Consistent pitch colors for the grid and current-note display."""
@@ -4130,13 +4166,9 @@ class Window(QMainWindow):
         """Match the current-note glass and horizontal accent to the grid."""
         self.chord.setText(name)
         accent = self._note_accent(name)
-        # Translucent blue glass: crisp top accent, no glow or neon shadow.
         self.chord.setStyleSheet(
-            'font-size:23px;font-weight:750;color:#f4faff;'
-            'background-color:rgba(33,64,86,105);'
-            'border:1px solid rgba(165,205,230,80);'
-            f'border-top:3px solid {accent};'
-            'border-radius:7px;padding:4px;'
+            'font-size:24px;font-weight:800;color:#ffffff;'
+            f'background-color:{accent};border:0;border-radius:5px;padding:4px;'
         )
 
     def _grid_note_font_px(self):
@@ -4816,7 +4848,6 @@ class Window(QMainWindow):
         self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
         self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
-        self.layout_settings.setValue('workspace_vertical_v1', self.workspace_vertical.saveState())
         self.layout_settings.setValue('export_splitter_left_v2', self.export_splitter.saveState())
         self.stop_live()
         if self.tuner_stream is not None:
