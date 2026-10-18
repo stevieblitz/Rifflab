@@ -25,7 +25,7 @@ from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QListWidget, QListWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
 )
 
 def loop_boundary_icon(which):
