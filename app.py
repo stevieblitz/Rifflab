@@ -1906,9 +1906,6 @@ class Window(QMainWindow):
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
           QTabBar#headerWorkspaceTabs{background:transparent}
-          QSpinBox::up-arrow{image:none}
-          QSpinBox::down-arrow{image:none}
-          QComboBox::down-arrow{image:none}
           QTabBar#headerWorkspaceTabs::tab{padding:6px 11px;min-width:74px;border:1px solid #25455c;border-bottom:2px solid transparent;background:#122638;color:#c9dae6}
           QTabBar#headerWorkspaceTabs::tab:selected{background:#254d6d;color:#e8f6ff;border-bottom:2px solid #7bd6ff}
           QTabBar#headerWorkspaceTabs::tab:hover:!selected{background:#263e51}
@@ -1932,9 +1929,9 @@ class Window(QMainWindow):
           QPushButton:disabled{background:#28333e;color:#7d8a96;border-color:#34404c}
           QLineEdit,QComboBox,QSpinBox{padding:5px;background:#202d3b;border:1px solid #34475c;border-radius:4px}
           /* Small arrow controls share the frameless cyan treatment. */
-          QSpinBox::up-button,QSpinBox::down-button{background:transparent;border:0;width:14px}
+          QSpinBox::up-button,QSpinBox::down-button{background:transparent;border:0;width:14px;color:#7bd6ff}
           QSpinBox::up-arrow,QSpinBox::down-arrow{width:8px;height:8px}
-          QComboBox::drop-down{background:transparent;border:0;width:19px}
+          QComboBox::drop-down{background:transparent;border:0;width:19px;color:#7bd6ff}
           QComboBox::down-arrow{width:8px;height:8px}
           QSpinBox,QComboBox{selection-background-color:#245474}
           QScrollArea{border:0}
