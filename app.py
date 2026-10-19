@@ -1401,7 +1401,10 @@ class Window(QMainWindow):
         self.chord_scroll.viewport().setAcceptDrops(True)
         self.chord_scroll.setWidgetResizable(True)
         self.chord_scroll.setMinimumHeight(160)
-        self.chord_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Prevent the large note-grid sizeHint from limiting sidebar resizing.
+        # The grid scrolls internally instead of forcing its parent wide.
+        self.chord_scroll.setMinimumWidth(0)
+        self.chord_scroll.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.grid_host = QWidget()
         self.chord_grid = QGridLayout(self.grid_host)
         self.chord_grid.setContentsMargins(5, 3, 12, 5)
@@ -1466,7 +1469,8 @@ class Window(QMainWindow):
         grid_content_row.addWidget(self.chord_scroll, 1)
         grid_column.addLayout(grid_content_row, 1)
         grid_host_panel.setLayout(grid_column)
-        grid_host_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        grid_host_panel.setMinimumWidth(190)
+        grid_host_panel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.play_splitter.addWidget(grid_host_panel)
         layout.addWidget(self.play_splitter, 1)
         self.grid_notice = QLabel('Open audio to play. Install AI dependencies for automatic beat and chord analysis.')
