@@ -2204,11 +2204,21 @@ class Window(QMainWindow):
                 button.setIcon(qta.icon('fa5s.chevron-right', color='#7bd6ff'))
         for index in range(self.song_tabs.count()):
             close_button = self.song_tabs.tabButton(index, QTabBar.RightSide)
-            if close_button is not None:
+            if close_button is None or close_button.objectName() != 'riffSongClose':
+                close_button = QPushButton(self.song_tabs)
+                close_button.setObjectName('riffSongClose')
+                close_button.setFixedSize(19, 19)
                 close_button.setIcon(qta.icon('fa5s.times', color='#7bd6ff'))
                 close_button.setIconSize(QSize(11, 11))
-                close_button.setStyleSheet('border:0;background:transparent;margin:0;padding:0;')
-                close_button.setVisible(True)
+                close_button.setStyleSheet(
+                    'QPushButton#riffSongClose{background:transparent;border:0;padding:0;margin:0;}'
+                    'QPushButton#riffSongClose:hover{background:#315773;border:0;}')
+                self.song_tabs.setTabButton(index, QTabBar.RightSide, close_button)
+                close_button.clicked.connect(
+                    lambda checked=False, button=close_button:
+                    self.close_song_tab(next((i for i in range(self.song_tabs.count())
+                        if self.song_tabs.tabButton(i, QTabBar.RightSide) is button), -1)))
+            close_button.show()
         self.song_tabs.raise_()
 
     def setup_developer_menus(self):
