@@ -809,6 +809,8 @@ class Window(QMainWindow):
         # Avoid an extra toolbar row and prevent expanding Save/Open buttons.
         self.tabs = QTabWidget()
         self.tabs.setObjectName('mainTabs')
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         outer.addWidget(project_header, 0)
         outer.addWidget(self.tabs, 1)
         def tab_page(name):
@@ -1926,7 +1928,7 @@ class Window(QMainWindow):
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
           QTabBar#mainTabBar{background:#111923}
           QTabBar#headerWorkspaceTabs{background:transparent}
-          QTabBar#headerWorkspaceTabs::tab{padding:10px 14px;min-width:84px;min-height:20px;margin:0;border:0;border-bottom:2px solid #29465b;border-radius:0;background:#122638;color:#c9dae6}
+          QTabBar#headerWorkspaceTabs::tab{padding:0px 14px;min-width:84px;min-height:38px;margin:0;border:0;border-bottom:2px solid #29465b;border-radius:0;background:#122638;color:#c9dae6}
           QTabBar#headerWorkspaceTabs::tab:selected{background:#254d6d;color:#e8f6ff;border-bottom:2px solid #7bd6ff}
           QTabBar#headerWorkspaceTabs::tab:hover:!selected{background:#263e51}
           QTabBar#mainTabBar::tab{margin-top:2px;padding:7px 15px;min-width:90px;border-bottom:2px solid transparent}
@@ -2061,6 +2063,7 @@ class Window(QMainWindow):
         # Workspace tabs sit flush on the bottom edge of the project bar.
         # No button-like vertical margin between the tabs and the workspace.
         self.header_tabs.setFixedHeight(project_header.height())
+        self.header_tabs.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         project_row.addWidget(self.header_tabs, 0, Qt.AlignBottom)
         self._song_tab_positions = {}
         self._song_tab_switching = False
@@ -2169,14 +2172,17 @@ class Window(QMainWindow):
         left_reserved = 155  # leave room for File/View
         available = max(0, bar.width() - left_reserved)
         width = min(available, self.song_tabs.sizeHint().width()) if self.song_tabs.count() else 0
+        self.song_tabs.setFixedHeight(bar.height())
         self.song_tabs.setGeometry(bar.width() - width, 0, width, bar.height())
         self.song_tabs.setVisible(self.song_tabs.count() > 0 and width > 0)
         self.song_tabs.setStyleSheet(
             'QTabBar#songTabs{background:transparent;border:0;}'
             'QTabBar#songTabs::tab{min-width:125px;max-width:270px;'
-            'padding:0px 22px 0px 12px;margin:0px;border:0;'
+            f'min-height:{max(16, bar.height()-2)}px;'
+            'padding:0px 26px 0px 12px;margin:0px;border:0;'
             'border-bottom:2px solid #33556d;border-radius:0px;'
             'background:#172a3b;color:#cee4f1;}'
+            'QTabBar#songTabs::tab:hover:!selected{background:#29465d;color:#fff;}'
             'QTabBar#songTabs::tab:selected{background:#245777;color:#fff;'
             'border-bottom:2px solid #7bd6ff;}'
             'QTabBar#songTabs::close-button{border:0;background:transparent;}'
@@ -2196,6 +2202,7 @@ class Window(QMainWindow):
                 close_button.setIcon(qta.icon('fa5s.times', color='#7bd6ff'))
                 close_button.setIconSize(QSize(11, 11))
                 close_button.setStyleSheet('border:0;background:transparent;margin:0;padding:0;')
+                close_button.setVisible(True)
         self.song_tabs.raise_()
 
     def setup_developer_menus(self):
@@ -2884,7 +2891,15 @@ class Window(QMainWindow):
         try:
             self.load_project(path)
             if str(self.project_file or '') == path:
-                self.seek_waveform(self._song_tab_positions.get(path, self.live.position_ms if self.live else self.player.position()))
+                position = self._song_tab_positions.get(path, self.live.position_ms if self.live else self.player.position())
+                if self.live:
+                    self.live.pause()
+                    self.live.seek(position)
+                    self.update_live_button()
+                else:
+                    self.player.pause()
+                    self.player.setPosition(position)
+                self.on_position(position)
                 self.focus_active_note(force=True)
             elif previous_index >= 0:
                 self.song_tabs.setCurrentIndex(previous_index)
