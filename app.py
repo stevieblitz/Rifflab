@@ -623,6 +623,7 @@ class Signals(QObject):
     speed_ready = Signal(object, float, int)
     downloaded_metadata = Signal(object)
     waveform_ready = Signal(str, object)
+    download_only_ready = Signal(str)
 
 
 class Window(QMainWindow):
@@ -657,6 +658,7 @@ class Window(QMainWindow):
         self.signals.speed_ready.connect(self.on_speed_ready)
         self.signals.downloaded_metadata.connect(self.on_downloaded_metadata)
         self.signals.waveform_ready.connect(self.on_waveform_ready)
+        self.signals.download_only_ready.connect(self.on_download_only_ready)
         self._waveform_source = None
         self.song_metadata = {}
         self.speed_ratio = 1.0
@@ -3290,17 +3292,19 @@ class Window(QMainWindow):
             return
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Question)
-        confirm.setWindowTitle('Download audio?')
-        confirm.setText('Download and split audio from this YouTube link?')
-        confirm.setInformativeText(url)
-        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm.setDefaultButton(QMessageBox.Yes)
-        if confirm.exec() != QMessageBox.Yes:
+        confirm.setWindowTitle('Generate stems?')
+        confirm.setText('Also generate stems after downloading?')
+        confirm.setInformativeText('Yes: download, split instruments and analyze.\nNo: download audio only, without AI processing.')
+        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+        confirm.setDefaultButton(QMessageBox.No)
+        choice = confirm.exec()
+        if choice == QMessageBox.Cancel:
             return
         self.set_busy(True)
-        threading.Thread(target=self._download, args=(url,), daemon=True).start()
+        threading.Thread(target=self._download, args=(url, choice == QMessageBox.Yes),
+                         daemon=True).start()
 
-    def _download(self, url):
+    def _download(self, url, generate_stems=True):
         try:
             self.signals.stage.emit('1/3 · Downloading audio…')
             output = self.music_folder()
@@ -3340,8 +3344,11 @@ class Window(QMainWindow):
             wav = output / f'{video_id}.wav'
             if not wav.is_file():
                 raise RuntimeError('Download finished but no WAV file was found.')
-            self.signals.stage.emit('2/3 · Separating stems…')
-            self._split(wav)
+            if generate_stems:
+                self.signals.stage.emit('2/3 · Separating stems…')
+                self._split(wav)
+            else:
+                self.signals.download_only_ready.emit(str(wav))
         except Exception as exc:
             self.signals.error.emit(f'{exc}\n\nTechnical details saved in the RiffLab log.')
             self._log_exception()
@@ -3350,11 +3357,17 @@ class Window(QMainWindow):
         with (ROOT / 'rifflab-errors.log').open('a', encoding='utf-8') as logfile:
             logfile.write(traceback.format_exc() + '\n')
 
+    def on_download_only_ready(self, path):
+        # Signal runs on the GUI thread; do not call widgets from yt-dlp's worker.
+        self.set_busy(False)
+        self.status_message(f'Download complete, without stems: {Path(path).name}')
+        self.load_local(Path(path), check_unsaved=False, analyze=False)
+
     def on_downloaded_metadata(self, metadata):
         self.song_metadata = dict(metadata)
         self.update_now_playing()
 
-    def load_local(self, path, check_unsaved=True):
+    def load_local(self, path, check_unsaved=True, analyze=True):
         """Play immediately and automatically analyze a newly imported audio file."""
         if self.processing or self.analysis_running:
             return
@@ -3399,9 +3412,12 @@ class Window(QMainWindow):
         self.export.setEnabled(False)
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
-        # Always separate first. Never analyze full-mix transients or vocals.
-        self.set_stage('1/3 · Preparing stem separation…')
-        self.start_split(self.source_audio)
+        if analyze:
+            # Stem-based analysis remains the default for full import.
+            self.set_stage('1/3 · Preparing stem separation…')
+            self.start_split(self.source_audio)
+        else:
+            self.status_message('Audio ready to play. Use Analyze to generate stems later.')
 
     def update_analysis_action(self):
         """One stable toolbar action for Analyze / Stop / stopping."""
