@@ -2287,7 +2287,7 @@ class Window(QMainWindow):
         self.view_mixer_action.setChecked(True)
         self.view_mixer_action.toggled.connect(self.play_splitter.widget(0).setVisible)
         self.view_tuner_action = view.addAction('Tuner')
-        self.view_tuner_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.tuner_dialog))
+        self.view_tuner_action.triggered.connect(lambda: self.sidebar_tabs.setCurrentIndex(2))
         view.addSeparator()
         workspace = view.addMenu('Workspace')
         workspace.addAction('Save Workspace…', self.save_workspace_as)
@@ -2389,7 +2389,7 @@ class Window(QMainWindow):
         self.sidebar_tabs.setCurrentIndex(1)
 
     def toggle_tuner_panel(self):
-        self.tabs.setCurrentWidget(self.tuner_dialog)
+        self.sidebar_tabs.setCurrentIndex(2)
 
     def status_message(self, message):
         self.status.setText(message)
@@ -4939,7 +4939,7 @@ class Window(QMainWindow):
             if response == QMessageBox.Yes:
                 self.tuner_preset.setCurrentIndex(
                     7 if self.tuner_preset.currentIndex() >= 6 else 2)
-        self.tabs.setCurrentWidget(self.tuner_dialog)
+        self.sidebar_tabs.setCurrentIndex(2)
         self.tuner_dialog.raise_()
         self.status_message(
             'Tuning is a manual instrument choice. Transpose changes notation only.')
