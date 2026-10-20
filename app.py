@@ -2091,28 +2091,8 @@ class Window(QMainWindow):
         self.tabs.setTabVisible(1, False)  # Library uses the left-hand sidebar tabs.
         self.tabs.setTabVisible(2, False)  # Import / Export uses the header action.
         self.tabs.tabBar().hide()
-        # Native QTabBar in the same header row as the project controls.
-        # Its selection drives the existing QTabWidget and vice versa.
-        self.header_tabs = QTabBar(project_header)
-        self.header_tabs.setObjectName('headerWorkspaceTabs')
-        self.header_tabs.setExpanding(False)
-        self.header_tabs.setDrawBase(False)
-        self.header_tabs.addTab(qta.icon('fa5s.play-circle', color='#7bd6ff'), 'Play Along')
-        self.header_tabs.addTab(self.tuning_fork_icon(), 'Tuner')
-        self.header_tabs.setCurrentIndex(0)
-        self.header_tabs.currentChanged.connect(
-            lambda index: self.tabs.setCurrentIndex(
-                0 if index == 0 else 0))
-        self.header_tabs.currentChanged.connect(
-            lambda index: self.sidebar_tabs.setCurrentIndex(2) if index == 1 else None)
-        self.tabs.currentChanged.connect(
-            lambda index: self.header_tabs.setCurrentIndex(
-                0))
-        # Workspace tabs sit flush on the bottom edge of the project bar.
-        # No button-like vertical margin between the tabs and the workspace.
-        self.header_tabs.setFixedHeight(project_header.height())
-        self.header_tabs.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        project_row.addWidget(self.header_tabs, 0, Qt.AlignBottom)
+        # Play Along is the main workspace; Tuner lives in the sidebar.
+        # No duplicate navigation tabs in the top-right project header.
         self._song_tab_positions = {}
         self._song_tab_switching = False
         self.song_tabs = QTabBar(project_header)
