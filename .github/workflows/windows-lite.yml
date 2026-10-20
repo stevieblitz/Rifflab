@@ -6,7 +6,7 @@ name: Build RiffLab Complete for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace]
+    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups]
     paths:
       - 'app.py'
       - '.github/workflows/windows-lite.yml'
