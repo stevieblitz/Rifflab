@@ -574,12 +574,18 @@ class TunerMeter(QWidget):
         super().__init__(parent)
         self.cents = 0.0
         self.signal_active = False
-        self.setMinimumHeight(76)
+        self.history = []
+        self.setMinimumHeight(180)
         self.setToolTip('Pitch deviation in cents: flat on the left, sharp on the right, in tune at center.')
 
     def set_reading(self, cents, active=True):
         self.cents = max(-50.0, min(50.0, float(cents)))
         self.signal_active = bool(active)
+        if self.signal_active:
+            self.history.append(self.cents)
+            self.history = self.history[-75:]
+        else:
+            self.history.clear()
         self.update()
 
     def paintEvent(self, event):
@@ -588,25 +594,41 @@ class TunerMeter(QWidget):
         width = self.width()
         left, right = 27, max(28, width - 27)
         middle = (left + right) / 2
-        y = 38
-        painter.setPen(QPen(QColor('#38566c'), 3))
+        y = max(120, self.height() - 37)
+        # Fixed horizontal pitch scale; needle points to the detected deviation.
+        painter.setPen(QPen(QColor('#38566c'), 2))
         painter.drawLine(left, y, right, y)
         for cent in range(-50, 51, 10):
             x = round(middle + cent * (right-left) / 100)
-            is_center = cent == 0
-            painter.setPen(QPen(QColor('#66d2c1' if is_center else '#54778e'),
-                                2 if is_center else 1))
-            painter.drawLine(x, y - (14 if is_center else 7),
-                             x, y + (14 if is_center else 7))
-        painter.setPen(QColor('#98b9ce'))
-        painter.drawText(left-8, 70, '-50')
-        painter.drawText(round(middle)-5, 70, '0')
-        painter.drawText(right-17, 70, '+50')
+            painter.setPen(QPen(QColor('#6ee1bb' if cent == 0 else '#54778e'),
+                                2 if cent == 0 else 1))
+            painter.drawLine(x, y - (11 if cent == 0 else 5),
+                             x, y + (11 if cent == 0 else 5))
+        painter.setPen(QColor('#9ab9ca'))
+        painter.drawText(left, y+25, '♭  FLAT')
+        painter.drawText(right-55, y+25, 'SHARP  ♯')
+        painter.setPen(QPen(QColor('#344956'), 2))
+        painter.drawLine(round(middle), 12, round(middle), y-12)
+        # A scrolling pitch trail above the scale, like the reference tuner.
+        if len(self.history) > 1:
+            painter.setPen(QPen(QColor('#77dfa3'), 2))
+            count = len(self.history)
+            top, bottom = 18, y-16
+            previous = None
+            for i, cents in enumerate(self.history):
+                x = middle + cents*(right-left)/100
+                yy = bottom - i*(bottom-top)/max(1,count-1)
+                if previous:
+                    painter.drawLine(round(previous[0]),round(previous[1]),round(x),round(yy))
+                previous = (x,yy)
         if self.signal_active:
-            x = round(middle + self.cents * (right-left) / 100)
-            color = QColor('#51dec1' if abs(self.cents) <= 5 else '#f2ba66')
-            painter.setPen(QPen(color, 3))
-            painter.drawLine(x, y-21, x, y+21)
+            x = round(middle + self.cents*(right-left)/100)
+            painter.setPen(QPen(QColor('#69e7cb' if abs(self.cents)<=5 else '#f2ba66'), 2))
+            painter.drawLine(x, y-25, x, y+13)
+            painter.setBrush(QBrush(QColor('#192e30')))
+            painter.drawEllipse(x-10, y-35, 20, 20)
+            painter.setPen(QColor('#eefaff'))
+            painter.drawText(x-8,y-21,str(round(self.cents)))
         painter.end()
 
 
