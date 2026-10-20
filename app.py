@@ -1004,10 +1004,13 @@ class Window(QMainWindow):
         self.library_summary = QLabel('Double-click a song to open its saved project.')
         self.library_summary.setObjectName('ioDescription')
         library_layout.addWidget(self.library_summary)
+        # None means no saved choice yet: start with every artist collapsed.
+        saved_groups = self.layout_settings.value('ui_collapsed_artists', None)
         try:
-            self._collapsed_artists = set(json.loads(str(self.layout_settings.value('ui_collapsed_artists', '[]'))))
+            self._collapsed_artists = (set(json.loads(str(saved_groups)))
+                                       if saved_groups is not None else None)
         except (ValueError, TypeError):
-            self._collapsed_artists = set()
+            self._collapsed_artists = None
         self.restore_library_preferences()
         self.refresh_library()
         # Migrate the existing Recent list and default projects without moving audio.
@@ -2530,12 +2533,14 @@ class Window(QMainWindow):
         self.library_table.setSortingEnabled(False)
         group_by_artist = self.library_group.currentIndex() == 0
         if not hasattr(self, '_collapsed_artists'):
-            self._collapsed_artists = set()
+            self._collapsed_artists = None
         displayed = []
         if group_by_artist:
             grouped = {}
             for song in rows:
                 grouped.setdefault(str(song['artist'] or 'Unknown Artist'), []).append(song)
+            if self._collapsed_artists is None:
+                self._collapsed_artists = set(grouped)
             for artist in sorted(grouped, key=str.casefold):
                 displayed.append(('header', artist, len(grouped[artist])))
                 if artist not in self._collapsed_artists:
