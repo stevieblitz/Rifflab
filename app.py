@@ -761,12 +761,12 @@ class Window(QMainWindow):
         # Compact playback clock is displayed beside the transport buttons.
         self.time_label = QLabel('00:00 / 00:00')
         self.time_label.setObjectName('timeLabel')
-        self.time_label.setFixedWidth(135)
+        self.time_label.setFixedWidth(210)
         self.time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.time_label.setToolTip('Current playback position / track duration')
         self.header_time_label = QLabel('00:00 / 00:00')
         self.header_time_label.setObjectName('headerTimeLabel')
-        self.header_time_label.setFixedWidth(120)
+        self.header_time_label.setFixedWidth(210)
         self.header_time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.header_time_label.setToolTip('Playback time (also shown in transport)')
         project_row.addWidget(self.header_time_label)
@@ -1927,8 +1927,8 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#headerTimeLabel{color:#9dbcd0;background:transparent;border:0;font-family:'Cascadia Mono','Consolas',monospace;font-size:12px;font-weight:600;padding:0}
-          QLabel#timeLabel{background:transparent;color:#a5e5ff;border:0;font-family:'Cascadia Mono','Consolas',monospace;font-size:14px;font-weight:600;padding:0px 2px}
+          QLabel#headerTimeLabel{color:#7bd6ff;background:transparent;border:0;font-family:'Cascadia Code','Consolas',monospace;font-size:21px;font-weight:700;padding:0}
+          QLabel#timeLabel{background:transparent;color:#7bd6ff;border:0;font-family:'Cascadia Code','Consolas',monospace;font-size:20px;font-weight:700;padding:0px 2px}
           QLabel#loopInfo{background:transparent}
           QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
@@ -2922,6 +2922,49 @@ class Window(QMainWindow):
         finally:
             self._song_tab_switching = False
 
+    def clear_song_workspace(self):
+        """Unload the final tab while preserving saved songs and Library data."""
+        self.stop_live()
+        self.player.stop()
+        self.player.setSource(QUrl())
+        self.project_file = None
+        self.source_audio = None
+        self.folder = None
+        self.stems = {}
+        self.song_metadata = {}
+        self.url.clear()
+        self._duration = 0
+        self._waveform_source = None
+        self.chord_data = []
+        self.chord_times = []
+        self.display_chords = []
+        self.display_times = []
+        self.beat_times = []
+        self.section_overrides = {}
+        self.grid_active = -1
+        self.grid_row = -1
+        self.grid_buttons = []
+        self.grid_cells = []
+        self.grid_segments = {}
+        self.grid_chord_names = []
+        self.waveform.set_waveform([])
+        self.waveform.set_duration(0)
+        self.waveform.set_position(0)
+        self.timeline.setRange(0, 0)
+        self.time_label.setText('00:00 / 00:00')
+        self.header_time_label.setText('00:00 / 00:00')
+        self._set_current_chord('—')
+        self.update_upcoming_notes(-1)
+        self.clear_loop()
+        while self.chord_grid.count():
+            item = self.chord_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.grid_host.setMinimumHeight(0)
+        self.refresh_stems_led()
+        self.update_now_playing()
+        self.status_message('Ready. Open a song from the Library.')
+
     def close_song_tab(self, index):
         if index < 0 or self.processing or self.analysis_running:
             return
@@ -2933,8 +2976,11 @@ class Window(QMainWindow):
         self.song_tabs.blockSignals(False)
         self._song_tab_positions.pop(path, None)
         self.layout_menu_song_tabs()
-        if path == str(self.project_file or '') and self.song_tabs.count():
-            self.activate_song_tab(self.song_tabs.currentIndex())
+        if path == str(self.project_file or ''):
+            if self.song_tabs.count():
+                self.activate_song_tab(self.song_tabs.currentIndex())
+            else:
+                self.clear_song_workspace()
 
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open RiffLab Project',
@@ -2996,7 +3042,7 @@ class Window(QMainWindow):
             self.analyze_local.setEnabled(False)
             self.start_live()
         else:
-            self.load_local(source, check_unsaved=False)
+            self.load_local(source, check_unsaved=False, analyze=False)
         self._restore_project_settings(data)
         self.sync_all_export_mixer()
         self.project_file = str(path)
@@ -3004,8 +3050,10 @@ class Window(QMainWindow):
         self.index_library_project(path, data, played=True)
         self.tabs.setCurrentIndex(0)
         self.status_message(f'Project loaded: {path.stem}')
-        # Restored mode is signal-blocked; explicitly start the right analysis.
-        self.switch_analysis_mode()
+        # Use cached chord/beat data when switching between saved songs.
+        # Re-running stem AI on every tab change blocks the UI and uses CPU.
+        if not self.chord_data and self.stems:
+            self.switch_analysis_mode()
 
     def _restore_project_settings(self, data):
         self.section_overrides = {int(k): str(v) for k, v in (data.get('section_overrides') or {}).items()}
