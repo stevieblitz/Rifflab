@@ -1755,9 +1755,11 @@ class Window(QMainWindow):
         self.sidebar_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
+        self.sidebar_tabs.addTab(self.tuner_dialog, 'Tuner')
         self.sidebar_tabs.setTabIcon(0, qta.icon('fa5s.sliders-h', color='#7bd6ff'))
         self.sidebar_tabs.setTabIcon(1, qta.icon('fa5s.book', color='#7bd6ff'))
-        self.sidebar_tabs.setCurrentIndex(max(0, min(1, int(self.layout_settings.value('ui_sidebar_tab', 1)))))
+        self.sidebar_tabs.setTabIcon(2, self.tuning_fork_icon())
+        self.sidebar_tabs.setCurrentIndex(max(0, min(2, int(self.layout_settings.value('ui_sidebar_tab', 1)))))
         self.play_splitter.insertWidget(0, self.sidebar_tabs)
         self.sidebar_tabs.currentChanged.connect(
             lambda _index: self.tabs.setCurrentIndex(0) if self.tabs.currentIndex() == 1 else None)
@@ -1775,10 +1777,7 @@ class Window(QMainWindow):
         self.tuner_dialog.setWindowFlags(Qt.Widget)
         self.tuner_dialog.setMinimumWidth(0)
         self.tuner_dialog.setContentsMargins(8, 6, 8, 6)
-        self.tabs.addTab(self.tuner_dialog, 'Tuner')
-        tuner_index = self.tabs.indexOf(self.tuner_dialog)
-        self.tabs.setTabIcon(tuner_index, self.tuning_fork_icon())
-        self.tabs.setTabToolTip(tuner_index, 'Chromatic Tuner')
+        # The tuner is the third sidebar tab, not a separate workspace page.
         layout = tuner_layout
         layout.addWidget(QLabel('CHROMATIC TUNER  /  AUDIO INPUT'))
         tuner_row = QHBoxLayout()
@@ -1819,11 +1818,10 @@ class Window(QMainWindow):
         layout.addWidget(self.tuner_target)
         self.tuner_note = QLabel('—')
         self.tuner_note.setAlignment(Qt.AlignCenter)
-        self.tuner_note.setMinimumHeight(78)
+        self.tuner_note.setMinimumHeight(90)
         self.tuner_note.setStyleSheet(
-            'font-size:46px;font-weight:800;color:#eaf7ff;'
-            'background-color:rgba(41,76,99,95);'
-            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
+            'font-size:66px;font-weight:800;color:#eaf7ff;'
+            'background:transparent;border:0;')
         layout.addWidget(self.tuner_note)
         self.tuner_details = QLabel('Play one string · A4 = 440 Hz')
         self.tuner_details.setAlignment(Qt.AlignCenter)
@@ -2062,10 +2060,12 @@ class Window(QMainWindow):
         self.header_tabs.setCurrentIndex(0)
         self.header_tabs.currentChanged.connect(
             lambda index: self.tabs.setCurrentIndex(
-                0 if index == 0 else self.tabs.indexOf(self.tuner_dialog)))
+                0 if index == 0 else 0))
+        self.header_tabs.currentChanged.connect(
+            lambda index: self.sidebar_tabs.setCurrentIndex(2) if index == 1 else None)
         self.tabs.currentChanged.connect(
             lambda index: self.header_tabs.setCurrentIndex(
-                1 if self.tabs.widget(index) is self.tuner_dialog else 0))
+                0))
         # Workspace tabs sit flush on the bottom edge of the project bar.
         # No button-like vertical margin between the tabs and the workspace.
         self.header_tabs.setFixedHeight(project_header.height())
@@ -4987,10 +4987,9 @@ class Window(QMainWindow):
         self.tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}')
         in_tune = abs(smooth) <= 5 and (target is None or abs(cents) <= 8)
         self.tuner_note.setStyleSheet(
-            'font-size:46px;font-weight:800;'
+            'font-size:66px;font-weight:800;'
             f'color:{"#69e7cb" if in_tune else "#eaf7ff"};'
-            'background-color:rgba(41,76,99,95);'
-            'border:1px solid rgba(150,201,229,75);border-radius:8px;')
+            'background:transparent;border:0;')
         direction = ('IN TUNE' if in_tune else '↑ TUNE UP' if smooth < -5
                      else '↓ TUNE DOWN' if smooth > 5 else 'ALMOST')
         self.tuner_details.setText(
