@@ -920,6 +920,12 @@ class Window(QMainWindow):
         self.library_sort.currentIndexChanged.connect(self.refresh_library)
         self.library_sort.setMinimumWidth(110)
         library_filter_row.addWidget(self.library_sort, 1)
+        self.library_group = QComboBox()
+        self.library_group.addItems(['Artists', 'Flat list'])
+        self.library_group.setToolTip('Group saved songs by artist or show a flat list')
+        self.library_group.setCurrentIndex(int(self.layout_settings.value('ui_library_group', 0)))
+        self.library_group.currentIndexChanged.connect(self.refresh_library)
+        library_filter_row.addWidget(self.library_group)
         library_toolbar.addLayout(library_filter_row)
         self.library_add = QPushButton('Add')
         self.library_add.setToolTip('Save the current song as a project and add it to Library')
@@ -998,6 +1004,10 @@ class Window(QMainWindow):
         self.library_summary = QLabel('Double-click a song to open its saved project.')
         self.library_summary.setObjectName('ioDescription')
         library_layout.addWidget(self.library_summary)
+        try:
+            self._collapsed_artists = set(json.loads(str(self.layout_settings.value('ui_collapsed_artists', '[]'))))
+        except (ValueError, TypeError):
+            self._collapsed_artists = set()
         self.restore_library_preferences()
         self.refresh_library()
         # Migrate the existing Recent list and default projects without moving audio.
@@ -2518,8 +2528,36 @@ class Window(QMainWindow):
                 ORDER BY {order}, title COLLATE NOCASE
             """, (f'%{query}%',)*3 + (tuning, tuning, lo, hi, int(favorite))).fetchall()
         self.library_table.setSortingEnabled(False)
-        self.library_table.setRowCount(len(rows))
-        for row_index, song in enumerate(rows):
+        group_by_artist = self.library_group.currentIndex() == 0
+        if not hasattr(self, '_collapsed_artists'):
+            self._collapsed_artists = set()
+        displayed = []
+        if group_by_artist:
+            grouped = {}
+            for song in rows:
+                grouped.setdefault(str(song['artist'] or 'Unknown Artist'), []).append(song)
+            for artist in sorted(grouped, key=str.casefold):
+                displayed.append(('header', artist, len(grouped[artist])))
+                if artist not in self._collapsed_artists:
+                    displayed.extend(('song', song, 0) for song in grouped[artist])
+        else:
+            displayed = [('song', song, 0) for song in rows]
+        self.library_table.setRowCount(len(displayed))
+        for row_index, (kind, value, count) in enumerate(displayed):
+            if kind == 'header':
+                icon = '▸' if value in self._collapsed_artists else '▾'
+                header_icon = QTableWidgetItem(icon)
+                header_icon.setForeground(QColor('#7bd6ff'))
+                header_icon.setData(Qt.UserRole + 1, value)
+                self.library_table.setItem(row_index, 0, header_icon)
+                header = QTableWidgetItem(f'{value}   ({count})')
+                header.setForeground(QColor('#a4daf5'))
+                header.setBackground(QColor('#1b3547'))
+                header.setData(Qt.UserRole + 1, value)
+                self.library_table.setItem(row_index, 1, header)
+                self.library_table.setRowHeight(row_index, 25)
+                continue
+            song = value
             values = ('★' if song['favorite'] else '☆', song['title'], song['artist'],
                       song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
@@ -2577,6 +2615,15 @@ class Window(QMainWindow):
             self.remove_library_song()
 
     def library_cell_clicked(self, row, column):
+        item = self.library_table.item(row, 1)
+        artist = item.data(Qt.UserRole + 1) if item else None
+        if artist:
+            if artist in self._collapsed_artists:
+                self._collapsed_artists.remove(artist)
+            else:
+                self._collapsed_artists.add(artist)
+            self.refresh_library()
+            return
         # Click the left-hand outline star to toggle a favorite immediately.
         if column == 0:
             self.library_table.selectRow(row)
@@ -5156,6 +5203,8 @@ class Window(QMainWindow):
         self.layout_settings.setValue('ui_library_max_bpm', self.library_max_bpm.value())
         self.layout_settings.setValue('ui_library_favorites_only', self.library_favorites.isChecked())
         self.layout_settings.setValue('ui_library_sort', self.library_sort.currentIndex())
+        self.layout_settings.setValue('ui_library_group', self.library_group.currentIndex())
+        self.layout_settings.setValue('ui_collapsed_artists', json.dumps(sorted(getattr(self, '_collapsed_artists', set()))))
         self.layout_settings.setValue('ui_library_filters_open', self.library_filter_toggle.isChecked())
         self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
         self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
