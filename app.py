@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import project_catalog
+import smart_metadata
 from datetime import datetime
 import bisect
 from array import array
@@ -3642,18 +3643,7 @@ class Window(QMainWindow):
             with YoutubeDL(opts) as downloader:
                 info = downloader.extract_info(url, download=True)
                 video_id = re.sub(r'[^A-Za-z0-9_-]', '_', info['id'])
-                raw_title = str(info.get('track') or info.get('title') or '').strip()
-                artist = str(info.get('artist') or info.get('creator') or '').strip()
-                album = str(info.get('album') or '').strip()
-                if not artist:
-                    match = re.match(r'^(.+?)\s+[-–—]\s+(.+)$', raw_title)
-                    if match:
-                        artist, raw_title = match.group(1).strip(), match.group(2).strip()
-                # A channel/uploader is not necessarily the recording artist.
-                # Leave Artist editable rather than silently claiming the uploader is the artist.
-                self.signals.downloaded_metadata.emit({
-                    'title': raw_title, 'artist': artist, 'album': album,
-                    'tuning': 'Unknown', 'musical_key': ''})
+                self.signals.downloaded_metadata.emit(smart_metadata.identify(info))
             wav = output / f'{video_id}.wav'
             if not wav.is_file():
                 raise RuntimeError('Download finished but no WAV file was found.')
@@ -3677,7 +3667,31 @@ class Window(QMainWindow):
         self.load_local(Path(path), check_unsaved=False, analyze=False)
 
     def on_downloaded_metadata(self, metadata):
+        """Review inferred fields on the UI thread before persisting."""
         self.song_metadata = dict(metadata)
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Smart Import · Review Song Details')
+        dialog.setMinimumWidth(460)
+        form = QFormLayout(dialog)
+        original = QLabel(str(metadata.get('original_title') or ''))
+        original.setWordWrap(True)
+        form.addRow('YouTube title', original)
+        fields = {}
+        for key, label in (('artist', 'Artist'), ('title', 'Song title'),
+                           ('version', 'Recording / version'), ('album', 'Album')):
+            field = QLineEdit(str(metadata.get(key) or ''))
+            form.addRow(label, field)
+            fields[key] = field
+        note = QLabel('Suggested metadata · YouTube uploader is not automatically the artist.')
+        note.setWordWrap(True)
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            self.song_metadata.update({key: widget.text().strip()
+                                       for key, widget in fields.items()})
         self.update_now_playing()
 
     def load_local(self, path, check_unsaved=True, analyze=True):
