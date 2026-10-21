@@ -3125,7 +3125,7 @@ class Window(QMainWindow):
             slider.blockSignals(True)
             toggle.blockSignals(True)
             slider.setValue(int(data.get('levels', {}).get(name, 100)))
-            toggle.setChecked(bool(data.get('enabled', {}).get(name, name != 'bass')))
+            toggle.setChecked(bool(data.get('enabled', {}).get(name, True)))
             slider.blockSignals(False)
             toggle.blockSignals(False)
             solo = self.solos[name]
@@ -4089,10 +4089,10 @@ class Window(QMainWindow):
             slider.blockSignals(True)
             button.blockSignals(True)
             slider.setValue(100)
-            button.setChecked(stem != 'bass')
+            button.setChecked(True)
             slider.blockSignals(False)
             button.blockSignals(False)
-            button.setAccessibleName(f'Mute {stem}' if stem != 'bass' else 'Unmute bass')
+            button.setAccessibleName(f'Mute {stem}')
         for solo in self.solos.values():
             solo.blockSignals(True)
             solo.setChecked(False)
@@ -5040,10 +5040,10 @@ class Window(QMainWindow):
         reference = target if target is not None else detected
         target_hz = 440 * 2 ** ((reference-69) / 12)
         cents = 1200 * math.log2(frequency / target_hz)
-        if self._tuner_display_cents is None or abs(cents-self._tuner_display_cents) > 60:
+        if self._tuner_display_cents is None:
             self._tuner_display_cents = cents
         else:
-            self._tuner_display_cents += .42 * (cents-self._tuner_display_cents)
+            self._tuner_display_cents += .20 * (cents-self._tuner_display_cents)
         smooth = self._tuner_display_cents
         self.tuner_note.setText(f'{NOTES[detected%12]}{detected//12-1}')
         in_tune = abs(smooth) <= 5 and (target is None or abs(cents) <= 8)
