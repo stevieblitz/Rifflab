@@ -4767,7 +4767,7 @@ class Window(QMainWindow):
             button.setStyleSheet(self._chord_segment_style(index, index<=self.grid_active<end))
             button.setFixedHeight(height)
         for section in getattr(self,'grid_section_buttons',()):
-            section.setFixedHeight(height+16)
+            section.setFixedHeight(height + 28 + self.chord_grid.verticalSpacing())
         if hasattr(self,'chord_grid'):
             # A resizable QScrollArea otherwise compresses the fresh grid on
             # import/reanalysis until the next manual V-slider interaction.
@@ -4936,10 +4936,15 @@ class Window(QMainWindow):
 
     def render_grid(self, *_):
         """Four bars per row, four clickable beat cells per bar. Grid uses a fixed BPM estimate."""
+        # Detach stale note widgets immediately; deleteLater alone can leave
+        # visible ghost labels during consecutive renders.
         while self.chord_grid.count():
             item = self.chord_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
         self.grid_buttons = []
         self.grid_cells = []
         self._note_progress = {}
@@ -5014,6 +5019,7 @@ class Window(QMainWindow):
                 t = self.grid_cells[i][0]
                 button = QPushButton('' if chord == '—' else chord)
                 button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                button.setFixedHeight(self.grid_row_height.value())
                 button.setToolTip(f'{chord} · {t:.2f}s · {j-i} beats')
                 button.setAcceptDrops(True)
                 button.setProperty('riffDropTarget', True)
