@@ -2345,6 +2345,12 @@ class Window(QMainWindow):
         actions.addWidget(create_project)
         actions.addWidget(create_playlist)
         layout.addLayout(actions)
+        file_actions = QHBoxLayout()
+        import_workspace = QPushButton('Open .riffproj')
+        export_workspace = QPushButton('Save .riffproj')
+        file_actions.addWidget(import_workspace)
+        file_actions.addWidget(export_workspace)
+        layout.addLayout(file_actions)
         listing = QListWidget()
         layout.addWidget(listing, 1)
 
@@ -2372,6 +2378,32 @@ class Window(QMainWindow):
 
         create_project.clicked.connect(lambda: new_collection('project'))
         create_playlist.clicked.connect(lambda: new_collection('playlist'))
+
+        def import_workspace_file():
+            path, _ = QFileDialog.getOpenFileName(dialog, 'Open Workspace', '', 'RiffLab Workspace (*.riffproj)')
+            if not path:
+                return
+            try:
+                project_catalog.import_project(self.library_db, path)
+                self.refresh_collection_filters()
+                refill()
+            except (ValueError, OSError, TypeError) as exc:
+                QMessageBox.warning(dialog, 'Open Workspace', str(exc))
+
+        def export_workspace_file():
+            choice = selected()
+            if not choice or choice[1] != 'project':
+                QMessageBox.information(dialog, 'Save Workspace', 'Select a project (not a playlist).')
+                return
+            path, _ = QFileDialog.getSaveFileName(dialog, 'Save Workspace', '', 'RiffLab Workspace (*.riffproj)')
+            if path:
+                try:
+                    project_catalog.export_project(self.library_db, choice[0], path)
+                except (OSError, ValueError) as exc:
+                    QMessageBox.warning(dialog, 'Save Workspace', str(exc))
+
+        import_workspace.clicked.connect(import_workspace_file)
+        export_workspace.clicked.connect(export_workspace_file)
         refill()
         buttons = QHBoxLayout()
         open_button = QPushButton('Open Selected')
