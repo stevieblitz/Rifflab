@@ -1,6 +1,7 @@
 """RiffLab Alpha 0.9.5 — local four-stem music practice desktop app."""
 import json
 import sqlite3
+import project_catalog
 from datetime import datetime
 import bisect
 from array import array
@@ -25,7 +26,7 @@ from realtime_audio import LiveStemPlayer
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea, QSpinBox, QGridLayout, QComboBox, QSizePolicy, QTabWidget, QTabBar, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QAbstractItemView, QSplitter, QSplitterHandle, QInputDialog, QMenu, QListWidget
 )
 
 def loop_boundary_icon(which):
@@ -726,6 +727,8 @@ class Window(QMainWindow):
         self._pending_project = None
         self.library_db = ROOT / "library.sqlite3"
         self.init_library()
+        project_catalog.initialize(self.library_db)
+        self._active_collection_id = None
 
         main = QWidget()
         self.setCentralWidget(main)
@@ -869,7 +872,17 @@ class Window(QMainWindow):
         self.library_search = QLineEdit()
         self.library_search.setPlaceholderText('Search song, artist or album…')
         self.library_search.textChanged.connect(self.refresh_library)
-        library_filters.addWidget(self.library_search)
+        collapse_row = QHBoxLayout()
+        collapse_row.addWidget(self.library_search, 1)
+        collapse_all = QPushButton('▸')
+        collapse_all.setToolTip('Collapse all artists')
+        collapse_all.clicked.connect(lambda: self.set_all_artist_groups(True))
+        expand_all = QPushButton('▾')
+        expand_all.setToolTip('Expand all artists')
+        expand_all.clicked.connect(lambda: self.set_all_artist_groups(False))
+        collapse_row.addWidget(collapse_all)
+        collapse_row.addWidget(expand_all)
+        library_filters.addLayout(collapse_row)
         self.library_tuning = QComboBox()
         self.library_tuning.addItems(['All tunings', 'Unknown', 'E Standard', 'Eb Standard', 'D Standard',
                                       'Drop D', 'Drop C#', 'Drop C', 'Other'])
@@ -1049,11 +1062,15 @@ class Window(QMainWindow):
         self.url = QLineEdit()
         self.url.setPlaceholderText('Paste YouTube URL…')
         url_row.addWidget(self.url, 1)
-        self.load_url = QPushButton('Download & Split')
-        self.load_url.clicked.connect(self.download_url)
-        self.url.returnPressed.connect(self.download_url)
+        self.load_url = QPushButton('Download + Create Stems')
+        self.load_url.clicked.connect(lambda: self.download_url(True))
+        self.url.returnPressed.connect(lambda: self.download_url(True))
         url_row.addWidget(self.load_url)
         import_layout.addLayout(url_row)
+        self.download_play = QPushButton('Download + Play Along')
+        self.download_play.setToolTip('Download audio and start playing without stems or AI separation.')
+        self.download_play.clicked.connect(lambda: self.download_url(False))
+        import_layout.addWidget(self.download_play)
         local_row = QHBoxLayout()
         self.load_file = QPushButton('Open Audio')
         self.load_file.clicked.connect(self.open_file)
@@ -1150,7 +1167,7 @@ class Window(QMainWindow):
             heading.addStretch(1)
             mute = QPushButton()
             mute.setCheckable(True)
-            mute.setChecked(stem != 'bass')
+            mute.setChecked(True)
             mute.setEnabled(False)
             mute.setFixedSize(28, 26)
             mute.setProperty('stemToggle', True)
@@ -1711,7 +1728,7 @@ class Window(QMainWindow):
             heading.addStretch(1)
             cb = QPushButton()
             cb.setCheckable(True)
-            cb.setChecked(stem != 'bass')
+            cb.setChecked(True)
             cb.setEnabled(False)
             cb.setFixedSize(24, 23)
             cb.setProperty('stemToggle', True)
@@ -2257,7 +2274,8 @@ class Window(QMainWindow):
         bar.installEventFilter(self)
         QTimer.singleShot(0, self.attach_song_tabs_to_menu)
         file_menu = bar.addMenu('&File')
-        file_menu.addAction('Open Project…', self.open_project)
+        file_menu.addAction('Project Manager…', self.show_project_manager)
+        file_menu.addAction('Open Song (.riff)…', self.open_project)
         file_menu.addAction('Save Project', self.save_project)
         file_menu.addAction('Save Project As…', self.save_project_as_menu)
         recent = file_menu.addMenu('Recent Projects')
@@ -2295,6 +2313,110 @@ class Window(QMainWindow):
         view.addAction('Reset Mixer Layout', self.reset_mixer_layout)
         view.addAction('Show PLAY', lambda: self.tabs.setCurrentIndex(0))
         view.addAction('Show Library', lambda: self.tabs.setCurrentIndex(1))
+
+    def show_project_manager(self):
+        """Adobe-style entry dialog; .riff song files remain intact."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle('RiffLab · Project Manager')
+        dialog.setMinimumSize(510, 440)
+        layout = QVBoxLayout(dialog)
+        heading = QLabel('YOUR WORKSPACES')
+        heading.setStyleSheet('font-size:20px;font-weight:700;color:#7bd6ff')
+        layout.addWidget(heading)
+        layout.addWidget(QLabel('Projects contain multiple songs. Playlists reuse them without copies.'))
+        actions = QHBoxLayout()
+        create_project = QPushButton('+ New Project')
+        create_playlist = QPushButton('+ New Playlist')
+        actions.addWidget(create_project)
+        actions.addWidget(create_playlist)
+        layout.addLayout(actions)
+        listing = QListWidget()
+        layout.addWidget(listing, 1)
+
+        def refill():
+            listing.clear()
+            for ident, name, kind in project_catalog.list_collections(self.library_db):
+                from PySide6.QtWidgets import QListWidgetItem
+                item = QListWidgetItem(('▣  ' if kind == 'project' else '♫  ') + name)
+                item.setData(Qt.UserRole, (ident, kind))
+                listing.addItem(item)
+
+        def new_collection(kind):
+            name, accepted = QInputDialog.getText(dialog,
+                'New Project' if kind == 'project' else 'New Playlist',
+                'Name:')
+            if accepted and name.strip():
+                ident = project_catalog.create_collection(self.library_db, name, kind)
+                refill()
+                if kind == 'project':
+                    self._active_collection_id = ident
+                    dialog.accept()
+                    self.tabs.setCurrentIndex(2)
+                    self.io_sections.setCurrentIndex(0)
+
+        create_project.clicked.connect(lambda: new_collection('project'))
+        create_playlist.clicked.connect(lambda: new_collection('playlist'))
+        refill()
+        buttons = QHBoxLayout()
+        open_button = QPushButton('Open Selected')
+        add_button = QPushButton('Add Current Song')
+        remove_button = QPushButton('Delete Collection')
+        buttons.addWidget(open_button)
+        buttons.addWidget(add_button)
+        buttons.addWidget(remove_button)
+        layout.addLayout(buttons)
+
+        def selected():
+            item = listing.currentItem()
+            return item.data(Qt.UserRole) if item else None
+
+        def open_selected():
+            choice = selected()
+            if not choice:
+                return
+            ident, kind = choice
+            if kind == 'project':
+                self._active_collection_id = ident
+            paths = [p for (p,) in project_catalog.list_songs(self.library_db, ident)]
+            existing = [p for p in paths if Path(p).is_file()]
+            if existing:
+                dialog.accept()
+                self.load_project(existing[0])
+                self.show_library_sidebar()
+                self.status_message(f'Opened {kind} with {len(paths)} songs.')
+            else:
+                dialog.accept()
+                self.tabs.setCurrentIndex(2)
+                self.io_sections.setCurrentIndex(0)
+                self.status_message('Empty collection · import music to get started.')
+
+        def add_current():
+            choice = selected()
+            if not choice or not self.project_file or not Path(self.project_file).is_file():
+                QMessageBox.information(dialog, 'Add song', 'Save a song and select a collection first.')
+                return
+            try:
+                project_catalog.add_song(self.library_db, choice[0], self.project_file)
+                self.status_message('Song added without duplicating audio.')
+            except ValueError as exc:
+                QMessageBox.warning(dialog, 'Add song', str(exc))
+
+        def delete_selected():
+            choice = selected()
+            if not choice:
+                return
+            if QMessageBox.question(dialog, 'Delete collection',
+                     'Delete this project or playlist? Audio, stems and saved songs remain untouched.') == QMessageBox.Yes:
+                project_catalog.delete_collection(self.library_db, choice[0])
+                if self._active_collection_id == choice[0]:
+                    self._active_collection_id = None
+                refill()
+
+        open_button.clicked.connect(open_selected)
+        listing.itemDoubleClicked.connect(lambda _item: open_selected())
+        add_button.clicked.connect(add_current)
+        remove_button.clicked.connect(delete_selected)
+        dialog.exec()
 
     def save_project_as_menu(self):
         original = self.project_file
@@ -2575,6 +2697,15 @@ class Window(QMainWindow):
         self.library_table.setSortingEnabled(False)
         self.library_summary.setText(
             f'{len(rows)} songs · Double-click or drag to open')
+
+    def set_all_artist_groups(self, collapsed):
+        with sqlite3.connect(self.library_db) as db:
+            artists = {str(row[0] or 'Unknown Artist') for row in
+                       db.execute('SELECT DISTINCT artist FROM songs')}
+        self._collapsed_artists = artists if collapsed else set()
+        self.layout_settings.setValue(
+            'ui_collapsed_artists', json.dumps(sorted(self._collapsed_artists)))
+        self.refresh_library()
 
     def show_library_context_menu(self, pos):
         """Right-click actions for the song actually under the cursor."""
@@ -2887,7 +3018,9 @@ class Window(QMainWindow):
             self.update_now_playing()
             self.remember_project(path)
             self.index_library_project(path, data)
-            self.status_message(f'Project saved: {path.name}')
+            if self._active_collection_id is not None:
+                project_catalog.add_song(self.library_db, self._active_collection_id, path)
+            self.status_message(f'Song saved: {path.name}')
             return True
         except OSError as exc:
             QMessageBox.warning(self, 'Save project', str(exc))
@@ -3402,25 +3535,16 @@ class Window(QMainWindow):
         else:
             self.status_message('Ctrl+V: copy a local audio file or YouTube link.')
 
-    def download_url(self):
+    def download_url(self, generate_stems=True):
+        """Import action is explicit; never ask a second stems confirmation."""
         url = self.url.text().strip()
         if not valid_youtube_url(url):
             self.on_error('Please paste a valid HTTPS YouTube URL.')
             return
         if self.processing:
             return
-        confirm = QMessageBox(self)
-        confirm.setIcon(QMessageBox.Question)
-        confirm.setWindowTitle('Generate stems?')
-        confirm.setText('Also generate stems after downloading?')
-        confirm.setInformativeText('Yes: download, split instruments and analyze.\nNo: download audio only, without AI processing.')
-        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-        confirm.setDefaultButton(QMessageBox.No)
-        choice = confirm.exec()
-        if choice == QMessageBox.Cancel:
-            return
         self.set_busy(True)
-        threading.Thread(target=self._download, args=(url, choice == QMessageBox.Yes),
+        threading.Thread(target=self._download, args=(url, bool(generate_stems)),
                          daemon=True).start()
 
     def _download(self, url, generate_stems=True):
