@@ -4,11 +4,12 @@ Existing .riff manifests remain per-song and are never moved or deleted.
 Collections store only references, avoiding duplicate downloads or stems.
 """
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 
 def initialize(db_path):
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS collections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +33,7 @@ def create_collection(db_path, name, kind):
     name = str(name).strip()
     if not name or kind not in ('project', 'playlist'):
         raise ValueError('Enter a collection name and a valid type.')
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         cursor = db.execute("INSERT INTO collections(name, kind) VALUES (?, ?)", (name, kind))
         return cursor.lastrowid
 
@@ -44,7 +45,7 @@ def list_collections(db_path, kind=None):
         sql += ' WHERE kind=?'
         values = (kind,)
     sql += ' ORDER BY name COLLATE NOCASE, id'
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         return db.execute(sql, values).fetchall()
 
 
@@ -52,7 +53,7 @@ def add_song(db_path, collection_id, song_path):
     path = Path(song_path).resolve()
     if not path.is_file() or path.suffix.lower() != '.riff':
         raise ValueError('Save the song as a .riff file before adding it.')
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         exists = db.execute('SELECT 1 FROM collections WHERE id=?', (collection_id,)).fetchone()
         if not exists:
             raise ValueError('Collection no longer exists.')
@@ -65,20 +66,20 @@ def add_song(db_path, collection_id, song_path):
 
 
 def list_songs(db_path, collection_id):
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         return db.execute(
             'SELECT song_path FROM collection_songs WHERE collection_id=? ORDER BY position, song_path',
             (collection_id,)).fetchall()
 
 
 def remove_song(db_path, collection_id, song_path):
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         db.execute('DELETE FROM collection_songs WHERE collection_id=? AND song_path=?',
                    (collection_id, str(Path(song_path).resolve())))
 
 
 def delete_collection(db_path, collection_id):
     """Delete only collection records. Never delete audio or .riff files."""
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         db.execute('DELETE FROM collection_songs WHERE collection_id=?', (collection_id,))
         db.execute('DELETE FROM collections WHERE id=?', (collection_id,))
