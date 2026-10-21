@@ -875,7 +875,13 @@ class Window(QMainWindow):
         self.library_scope = QComboBox()
         self.library_scope.addItem('All Music', None)
         self.library_scope.currentIndexChanged.connect(self.refresh_library)
-        library_filters.addWidget(self.library_scope)
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(self.library_scope, 1)
+        self.library_new_playlist = QPushButton('+ Playlist')
+        self.library_new_playlist.setToolTip('Create a playlist in your Library')
+        self.library_new_playlist.clicked.connect(self.create_library_playlist)
+        scope_row.addWidget(self.library_new_playlist)
+        library_filters.addLayout(scope_row)
         self.library_search = QLineEdit()
         self.library_search.setPlaceholderText('Search song, artist or album…')
         self.library_search.textChanged.connect(self.refresh_library)
@@ -2633,6 +2639,29 @@ class Window(QMainWindow):
         if hasattr(self, 'library_table'):
             self.refresh_library()
 
+    def create_library_playlist(self):
+        name, accepted = QInputDialog.getText(self, 'New Playlist', 'Playlist name:')
+        if not accepted or not name.strip():
+            return
+        try:
+            ident = project_catalog.create_collection(self.library_db, name.strip(), 'playlist')
+        except ValueError as exc:
+            QMessageBox.warning(self, 'New Playlist', str(exc))
+            return
+        self.refresh_collection_filters()
+        self.library_scope.setCurrentIndex(max(0, self.library_scope.findData(ident)))
+        self.refresh_library()
+        self.status_message(f'Playlist created: {name.strip()} · right-click songs to add them.')
+
+    def add_library_song_to_playlist(self, playlist_id, path):
+        try:
+            project_catalog.add_song(self.library_db, playlist_id, path)
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Add to Playlist', str(exc))
+            return
+        self.refresh_library()
+        self.status_message('Song added to playlist.')
+
     def refresh_collection_filters(self):
         if not hasattr(self, 'library_scope'):
             return
@@ -2752,12 +2781,21 @@ class Window(QMainWindow):
         open_action = menu.addAction('Open project')
         details_action = menu.addAction('Edit song details')
         favorite_action = menu.addAction('Toggle favorite')
+        playlist_menu = menu.addMenu('Add to Playlist')
+        playlist_actions = {}
+        for ident, name, kind in project_catalog.list_collections(self.library_db, 'playlist'):
+            action = playlist_menu.addAction(name)
+            playlist_actions[action] = ident
+        if not playlist_actions:
+            playlist_menu.addAction('No playlists yet').setEnabled(False)
         menu.addSeparator()
         copy_action = menu.addAction('Copy project path')
         menu.addSeparator()
         remove_action = menu.addAction('Remove from Library')
         selected = menu.exec(self.library_table.viewport().mapToGlobal(pos))
-        if selected == open_action:
+        if selected in playlist_actions:
+            self.add_library_song_to_playlist(playlist_actions[selected], path)
+        elif selected == open_action:
             self.open_library_song()
         elif selected == details_action:
             self.edit_library_song()
