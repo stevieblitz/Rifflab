@@ -683,6 +683,8 @@ class Window(QMainWindow):
         self.signals.waveform_ready.connect(self.on_waveform_ready)
         self.signals.download_only_ready.connect(self.on_download_only_ready)
         self._waveform_source = None
+        self._waveform_cache = {}
+        self._waveform_pending = set()
         self.song_metadata = {}
         self.speed_ratio = 1.0
         self.detected_bpm = 130.0
@@ -4764,8 +4766,15 @@ class Window(QMainWindow):
             source = str(Path(source).resolve())
             key = source
         self._waveform_source = key
+        if key in self._waveform_cache:
+            self.waveform.set_waveform(self._waveform_cache[key])
+            self.waveform.set_position(0)
+            return
         self.waveform.set_waveform([])
         self.waveform.set_position(0)
+        if key in self._waveform_pending:
+            return
+        self._waveform_pending.add(key)
         def task():
             try:
                 peaks = extract_waveform_peaks(source)
@@ -4776,6 +4785,12 @@ class Window(QMainWindow):
         threading.Thread(target=task, daemon=True).start()
 
     def on_waveform_ready(self, path, peaks):
+        self._waveform_pending.discard(path)
+        if peaks:
+            self._waveform_cache[path] = peaks
+            # A bounded session cache avoids repeated CPU-heavy decoding while tabbing.
+            while len(self._waveform_cache) > 8:
+                self._waveform_cache.pop(next(iter(self._waveform_cache)))
         if path == self._waveform_source:
             self.waveform.set_waveform(peaks)
             if not peaks:
