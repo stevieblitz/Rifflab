@@ -722,6 +722,7 @@ class Window(QMainWindow):
         self.tuner_pitch = 0.0
         self.tuner_level = 0.0
         self.tuner_last = 0.0
+        self._tuner_pitch_history = []
         self._tuner_display_cents = None
         self.project_file = None
         self._pending_project = None
@@ -869,6 +870,10 @@ class Window(QMainWindow):
         library_filters.setSpacing(3)
         advanced_filters = QVBoxLayout()
         advanced_filters.setSpacing(5)
+        self.library_scope = QComboBox()
+        self.library_scope.addItem('All Music', None)
+        self.library_scope.currentIndexChanged.connect(self.refresh_library)
+        library_filters.addWidget(self.library_scope)
         self.library_search = QLineEdit()
         self.library_search.setPlaceholderText('Search song, artist or album…')
         self.library_search.textChanged.connect(self.refresh_library)
@@ -1025,6 +1030,7 @@ class Window(QMainWindow):
         except (ValueError, TypeError):
             self._collapsed_artists = None
         self.restore_library_preferences()
+        self.refresh_collection_filters()
         self.refresh_library()
         # Migrate the existing Recent list and default projects without moving audio.
         self.discover_existing_projects()
@@ -2348,6 +2354,7 @@ class Window(QMainWindow):
             if accepted and name.strip():
                 ident = project_catalog.create_collection(self.library_db, name, kind)
                 refill()
+                self.refresh_collection_filters()
                 if kind == 'project':
                     self._active_collection_id = ident
                     dialog.accept()
@@ -2382,6 +2389,8 @@ class Window(QMainWindow):
             if existing:
                 dialog.accept()
                 self.load_project(existing[0])
+                self.refresh_collection_filters()
+                self.library_scope.setCurrentIndex(max(0, self.library_scope.findData(ident)))
                 self.show_library_sidebar()
                 self.status_message(f'Opened {kind} with {len(paths)} songs.')
             else:
@@ -2397,6 +2406,7 @@ class Window(QMainWindow):
                 return
             try:
                 project_catalog.add_song(self.library_db, choice[0], self.project_file)
+                self.refresh_library()
                 self.status_message('Song added without duplicating audio.')
             except ValueError as exc:
                 QMessageBox.warning(dialog, 'Add song', str(exc))
@@ -2411,6 +2421,8 @@ class Window(QMainWindow):
                 if self._active_collection_id == choice[0]:
                     self._active_collection_id = None
                 refill()
+                self.refresh_collection_filters()
+                self.refresh_library()
 
         open_button.clicked.connect(open_selected)
         listing.itemDoubleClicked.connect(lambda _item: open_selected())
@@ -2619,6 +2631,20 @@ class Window(QMainWindow):
         if hasattr(self, 'library_table'):
             self.refresh_library()
 
+    def refresh_collection_filters(self):
+        if not hasattr(self, 'library_scope'):
+            return
+        previous = self.library_scope.currentData()
+        self.library_scope.blockSignals(True)
+        self.library_scope.clear()
+        self.library_scope.addItem('All Music', None)
+        for ident, name, kind in project_catalog.list_collections(self.library_db):
+            prefix = 'Project' if kind == 'project' else 'Playlist'
+            self.library_scope.addItem(f'{prefix} · {name}', ident)
+        selected = self.library_scope.findData(previous)
+        self.library_scope.setCurrentIndex(max(0, selected))
+        self.library_scope.blockSignals(False)
+
     def refresh_library(self, *_args):
         if not hasattr(self, 'library_table'):
             return
@@ -2639,6 +2665,10 @@ class Window(QMainWindow):
                 AND (?=0 OR favorite=1)
                 ORDER BY {order}, title COLLATE NOCASE
             """, (f'%{query}%',)*3 + (tuning, tuning, lo, hi, int(favorite))).fetchall()
+        scope = self.library_scope.currentData()
+        if scope is not None:
+            allowed = {p for (p,) in project_catalog.list_songs(self.library_db, scope)}
+            rows = [row for row in rows if row['project_path'] in allowed]
         self.library_table.setSortingEnabled(False)
         group_by_artist = self.library_group.currentIndex() == 0
         if not hasattr(self, '_collapsed_artists'):
@@ -3234,7 +3264,7 @@ class Window(QMainWindow):
             self.export.setEnabled(True)
             self.split_local.setEnabled(False)
             self.analyze_local.setEnabled(False)
-            self.start_live()
+            self.start_live(render_grid=False)
         else:
             self.load_local(source, check_unsaved=False, analyze=False)
         self._restore_project_settings(data)
@@ -3406,7 +3436,7 @@ class Window(QMainWindow):
             self.refresh_stems_led()
         if not busy and not self.analysis_running:
             self.set_chord_loading(False)
-        for widget in (self.load_url, self.load_file, self.project_save,
+        for widget in (self.load_url, self.download_play, self.load_file, self.project_save,
                        self.project_load, self.recent_projects, self.split_local,
                        self.analyze_local, self.reanalyze_button):
             widget.setEnabled(not busy)
@@ -5103,6 +5133,7 @@ class Window(QMainWindow):
             self.tuner_stream.close()
             self.tuner_stream = None
             self._tuner_display_cents = None
+            self._tuner_pitch_history = []
             self.tuner_meter.set_reading(0, False)
             self.tuner_note.setText('—')
             self.tuner_details.setText('Tuner stopped')
@@ -5133,11 +5164,14 @@ class Window(QMainWindow):
                 freq = sample_rate/k
                 if 40 <= freq <= 1000:
                     self.tuner_pitch = freq
+                    self._tuner_pitch_history.append(freq)
+                    self._tuner_pitch_history = self._tuner_pitch_history[-7:]
                     self.tuner_last = time.monotonic()
             # 4096 frames (~93 ms at 44.1 kHz) updates more often than 8192.
             # Autocorrelation still supports low bass notes down to 40 Hz.
             self.tuner_stream = sd.InputStream(device=device,channels=1,samplerate=sr,blocksize=4096,callback=callback)
             self.tuner_stream.start()
+            self._tuner_pitch_history = []
             self._tuner_display_cents = None
             self.tuner_details.setText('Listening… · A4 = 440 Hz')
             self.tuner_button.setText('Stop Tuner')
@@ -5153,8 +5187,10 @@ class Window(QMainWindow):
             self.tuner_details.setText('Play one string · A4 = 440 Hz')
             self.tuner_meter.set_reading(0, False)
             self._tuner_display_cents = None
+            self._tuner_pitch_history = []
             return
-        frequency = self.tuner_pitch
+        recent = self._tuner_pitch_history[-7:]
+        frequency = sorted(recent)[len(recent) // 2] if recent else self.tuner_pitch
         if frequency <= 0:
             return
         detected = round(69 + 12 * math.log2(frequency / 440))
@@ -5186,7 +5222,7 @@ class Window(QMainWindow):
             self.live.close()
             self.live = None
 
-    def start_live(self):
+    def start_live(self, render_grid=True):
         self.stop_live()
         try:
             self.player.stop()
@@ -5197,7 +5233,8 @@ class Window(QMainWindow):
             self._duration = self.live.duration_ms
             self.timeline.setRange(0, self._duration)
             self.waveform.set_duration(self._duration)
-            self.render_grid()
+            if render_grid:
+                self.render_grid()
             self.status_message('Realtime stems ready. Press Play.')
         except Exception as exc:
             self.live = None
