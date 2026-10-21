@@ -10,6 +10,8 @@ on:
     paths:
       - 'app.py'
       - 'project_catalog.py'
+      - 'smart_metadata.py'
+      - 'tests/test_smart_metadata.py'
       - 'tests/test_project_catalog.py'
       - '.github/workflows/windows-lite.yml'
       - 'ai_worker.py'
@@ -58,8 +60,9 @@ jobs:
       - name: Validate Python sources and project catalog
         shell: pwsh
         run: |
-          python -m py_compile app.py project_catalog.py
+          python -m py_compile app.py project_catalog.py smart_metadata.py
           python -m unittest discover -s tests -p test_project_catalog.py -v
+          python -m unittest discover -s tests -p test_smart_metadata.py -v
 
       - name: Install FFmpeg and FFprobe (direct download with mirrors)
         shell: pwsh
