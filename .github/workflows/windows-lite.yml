@@ -6,9 +6,11 @@ name: Build RiffLab Complete for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups]
+    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups, experiment/tuner-stability-layout-2026-10-21]
     paths:
       - 'app.py'
+      - 'project_catalog.py'
+      - 'tests/test_project_catalog.py'
       - '.github/workflows/windows-lite.yml'
       - 'ai_worker.py'
       - 'realtime_audio.py'
@@ -52,6 +54,12 @@ jobs:
           cache-dependency-path: |
             requirements-preview.txt
             requirements-full.txt
+
+      - name: Validate Python sources and project catalog
+        shell: pwsh
+        run: |
+          python -m py_compile app.py project_catalog.py
+          python -m unittest discover -s tests -p test_project_catalog.py -v
 
       - name: Install FFmpeg and FFprobe (direct download with mirrors)
         shell: pwsh
