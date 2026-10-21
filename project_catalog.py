@@ -83,3 +83,39 @@ def delete_collection(db_path, collection_id):
     with closing(sqlite3.connect(db_path)) as db, db:
         db.execute('DELETE FROM collection_songs WHERE collection_id=?', (collection_id,))
         db.execute('DELETE FROM collections WHERE id=?', (collection_id,))
+
+
+def export_project(db_path, collection_id, destination):
+    """Portable workspace manifest with references, not copied audio."""
+    import json
+    with closing(sqlite3.connect(db_path)) as db:
+        row = db.execute("SELECT name, kind FROM collections WHERE id=?", (collection_id,)).fetchone()
+        if not row or row[1] != 'project':
+            raise ValueError('Select a project workspace.')
+    data = {'format': 'RiffLab Workspace', 'version': 1, 'name': row[0],
+            'songs': [p for (p,) in list_songs(db_path, collection_id)]}
+    path = Path(destination)
+    if path.suffix.lower() != '.riffproj':
+        path = path.with_suffix('.riffproj')
+    temp = path.with_suffix('.riffproj.tmp')
+    temp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+    temp.replace(path)
+    return path
+
+
+def import_project(db_path, source):
+    """Import a workspace; missing song paths remain references for recovery."""
+    import json
+    path = Path(source)
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(data, dict) or data.get('format') != 'RiffLab Workspace' or data.get('version') != 1:
+        raise ValueError('Not a supported .riffproj workspace.')
+    songs = data.get('songs')
+    if not isinstance(songs, list) or any(not isinstance(p, str) for p in songs):
+        raise ValueError('Invalid project song references.')
+    ident = create_collection(db_path, data.get('name') or path.stem, 'project')
+    with closing(sqlite3.connect(db_path)) as db, db:
+        for position, song in enumerate(dict.fromkeys(songs)):
+            db.execute('INSERT INTO collection_songs(collection_id, song_path, position) VALUES (?, ?, ?)',
+                       (ident, song, position))
+    return ident
