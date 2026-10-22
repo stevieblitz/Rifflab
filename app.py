@@ -2416,6 +2416,8 @@ class Window(QMainWindow):
         open_button = QPushButton('Open Selected')
         add_button = QPushButton('Add Current Song')
         remove_button = QPushButton('Delete Collection')
+        rename_button = QPushButton('Rename')
+        buttons.addWidget(rename_button)
         buttons.addWidget(open_button)
         buttons.addWidget(add_button)
         buttons.addWidget(remove_button)
@@ -2472,6 +2474,20 @@ class Window(QMainWindow):
                 self.refresh_collection_filters()
                 self.refresh_library()
 
+        def rename_selected():
+            choice = selected()
+            if not choice:
+                return
+            ident, _kind = choice
+            current = next((name for i, name, k in project_catalog.list_collections(self.library_db)
+                            if i == ident), '')
+            name, accepted = QInputDialog.getText(dialog, 'Rename Collection', 'Name:', text=current)
+            if accepted and name.strip():
+                project_catalog.rename_collection(self.library_db, ident, name)
+                refill()
+                self.refresh_collection_filters()
+
+        rename_button.clicked.connect(rename_selected)
         open_button.clicked.connect(open_selected)
         listing.itemDoubleClicked.connect(lambda _item: open_selected())
         add_button.clicked.connect(add_current)
@@ -2868,10 +2884,14 @@ class Window(QMainWindow):
             playlist_menu.addAction('No playlists yet').setEnabled(False)
         scope = self.library_scope.currentData()
         remove_playlist_action = None
+        move_up_action = None
+        move_down_action = None
         if scope is not None:
             kind = next((kind for ident, _name, kind in project_catalog.list_collections(self.library_db)
                          if ident == scope), None)
             if kind == 'playlist':
+                move_up_action = menu.addAction('Move Up in Playlist')
+                move_down_action = menu.addAction('Move Down in Playlist')
                 remove_playlist_action = menu.addAction('Remove from this Playlist')
         menu.addSeparator()
         copy_action = menu.addAction('Copy project path')
@@ -2886,6 +2906,12 @@ class Window(QMainWindow):
             self.edit_library_song()
         elif selected == favorite_action:
             self.toggle_library_favorite()
+        elif move_up_action is not None and selected == move_up_action:
+            project_catalog.move_song(self.library_db, scope, path, -1)
+            self.refresh_library()
+        elif move_down_action is not None and selected == move_down_action:
+            project_catalog.move_song(self.library_db, scope, path, 1)
+            self.refresh_library()
         elif remove_playlist_action is not None and selected == remove_playlist_action:
             project_catalog.remove_song(self.library_db, scope, path)
             self.refresh_library()
