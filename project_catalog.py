@@ -27,6 +27,10 @@ def initialize(db_path):
             )
         """)
         db.execute("CREATE INDEX IF NOT EXISTS collection_song_order ON collection_songs(collection_id, position)")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(collections)")}
+        if 'position' not in columns:
+            db.execute('ALTER TABLE collections ADD COLUMN position INTEGER')
+            db.execute('UPDATE collections SET position=id WHERE position IS NULL')
 
 
 def create_collection(db_path, name, kind):
@@ -34,7 +38,8 @@ def create_collection(db_path, name, kind):
     if not name or kind not in ('project', 'playlist'):
         raise ValueError('Enter a collection name and a valid type.')
     with closing(sqlite3.connect(db_path)) as db, db:
-        cursor = db.execute("INSERT INTO collections(name, kind) VALUES (?, ?)", (name, kind))
+        position = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM collections WHERE kind=?", (kind,)).fetchone()[0]
+        cursor = db.execute("INSERT INTO collections(name, kind, position) VALUES (?, ?, ?)", (name, kind, position))
         return cursor.lastrowid
 
 
@@ -44,7 +49,7 @@ def list_collections(db_path, kind=None):
     if kind:
         sql += ' WHERE kind=?'
         values = (kind,)
-    sql += ' ORDER BY name COLLATE NOCASE, id'
+    sql += ' ORDER BY position, id'
     with closing(sqlite3.connect(db_path)) as db, db:
         return db.execute(sql, values).fetchall()
 
@@ -165,4 +170,24 @@ def reorder_song(db_path, collection_id, song_path, target_index):
         for i, item in enumerate(items):
             db.execute('UPDATE collection_songs SET position=? WHERE collection_id=? AND song_path=?',
                        (i, collection_id, item))
+    return True
+
+
+def move_collection(db_path, collection_id, direction):
+    """Reorder playlists independently from their song contents."""
+    if direction not in (-1, 1):
+        raise ValueError('Direction must be -1 or 1')
+    with closing(sqlite3.connect(db_path)) as db, db:
+        kind_row = db.execute('SELECT kind FROM collections WHERE id=?', (collection_id,)).fetchone()
+        if not kind_row:
+            return False
+        ids = [row[0] for row in db.execute(
+            'SELECT id FROM collections WHERE kind=? ORDER BY position, id', (kind_row[0],))]
+        index = ids.index(collection_id)
+        other = index + direction
+        if other < 0 or other >= len(ids):
+            return False
+        ids[index], ids[other] = ids[other], ids[index]
+        for position, ident in enumerate(ids):
+            db.execute('UPDATE collections SET position=? WHERE id=?', (position, ident))
     return True
