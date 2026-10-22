@@ -2336,12 +2336,11 @@ class Window(QMainWindow):
         bar.installEventFilter(self)
         QTimer.singleShot(0, self.attach_song_tabs_to_menu)
         file_menu = bar.addMenu('&File')
-        file_menu.addAction('Project Manager…', self.show_project_manager)
         file_menu.addAction('Open Recovery Snapshot…', self.open_recovery_snapshot)
         file_menu.addAction('Open Song (.riff)…', self.open_project)
-        file_menu.addAction('Save Project', self.save_project)
-        file_menu.addAction('Save Project As…', self.save_project_as_menu)
-        recent = file_menu.addMenu('Recent Projects')
+        file_menu.addAction('Save Song', self.save_project)
+        file_menu.addAction('Save Song As…', self.save_project_as_menu)
+        recent = file_menu.addMenu('Recent Songs')
         recent.aboutToShow.connect(lambda: self.fill_recent_file_menu(recent))
         file_menu.addSeparator()
         file_menu.addAction('Import Audio…', self.open_file)
@@ -2568,7 +2567,8 @@ class Window(QMainWindow):
             folder.mkdir(parents=True, exist_ok=True)
             source = Path(self.project_file)
             backup = folder / (source.stem + '.riff.bak')
-            self.save_project(autosave_path=backup)
+            if self.save_project(autosave_path=backup):
+                self.save_project()  # Existing .riff songs autosave without dialogs.
         except (OSError, ValueError, TypeError):
             # Recovery must never interrupt playback.
             return
@@ -2844,9 +2844,8 @@ class Window(QMainWindow):
         self.library_scope.blockSignals(True)
         self.library_scope.clear()
         self.library_scope.addItem('All Music', None)
-        for ident, name, kind in project_catalog.list_collections(self.library_db):
-            prefix = 'Project' if kind == 'project' else 'Playlist'
-            self.library_scope.addItem(f'{prefix} · {name}', ident)
+        for ident, name, kind in project_catalog.list_collections(self.library_db, 'playlist'):
+            self.library_scope.addItem(f'Playlist · {name}', ident)
         selected = self.library_scope.findData(previous)
         self.library_scope.setCurrentIndex(max(0, selected))
         self.library_scope.blockSignals(False)
@@ -3256,7 +3255,7 @@ class Window(QMainWindow):
         form = QFormLayout(dialog)
         fields = {}
         for key, label, value in (
-            ('project_name', 'Project Name', suggested),
+            ('project_name', 'Song Filename', suggested),
             ('artist', 'Artist', artist),
             ('album', 'Album', album),
             ('title', 'Song Title', title),
@@ -3285,7 +3284,7 @@ class Window(QMainWindow):
             self.status_message('Wait for import and analysis to finish before saving.')
             return
         if not self.stems and not self.source_audio:
-            self.status_message('Open a song before saving a project.')
+            self.status_message('Open a song before saving.')
             return
         first_save = autosave_path is None and not (self.project_file and Path(self.project_file).is_file())
         new_details = None
@@ -3296,8 +3295,8 @@ class Window(QMainWindow):
             filename = self.safe_project_filename(new_details['project_name']) + '.riff'
             default = str(ROOT / 'projects' / filename)
             Path(default).parent.mkdir(parents=True, exist_ok=True)
-            path, _ = QFileDialog.getSaveFileName(self, 'Save RiffLab Project', default,
-                                                  'RiffLab Projects (*.riff)')
+            path, _ = QFileDialog.getSaveFileName(self, 'Save RiffLab Song', default,
+                                                  'RiffLab Songs (*.riff)')
             if not path:
                 return
         else:
@@ -3342,8 +3341,7 @@ class Window(QMainWindow):
             self.update_now_playing()
             self.remember_project(path)
             self.index_library_project(path, data)
-            if self._active_collection_id is not None:
-                project_catalog.add_song(self.library_db, self._active_collection_id, path)
+            # Playlists hold references to songs independently.
             self.status_message(f'Song saved: {path.name}')
             return True
         except OSError as exc:
@@ -3502,7 +3500,7 @@ class Window(QMainWindow):
 
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open RiffLab Project',
-                                              str(ROOT / 'projects'), 'RiffLab Projects (*.riff)')
+                                              str(ROOT / 'projects'), 'RiffLab Songs (*.riff)')
         if path:
             self.load_project(path)
 
