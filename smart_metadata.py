@@ -55,3 +55,35 @@ def identify(info):
         'metadata_confidence': confidence,
         'tuning': 'Unknown', 'musical_key': ''
     }
+
+
+def musicbrainz_suggestion(metadata, timeout=2.5):
+    """Optional online verification; never silently replace source metadata."""
+    if not metadata.get('artist') or not metadata.get('title'):
+        return None
+    try:
+        import json
+        from urllib.parse import urlencode
+        from urllib.request import Request, urlopen
+        artist = metadata['artist'].replace('"', '')
+        title = metadata['title'].replace('"', '')
+        query = f'recording:"{title}" AND artist:"{artist}"'
+        url = 'https://musicbrainz.org/ws/2/recording/?' + urlencode(
+            {'query': query, 'fmt': 'json', 'limit': 3})
+        request = Request(url, headers={'User-Agent': 'RiffLab/0.2 (metadata matching; github.com/stevieblitz/Rifflab)'})
+        with urlopen(request, timeout=timeout) as response:
+            entries = json.load(response).get('recordings', [])
+        for item in entries:
+            candidate_artist = ', '.join(
+                credit.get('name', '') for credit in item.get('artist-credit', [])
+                if isinstance(credit, dict))
+            candidate_title = clean(item.get('title'))
+            if (candidate_title.casefold() == title.casefold()
+                    and canonical_artist(candidate_artist).casefold() == canonical_artist(artist).casefold()):
+                return {'artist': canonical_artist(candidate_artist),
+                        'title': candidate_title,
+                        'score': item.get('score', 0),
+                        'musicbrainz_id': item.get('id')}
+    except (OSError, ValueError, TypeError, KeyError, TimeoutError):
+        return None
+    return None
