@@ -671,7 +671,7 @@ class Window(QMainWindow):
         self.setWindowTitle(f"StevieBlitz's RiffLab — Alpha v0.2.0-dev.{BUILD_NUMBER}")
         self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
         self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
-        font_file = self.assets_dir / 'Audiowide-Regular.ttf'
+        font_file = self.assets_dir / 'Aldrich-Regular.ttf'
         if font_file.is_file():
             QFontDatabase.addApplicationFont(str(font_file))
         self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
@@ -2022,8 +2022,8 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#headerTimeLabel{color:#7bd6ff;background:transparent;border:0;font-family:'Audiowide','Cascadia Code',monospace;font-size:24px;font-weight:400;padding:0}
-          QLabel#timeLabel{background:transparent;color:#7bd6ff;border:0;font-family:'Audiowide','Cascadia Code',monospace;font-size:20px;font-weight:400;padding:0px 2px}
+          QLabel#headerTimeLabel{color:#7bd6ff;background:transparent;border:0;font-family:'Aldrich','Cascadia Code',monospace;font-size:24px;font-weight:400;padding:0}
+          QLabel#timeLabel{background:transparent;color:#7bd6ff;border:0;font-family:'Aldrich','Cascadia Code',monospace;font-size:20px;font-weight:400;padding:0px 2px}
           QLabel#loopInfo{background:transparent}
           QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
