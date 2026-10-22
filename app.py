@@ -2791,11 +2791,19 @@ class Window(QMainWindow):
                 ORDER BY {order}, title COLLATE NOCASE
             """, (f'%{query}%',)*3 + (tuning, tuning, lo, hi, int(favorite))).fetchall()
         scope = self.library_scope.currentData()
+        playlist_active = False
         if scope is not None:
-            allowed = {p for (p,) in project_catalog.list_songs(self.library_db, scope)}
+            ordered_paths = [p for (p,) in project_catalog.list_songs(self.library_db, scope)]
+            allowed = set(ordered_paths)
             rows = [row for row in rows if row['project_path'] in allowed]
+            scope_kind = next((kind for ident, _name, kind in project_catalog.list_collections(self.library_db)
+                               if ident == scope), None)
+            playlist_active = scope_kind == 'playlist'
+            if playlist_active:
+                positions = {p: i for i, p in enumerate(ordered_paths)}
+                rows.sort(key=lambda row: positions.get(row['project_path'], len(positions)))
         self.library_table.setSortingEnabled(False)
-        group_by_artist = self.library_group.currentIndex() == 0
+        group_by_artist = self.library_group.currentIndex() == 0 and not playlist_active
         if not hasattr(self, '_collapsed_artists'):
             self._collapsed_artists = None
         displayed = []
