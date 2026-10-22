@@ -180,8 +180,13 @@ jobs:
           print('Using original RiffLab icon:', target)
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
+          # Audiowide (Google Fonts, SIL OFL) — bundle locally, never depend on an installed system font.
+          New-Item -ItemType Directory -Force assets | Out-Null
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/google/fonts/main/ofl/audiowide/Audiowide-Regular.ttf' -OutFile 'assets/Audiowide-Regular.ttf' -TimeoutSec 60
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/google/fonts/main/ofl/audiowide/OFL.txt' -OutFile 'assets/Audiowide-OFL.txt' -TimeoutSec 60
+          if ((Get-Item 'assets/Audiowide-Regular.ttf').Length -lt 10000) { throw 'Audiowide download invalid' }
           $assets = @()
-          foreach ($file in @('rifflab-logo.svg', 'rifflab-window-icon.png', 'rifflab-brand.png', 'ui-chevron-up.svg', 'ui-chevron-down.svg', 'ui-check.svg')) {
+          foreach ($file in @('rifflab-logo.svg', 'rifflab-window-icon.png', 'rifflab-brand.png', 'ui-chevron-up.svg', 'ui-chevron-down.svg', 'ui-check.svg', 'Audiowide-Regular.ttf', 'Audiowide-OFL.txt')) {
             if (Test-Path "assets/$file") {
               $assets += @('--add-data', "assets/$file;assets")
             }
