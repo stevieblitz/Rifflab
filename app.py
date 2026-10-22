@@ -1174,7 +1174,7 @@ class Window(QMainWindow):
         header.addStretch()
         self.export_reset_mixer = QPushButton()
         self.export_reset_mixer.setIcon(qta.icon('fa5s.undo', color='#7bd6ff'))
-        self.export_reset_mixer.setToolTip('Reset all stem volumes; mute bass by default')
+        self.export_reset_mixer.setToolTip('Reset mixer: all stems audible, all levels 100%')
         self.export_reset_mixer.setFixedSize(25, 24)
         self.export_reset_mixer.clicked.connect(self.reset_mixer)
         header.addWidget(self.export_reset_mixer)
@@ -1735,7 +1735,7 @@ class Window(QMainWindow):
         mixer_header.addStretch()
         self.reset_mixer_button = QPushButton()
         self.reset_mixer_button.setIcon(qta.icon('fa5s.undo', color='#b8cbdc'))
-        self.reset_mixer_button.setToolTip('Reset to default: bass muted, all levels 100%')
+        self.reset_mixer_button.setToolTip('Reset mixer: all stems audible, all levels 100%')
         self.reset_mixer_button.setFixedSize(24, 22)
         self.reset_mixer_button.setObjectName('mixerIconAction')
         self.reset_mixer_button.clicked.connect(self.reset_mixer)
@@ -3991,6 +3991,8 @@ class Window(QMainWindow):
         if check_unsaved and not self._confirm_unsaved_changes():
             return
         self.stop_live()
+        # A fresh song never inherits mute/solo states from the previous song.
+        self.reset_mixer()
         self.source_audio = Path(path)
         self.load_waveform(path)
         self.waveform.set_duration(0)
@@ -4322,6 +4324,8 @@ class Window(QMainWindow):
 
     def on_separated(self, folder):
         self._generating_stems = False
+        # Newly generated stems start with Bass (and every other stem) audible.
+        self.reset_mixer()
         self.project_file = None
         self.folder = Path(folder)
         self.source_audio = None
