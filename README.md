@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/rifflab-brand.png" alt="StevieBlitz's RiffLab — by StevieBlitz, powered by AI" width="480">
+</p>
+
 # StevieBlitz's RiffLab
 
 ### LESS GUESSING. MORE JAMMING.
