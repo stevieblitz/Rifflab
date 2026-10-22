@@ -3819,7 +3819,10 @@ class Window(QMainWindow):
             with YoutubeDL(opts) as downloader:
                 info = downloader.extract_info(url, download=True)
                 video_id = re.sub(r'[^A-Za-z0-9_-]', '_', info['id'])
-                self.signals.downloaded_metadata.emit(smart_metadata.identify(info))
+                metadata = smart_metadata.identify(info)
+                # Network lookup happens only on the existing download worker.
+                metadata['musicbrainz_suggestion'] = smart_metadata.musicbrainz_suggestion(metadata)
+                self.signals.downloaded_metadata.emit(metadata)
             wav = output / f'{video_id}.wav'
             if not wav.is_file():
                 raise RuntimeError('Download finished but no WAV file was found.')
@@ -3858,6 +3861,18 @@ class Window(QMainWindow):
             field = QLineEdit(str(metadata.get(key) or ''))
             form.addRow(label, field)
             fields[key] = field
+        verified = metadata.get('musicbrainz_suggestion')
+        if verified:
+            suggestion = QLabel(
+                f"MusicBrainz match: {verified['artist']} — {verified['title']} "
+                f"(score: {verified.get('score', '?')})")
+            suggestion.setWordWrap(True)
+            form.addRow('External match', suggestion)
+            use_match = QPushButton('Use MusicBrainz suggestion')
+            use_match.clicked.connect(lambda: (
+                fields['artist'].setText(verified['artist']),
+                fields['title'].setText(verified['title'])))
+            form.addRow(use_match)
         note = QLabel('Suggested metadata · YouTube uploader is not automatically the artist.')
         note.setWordWrap(True)
         form.addRow(note)
