@@ -2488,12 +2488,7 @@ class Window(QMainWindow):
             folder.mkdir(parents=True, exist_ok=True)
             source = Path(self.project_file)
             backup = folder / (source.stem + '.riff.bak')
-            snapshot = json.loads(source.read_text(encoding='utf-8'))
-            snapshot['_recovery_source'] = str(source)
-            snapshot['_recovery_saved_at'] = datetime.now().isoformat()
-            tmp = backup.with_suffix('.tmp')
-            tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
-            tmp.replace(backup)
+            self.save_project(autosave_path=backup)
         except (OSError, ValueError, TypeError):
             # Recovery must never interrupt playback.
             return
@@ -3098,14 +3093,14 @@ class Window(QMainWindow):
                                       if values['artist'] else values['title'])
         return values
 
-    def save_project(self):
+    def save_project(self, autosave_path=None):
         if self.processing:
             self.status_message('Wait for import and analysis to finish before saving.')
             return
         if not self.stems and not self.source_audio:
             self.status_message('Open a song before saving a project.')
             return
-        first_save = not (self.project_file and Path(self.project_file).is_file())
+        first_save = autosave_path is None and not (self.project_file and Path(self.project_file).is_file())
         new_details = None
         if first_save:
             new_details = self.ask_first_save_details()
@@ -3119,9 +3114,9 @@ class Window(QMainWindow):
             if not path:
                 return
         else:
-            path = self.project_file
+            path = autosave_path if autosave_path is not None else self.project_file
         path = Path(path)
-        if path.suffix.lower() != '.riff':
+        if path.suffix.lower() != '.riff' and autosave_path is None:
             path = path.with_suffix('.riff')
         metadata = dict((self.get_library_metadata(self.project_file) if self.project_file else {})
                         or self.song_metadata)
@@ -3153,6 +3148,8 @@ class Window(QMainWindow):
         try:
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(path)
+            if autosave_path is not None:
+                return True
             self.project_file = str(path)
             self.song_metadata = dict(metadata)
             self.update_now_playing()
