@@ -2686,8 +2686,10 @@ class Window(QMainWindow):
                 (ROOT / 'recent_projects.json').read_text(encoding='utf-8')))
         except (OSError, ValueError, TypeError):
             pass
+        with sqlite3.connect(self.library_db) as db:
+            hidden = {str(row[0]) for row in db.execute('SELECT project_path FROM hidden_songs')}
         for path in candidates:
-            if path.is_file():
+            if path.is_file() and str(path.resolve()) not in hidden:
                 self.index_library_project(path)
 
     @staticmethod
@@ -2727,6 +2729,10 @@ class Window(QMainWindow):
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            db.execute("""CREATE TABLE IF NOT EXISTS hidden_songs (
+                project_path TEXT PRIMARY KEY,
+                hidden_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
 
     def get_library_metadata(self, path):
         if not path:
@@ -2743,6 +2749,11 @@ class Window(QMainWindow):
         path = Path(path).resolve()
         if not path.is_file():
             return
+        if not played:
+            with sqlite3.connect(self.library_db) as db:
+                if db.execute('SELECT 1 FROM hidden_songs WHERE project_path=?',
+                              (str(path),)).fetchone():
+                    return
         if data is None:
             try:
                 data = json.loads(path.read_text(encoding='utf-8'))
@@ -2986,6 +2997,7 @@ class Window(QMainWindow):
         copy_action = menu.addAction('Copy project path')
         menu.addSeparator()
         remove_action = menu.addAction('Remove from Library')
+        delete_file_action = menu.addAction('Delete Song File Permanently…')
         selected = menu.exec(self.library_table.viewport().mapToGlobal(pos))
         if selected in playlist_actions:
             self.add_library_song_to_playlist(playlist_actions[selected], path)
@@ -3009,6 +3021,8 @@ class Window(QMainWindow):
             self.status_message('Project path copied.')
         elif selected == remove_action:
             self.remove_library_song()
+        elif selected == delete_file_action:
+            self.delete_library_song_file()
 
     def library_cell_clicked(self, row, column):
         item = self.library_table.item(row, 1)
@@ -3069,8 +3083,43 @@ class Window(QMainWindow):
         if answer != QMessageBox.Yes:
             return
         with sqlite3.connect(self.library_db) as db:
+            db.execute('INSERT OR IGNORE INTO hidden_songs(project_path) VALUES (?)', (path,))
             db.execute('DELETE FROM songs WHERE project_path=?', (path,))
         self.refresh_library()
+        self.refresh_playlist_panel()
+
+    def delete_library_song_file(self):
+        path = self.selected_library_path()
+        if not path:
+            return
+        target = Path(path).resolve()
+        if target.suffix.lower() != '.riff':
+            QMessageBox.warning(self, 'Delete Song File', 'Only .riff song files can be deleted here.')
+            return
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Warning)
+        message.setWindowTitle('Delete Song File Permanently')
+        message.setText(f'Permanently delete this song file?\\n{target.name}')
+        message.setInformativeText(
+            'This deletes the .riff file from disk and removes Library and playlist references. '
+            'Shared audio and stems are kept so other songs are not damaged. This cannot be undone.')
+        message.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        message.setDefaultButton(QMessageBox.Cancel)
+        if message.exec() != QMessageBox.Yes:
+            return
+        try:
+            target.unlink(missing_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(self, 'Delete Song File', str(exc))
+            return
+        with sqlite3.connect(self.library_db) as db:
+            db.execute('INSERT OR IGNORE INTO hidden_songs(project_path) VALUES (?)', (str(target),))
+            db.execute('DELETE FROM songs WHERE project_path=?', (str(target),))
+            db.execute('DELETE FROM collection_songs WHERE song_path=?', (str(target),))
+        self.refresh_library()
+        self.refresh_playlist_panel()
+        self.refresh_recent_projects()
+        self.status_message(f'Deleted song file: {target.name}')
 
     def edit_library_song(self):
         path = self.selected_library_path()
