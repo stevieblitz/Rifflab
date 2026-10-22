@@ -1845,11 +1845,31 @@ class Window(QMainWindow):
         self.sidebar_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
+        playlist_page = QWidget()
+        playlist_layout = QVBoxLayout(playlist_page)
+        playlist_layout.setContentsMargins(8, 8, 8, 8)
+        playlist_layout.setSpacing(6)
+        playlist_actions = QHBoxLayout()
+        create_playlist_button = QPushButton('+ Playlist')
+        create_playlist_button.clicked.connect(self.create_library_playlist)
+        playlist_actions.addWidget(create_playlist_button)
+        playlist_refresh = QPushButton('Refresh')
+        playlist_refresh.clicked.connect(self.refresh_playlist_panel)
+        playlist_actions.addWidget(playlist_refresh)
+        playlist_layout.addLayout(playlist_actions)
+        self.playlist_browser = QTreeWidget()
+        self.playlist_browser.setHeaderHidden(True)
+        self.playlist_browser.setToolTip('Double-click a playlist to open it in Library; double-click a song to play it.')
+        self.playlist_browser.itemDoubleClicked.connect(self.open_playlist_browser_item)
+        playlist_layout.addWidget(self.playlist_browser, 1)
+        self.sidebar_tabs.addTab(playlist_page, 'Playlists')
         self.sidebar_tabs.addTab(self.tuner_dialog, 'Tuner')
         self.sidebar_tabs.setTabIcon(0, qta.icon('fa5s.sliders-h', color='#7bd6ff'))
         self.sidebar_tabs.setTabIcon(1, qta.icon('fa5s.book', color='#7bd6ff'))
-        self.sidebar_tabs.setTabIcon(2, self.tuning_fork_icon())
-        self.sidebar_tabs.setCurrentIndex(max(0, min(2, int(self.layout_settings.value('ui_sidebar_tab', 1)))))
+        self.sidebar_tabs.setTabIcon(2, qta.icon('fa5s.list-ul', color='#7bd6ff'))
+        self.sidebar_tabs.setTabIcon(3, self.tuning_fork_icon())
+        self.sidebar_tabs.setCurrentIndex(max(0, min(3, int(self.layout_settings.value('ui_sidebar_tab', 1)))))
+        self.refresh_playlist_panel()
         self.play_splitter.insertWidget(0, self.sidebar_tabs)
         self.sidebar_tabs.currentChanged.connect(
             lambda _index: self.tabs.setCurrentIndex(0) if self.tabs.currentIndex() == 1 else None)
@@ -2764,6 +2784,7 @@ class Window(QMainWindow):
             QMessageBox.warning(self, 'New Playlist', str(exc))
             return
         self.refresh_collection_filters()
+        self.refresh_playlist_panel()
         self.library_scope.setCurrentIndex(max(0, self.library_scope.findData(ident)))
         self.refresh_library()
         self.status_message(f'Playlist created: {name.strip()} · right-click songs to add them.')
@@ -2775,7 +2796,35 @@ class Window(QMainWindow):
             QMessageBox.warning(self, 'Add to Playlist', str(exc))
             return
         self.refresh_library()
+        self.refresh_playlist_panel()
         self.status_message('Song added to playlist.')
+
+    def refresh_playlist_panel(self):
+        if not hasattr(self, 'playlist_browser'):
+            return
+        self.playlist_browser.clear()
+        for ident, name, kind in project_catalog.list_collections(self.library_db, 'playlist'):
+            songs = project_catalog.list_songs(self.library_db, ident)
+            heading = QTreeWidgetItem([f'{name}  ({len(songs)})'])
+            heading.setData(0, Qt.UserRole, ('playlist', ident))
+            self.playlist_browser.addTopLevelItem(heading)
+            for (path,) in songs:
+                song = QTreeWidgetItem([Path(path).stem])
+                song.setData(0, Qt.UserRole, ('song', path))
+                heading.addChild(song)
+
+    def open_playlist_browser_item(self, item, _column):
+        data = item.data(0, Qt.UserRole)
+        if not data:
+            return
+        if data[0] == 'playlist':
+            index = self.library_scope.findData(data[1])
+            if index >= 0:
+                self.library_scope.setCurrentIndex(index)
+                self.sidebar_tabs.setCurrentIndex(1)
+                self.refresh_library()
+        elif data[0] == 'song':
+            self.load_project(data[1])
 
     def refresh_collection_filters(self):
         if not hasattr(self, 'library_scope'):
