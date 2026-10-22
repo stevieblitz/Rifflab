@@ -1841,7 +1841,9 @@ class Window(QMainWindow):
         self.tabs.insertTab(1, QWidget(), 'Library')  # Compatibility for saved tab IDs.
         self.sidebar_tabs = QTabWidget()
         self.sidebar_tabs.setObjectName('sidebarTabs')
-        self.sidebar_tabs.setMinimumWidth(235)
+        self.sidebar_tabs.setMinimumWidth(410)
+        self.sidebar_tabs.tabBar().setExpanding(True)
+        self.sidebar_tabs.tabBar().setUsesScrollButtons(False)
         self.sidebar_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.sidebar_tabs.addTab(mixer_holder, 'Stem Mixer')
         self.sidebar_tabs.addTab(library_page, 'Library')
@@ -1853,14 +1855,41 @@ class Window(QMainWindow):
         create_playlist_button = QPushButton('+ Playlist')
         create_playlist_button.clicked.connect(self.create_library_playlist)
         playlist_actions.addWidget(create_playlist_button)
+        playlist_manage = QPushButton('Manage')
+        playlist_manage.clicked.connect(self.manage_playlist_selection)
+        playlist_actions.addWidget(playlist_manage)
         playlist_refresh = QPushButton('Refresh')
         playlist_refresh.clicked.connect(self.refresh_playlist_panel)
         playlist_actions.addWidget(playlist_refresh)
         playlist_layout.addLayout(playlist_actions)
         self.playlist_browser = QTreeWidget()
-        self.playlist_browser.setHeaderHidden(True)
+        self.playlist_browser.setHeaderHidden(False)
+        self.playlist_browser.setColumnCount(3)
+        self.playlist_browser.setHeaderLabels(['SONG / PLAYLIST', 'ARTIST', 'TUNING'])
+        self.playlist_browser.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.playlist_browser.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.playlist_browser.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.playlist_browser.setIndentation(14)
+        self.playlist_browser.setStyleSheet(
+            "QTreeWidget{background:#111923;color:#e8edf2;border:0;font-size:12px;}"
+            "QTreeWidget::item{height:24px;padding:0px 3px;}"
+            "QTreeWidget::item:selected{background:#28455b;color:#fff;}"
+            "QHeaderView::section{background:#192938;color:#a4daf5;border:0;"
+            "border-bottom:1px solid #344658;font-size:10px;padding:4px;}")
         self.playlist_browser.setToolTip('Double-click a playlist to open it in Library; double-click a song to play it.')
         self.playlist_browser.itemDoubleClicked.connect(self.open_playlist_browser_item)
+        self.playlist_browser.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.playlist_browser.customContextMenuRequested.connect(self.playlist_context_menu)
+        playlist_filters = QHBoxLayout()
+        self.playlist_favorites_only = QCheckBox('★ Favorites')
+        self.playlist_favorites_only.toggled.connect(self.refresh_playlist_panel)
+        playlist_filters.addWidget(self.playlist_favorites_only)
+        self.playlist_tuning = QComboBox()
+        self.playlist_tuning.addItems(['All tunings', 'Unknown', 'E Standard', 'Eb Standard',
+                                      'D Standard', 'Drop D', 'Drop C#', 'Drop C', 'Other'])
+        self.playlist_tuning.currentIndexChanged.connect(self.refresh_playlist_panel)
+        playlist_filters.addWidget(self.playlist_tuning)
+        playlist_layout.addLayout(playlist_filters)
         playlist_layout.addWidget(self.playlist_browser, 1)
         self.sidebar_tabs.addTab(playlist_page, 'Playlists')
         self.sidebar_tabs.addTab(self.tuner_dialog, 'Tuner')
@@ -1877,8 +1906,11 @@ class Window(QMainWindow):
             lambda index: self.show_library_sidebar() if index == 1 else None)
         self.play_splitter.setStretchFactor(0, 0)
         self.play_splitter.setStretchFactor(1, 1)
-        self.play_splitter.setSizes([320, 780])
+        self.play_splitter.setSizes([425, 675])
         self.restore_splitter(self.play_splitter, 'play_splitter_grid_v3')
+        if self.play_splitter.sizes()[0] < 410:
+            total = sum(self.play_splitter.sizes())
+            self.play_splitter.setSizes([425, max(250, total - 425)])
         # Mirror each control; both tabs edit the SAME live mixer state.
         self.connect_export_mixer()
         self.tabs.currentChanged.connect(lambda _i: self.sync_all_export_mixer())
@@ -2801,6 +2833,10 @@ class Window(QMainWindow):
         self.status_message(f'Playlist created: {name.strip()} · right-click songs to add them.')
 
     def add_library_song_to_playlist(self, playlist_id, path):
+        existing = {p for (p,) in project_catalog.list_songs(self.library_db, playlist_id)}
+        if str(Path(path).resolve()) in existing:
+            QMessageBox.information(self, 'Add to Playlist', 'This song is already in this playlist.')
+            return
         try:
             project_catalog.add_song(self.library_db, playlist_id, path)
         except ValueError as exc:
@@ -2810,19 +2846,110 @@ class Window(QMainWindow):
         self.refresh_playlist_panel()
         self.status_message('Song added to playlist.')
 
-    def refresh_playlist_panel(self):
+    def refresh_playlist_panel(self, *_args):
         if not hasattr(self, 'playlist_browser'):
             return
+        expanded = set()
+        for row in range(self.playlist_browser.topLevelItemCount()):
+            heading = self.playlist_browser.topLevelItem(row)
+            if heading.isExpanded():
+                expanded.add(heading.data(0, Qt.UserRole)[1])
         self.playlist_browser.clear()
-        for ident, name, kind in project_catalog.list_collections(self.library_db, 'playlist'):
-            songs = project_catalog.list_songs(self.library_db, ident)
-            heading = QTreeWidgetItem([f'{name}  ({len(songs)})'])
+        with sqlite3.connect(self.library_db) as db:
+            db.row_factory = sqlite3.Row
+            metadata = {r['project_path']: r for r in db.execute(
+                'SELECT project_path,title,artist,tuning,favorite FROM songs')}
+        for ident, name, _ in project_catalog.list_collections(self.library_db, 'playlist'):
+            paths = project_catalog.list_songs(self.library_db, ident)
+            heading = QTreeWidgetItem([f'{name}  ({len(paths)})', '', ''])
             heading.setData(0, Qt.UserRole, ('playlist', ident))
             self.playlist_browser.addTopLevelItem(heading)
-            for (path,) in songs:
-                song = QTreeWidgetItem([Path(path).stem])
-                song.setData(0, Qt.UserRole, ('song', path))
-                heading.addChild(song)
+            heading.setExpanded(ident in expanded)
+            for (path,) in paths:
+                row = metadata.get(path)
+                if row:
+                    if self.playlist_favorites_only.isChecked() and not row['favorite']:
+                        continue
+                    tuning = self.playlist_tuning.currentText()
+                    if tuning != 'All tunings' and (row['tuning'] or 'Unknown') != tuning:
+                        continue
+                    title = ('★ ' if row['favorite'] else '') + row['title']
+                    item = QTreeWidgetItem([title, row['artist'], row['tuning'] or 'Unknown'])
+                else:
+                    item = QTreeWidgetItem([Path(path).stem + ' (missing)', '', ''])
+                item.setData(0, Qt.UserRole, ('song', path, ident))
+                heading.addChild(item)
+
+    def manage_playlist_selection(self):
+        item = self.playlist_browser.currentItem()
+        if item:
+            self.playlist_context_menu(self.playlist_browser.visualItemRect(item).center())
+        else:
+            QMessageBox.information(self, 'Playlists', 'Select a playlist or song first.')
+
+    def playlist_context_menu(self, pos):
+        item = self.playlist_browser.itemAt(pos)
+        if item is None:
+            return
+        data = item.data(0, Qt.UserRole)
+        if not data:
+            return
+        menu = QMenu(self.playlist_browser)
+        if data[0] == 'playlist':
+            ident = data[1]
+            rename = menu.addAction('Rename Playlist')
+            up = menu.addAction('Move Playlist Up')
+            down = menu.addAction('Move Playlist Down')
+            add = menu.addAction('Add Selected Library Song')
+            delete = menu.addAction('Delete Playlist (keep songs)')
+            action = menu.exec(self.playlist_browser.viewport().mapToGlobal(pos))
+            if action == rename:
+                old = next((name for pid, name, kind in project_catalog.list_collections(self.library_db, 'playlist')
+                            if pid == ident), '')
+                name, ok = QInputDialog.getText(self, 'Rename Playlist', 'Name:', text=old)
+                if ok and name.strip():
+                    project_catalog.rename_collection(self.library_db, ident, name.strip())
+            elif action == up or action == down:
+                project_catalog.move_collection(self.library_db, ident, -1 if action == up else 1)
+            elif action == add:
+                path = self.selected_library_path()
+                if not path:
+                    QMessageBox.information(self, 'Playlists', 'Select a song in Library first.')
+                    return
+                self.add_library_song_to_playlist(ident, path)
+            elif action == delete:
+                if QMessageBox.question(self, 'Delete Playlist', 'Delete playlist but keep all songs?') == QMessageBox.Yes:
+                    project_catalog.delete_collection(self.library_db, ident)
+            else:
+                return
+            self.refresh_collection_filters()
+        else:
+            path, ident = data[1], data[2]
+            favorite = menu.addAction('Toggle Favorite ★')
+            tuning_menu = menu.addMenu('Set Song Tuning')
+            tuning_options = {}
+            for tuning in ['Unknown', 'E Standard', 'Eb Standard', 'D Standard', 'Drop D', 'Drop C#', 'Drop C', 'Other']:
+                tuning_options[tuning_menu.addAction(tuning)] = tuning
+            move_up = menu.addAction('Move Song Up')
+            move_down = menu.addAction('Move Song Down')
+            remove = menu.addAction('Remove from Playlist')
+            action = menu.exec(self.playlist_browser.viewport().mapToGlobal(pos))
+            if action == favorite:
+                with sqlite3.connect(self.library_db) as db:
+                    db.execute('UPDATE songs SET favorite=1-favorite WHERE project_path=?', (path,))
+                self.refresh_library()
+            elif action in tuning_options:
+                with sqlite3.connect(self.library_db) as db:
+                    db.execute('UPDATE songs SET tuning=? WHERE project_path=?',
+                               (tuning_options[action], path))
+                self.refresh_library()
+            elif action in (move_up, move_down):
+                project_catalog.move_song(self.library_db, ident, path, -1 if action == move_up else 1)
+            elif action == remove:
+                project_catalog.remove_song(self.library_db, ident, path)
+            else:
+                return
+        self.refresh_playlist_panel()
 
     def open_playlist_browser_item(self, item, _column):
         data = item.data(0, Qt.UserRole)
