@@ -2878,6 +2878,12 @@ class Window(QMainWindow):
                 else:
                     item = QTreeWidgetItem([Path(path).stem + ' (missing)', '', ''])
                 item.setData(0, Qt.UserRole, ('song', path, ident))
+                if str(path) == str(self.project_file or ''):
+                    item.setText(0, '▶  ' + item.text(0))
+                    for col in range(3):
+                        item.setBackground(col, QColor('#17425b'))
+                        item.setForeground(col, QColor('#7bd6ff'))
+                    item.setToolTip(0, 'Currently open song')
                 heading.addChild(item)
 
     def manage_playlist_selection(self):
@@ -3045,6 +3051,7 @@ class Window(QMainWindow):
                 self.library_table.setRowHeight(row_index, 25)
                 continue
             song = value
+            is_active_song = str(song['project_path']) == str(self.project_file or '')
             values = ('★' if song['favorite'] else '☆', song['title'], song['artist'],
                       song['album'], song['tuning'], f"{song['original_bpm']:g}",
                       f"{song['practice_bpm']:g}", song['last_played'] or '—')
@@ -3055,7 +3062,14 @@ class Window(QMainWindow):
                     display_value = (f"{song['artist']} - " if song['artist'] else '') + str(song['title'])
                     if song['tuning'] and song['tuning'] != 'Unknown':
                         display_value += f"  ·  {song['tuning']}"
+                if is_active_song and col == 1:
+                    display_value = '▶  ' + display_value
                 item = QTableWidgetItem(display_value)
+                if is_active_song:
+                    item.setBackground(QColor('#17425b'))
+                    if col != 0:
+                        item.setForeground(QColor('#7bd6ff'))
+                    item.setToolTip('Currently open song')
                 if col == 0:
                     item.setTextAlignment(Qt.AlignCenter)
                     item.setForeground(QColor('#7bd6ff' if song['favorite'] else '#8fa8b9'))
@@ -3687,6 +3701,8 @@ class Window(QMainWindow):
         self.song_metadata = dict(data.get('metadata') or {})
         self.register_song_tab(path)
         self.update_now_playing()
+        self.refresh_library()
+        self.refresh_playlist_panel()
         if folder:
             self.stop_live()
             self.player.stop()
