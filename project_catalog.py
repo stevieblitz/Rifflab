@@ -119,3 +119,33 @@ def import_project(db_path, source):
             db.execute('INSERT INTO collection_songs(collection_id, song_path, position) VALUES (?, ?, ?)',
                        (ident, song, position))
     return ident
+
+
+def rename_collection(db_path, collection_id, name):
+    name = str(name).strip()
+    if not name:
+        raise ValueError('A playlist or project needs a name.')
+    with closing(sqlite3.connect(db_path)) as db, db:
+        db.execute('UPDATE collections SET name=? WHERE id=?', (name, collection_id))
+
+
+def move_song(db_path, collection_id, song_path, direction):
+    """Move a reference one slot, preserving every song and audio file."""
+    if direction not in (-1, 1):
+        raise ValueError('Direction must be up or down.')
+    path = str(Path(song_path).resolve())
+    with closing(sqlite3.connect(db_path)) as db, db:
+        paths = [row[0] for row in db.execute(
+            'SELECT song_path FROM collection_songs WHERE collection_id=? ORDER BY position, song_path',
+            (collection_id,))]
+        if path not in paths:
+            return False
+        old = paths.index(path)
+        new = old + direction
+        if new < 0 or new >= len(paths):
+            return False
+        paths[old], paths[new] = paths[new], paths[old]
+        for idx, item in enumerate(paths):
+            db.execute('UPDATE collection_songs SET position=? WHERE collection_id=? AND song_path=?',
+                       (idx, collection_id, item))
+    return True
