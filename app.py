@@ -53,7 +53,18 @@ def loop_boundary_icon(which):
 
 
 class LibraryDragTable(QTableWidget):
-    """Drag saved project paths to the waveform or note grid."""
+    """Drag saved song paths or reorder entries in the active playlist."""
+    def dropEvent(self, event):
+        if getattr(self, 'playlist_reorder', None):
+            source = self.item(self.currentRow(), 1) if self.currentRow() >= 0 else None
+            path = source.data(Qt.UserRole) if source else None
+            target = self.rowAt(event.position().toPoint().y())
+            if path and target >= 0:
+                self.playlist_reorder(path, target)
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
     def startDrag(self, supported_actions):
         row = self.currentRow()
         item = self.item(row, 1) if row >= 0 else None
@@ -995,6 +1006,9 @@ class Window(QMainWindow):
         self.library_table.setHorizontalHeaderLabels(
             ['★', 'Artist · Song', 'Artist', 'Album', 'Tuning', 'BPM', 'Practice BPM', 'Last Played'])
         self.library_table.setDragEnabled(True)
+        self.library_table.setAcceptDrops(True)
+        self.library_table.setDropIndicatorShown(True)
+        self.library_table.playlist_reorder = None
         self.library_table.setDragDropMode(QAbstractItemView.DragOnly)
         self.library_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.library_table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -2802,6 +2816,9 @@ class Window(QMainWindow):
             if playlist_active:
                 positions = {p: i for i, p in enumerate(ordered_paths)}
                 rows.sort(key=lambda row: positions.get(row['project_path'], len(positions)))
+        self.library_table.playlist_reorder = self.reorder_playlist_song if playlist_active else None
+        self.library_table.setDragDropMode(
+            QAbstractItemView.DragDrop if playlist_active else QAbstractItemView.DragOnly)
         self.library_table.setSortingEnabled(False)
         group_by_artist = self.library_group.currentIndex() == 0 and not playlist_active
         if not hasattr(self, '_collapsed_artists'):
@@ -2869,6 +2886,14 @@ class Window(QMainWindow):
         self.layout_settings.setValue(
             'ui_collapsed_artists', json.dumps(sorted(self._collapsed_artists)))
         self.refresh_library()
+
+    def reorder_playlist_song(self, path, target_index):
+        scope = self.library_scope.currentData()
+        if scope is None:
+            return
+        if project_catalog.reorder_song(self.library_db, scope, path, target_index):
+            self.refresh_library()
+            self.status_message('Playlist order updated.')
 
     def show_library_context_menu(self, pos):
         """Right-click actions for the song actually under the cursor."""
