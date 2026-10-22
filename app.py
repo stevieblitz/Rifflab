@@ -726,6 +726,8 @@ class Window(QMainWindow):
         self.beat_times = []
         self.pattern_matches = {}
         self.section_overrides = {}
+        self._section_undo = []
+        self._section_redo = []
         self.beat_offset = 0.0
         self.loop_enabled = False
         self.loop_a_ms = None
@@ -838,6 +840,8 @@ class Window(QMainWindow):
             ('Ctrl+Shift+O', self.open_file),
             ('Ctrl+Shift+T', self.toggle_tuner_panel),
             ('Ctrl+R', self.reanalyze_current),
+            ('Ctrl+Z', self.undo_section_edit),
+            ('Ctrl+Y', self.redo_section_edit),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.setContext(Qt.WindowShortcut)
@@ -5108,6 +5112,22 @@ class Window(QMainWindow):
         rows = (beat_count + 15) // 16
         return [self.section_overrides.get(row, '') for row in range(rows)]
 
+    def undo_section_edit(self):
+        if not self._section_undo:
+            return
+        previous = self._section_undo.pop()
+        self._section_redo.append(dict(self.section_overrides))
+        self.section_overrides = previous
+        self.render_grid()
+
+    def redo_section_edit(self):
+        if not self._section_redo:
+            return
+        following = self._section_redo.pop()
+        self._section_undo.append(dict(self.section_overrides))
+        self.section_overrides = following
+        self.render_grid()
+
     def edit_section_label(self, row):
         choices = ['Intro', 'Verse', 'Chorus', 'Pre-Chorus', 'Bridge',
                    'Solo', 'Breakdown', 'Outro', 'Instrumental', 'Part A', 'Part B']
@@ -5116,7 +5136,10 @@ class Window(QMainWindow):
                                           f'Section starting at bar {row * 4 + 1}:',
                                           choices, max(0, choices.index(current)) if current in choices else 0,
                                           True)
-        if ok and label.strip():
+        if ok and label.strip() and label.strip() != current:
+            self._section_undo.append(dict(self.section_overrides))
+            self._section_undo = self._section_undo[-40:]
+            self._section_redo.clear()
             self.section_overrides[row] = label.strip()
             self.render_grid()
 
