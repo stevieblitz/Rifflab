@@ -42,6 +42,15 @@ class ProjectCatalogTests(unittest.TestCase):
         self.assertEqual(list_songs(self.database, project), [])
         self.assertTrue(self.one.exists())
 
+    def test_drag_reorder_preserves_collection_paths(self):
+        from project_catalog import reorder_song
+        playlist = create_collection(self.database, 'Grooves', 'playlist')
+        add_song(self.database, playlist, self.one)
+        add_song(self.database, playlist, self.two)
+        self.assertTrue(reorder_song(self.database, playlist, self.two, 0))
+        self.assertEqual([row[0] for row in list_songs(self.database, playlist)],
+                         [str(self.two.resolve()), str(self.one.resolve())])
+
     def test_missing_or_unsaved_items_rejected(self):
         project = create_collection(self.database, 'Practice', 'project')
         with self.assertRaises(ValueError):
