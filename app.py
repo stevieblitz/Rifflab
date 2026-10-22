@@ -3418,9 +3418,33 @@ class Window(QMainWindow):
             folder = Path(data['stem_folder']) if data.get('stem_folder') else None
             source = Path(data['source_audio']) if data.get('source_audio') else None
             if folder is not None and not all((folder / f'{name}.wav').is_file() for name in STEMS):
-                raise FileNotFoundError(f'Saved stems are missing: {folder}')
+                replacement = QFileDialog.getExistingDirectory(
+                    self, f'Locate missing stem folder: {folder}', str(folder.parent) if folder.parent.exists() else '')
+                if not replacement:
+                    self.status_message('Opening cancelled: missing stems.')
+                    return
+                proposed = Path(replacement).resolve()
+                if not all((proposed / f'{name}.wav').is_file() for name in STEMS):
+                    raise FileNotFoundError('The selected folder does not contain all four stem WAV files.')
+                folder = proposed
+                data['stem_folder'] = str(folder)
             if folder is None and (source is None or not source.is_file()):
-                raise FileNotFoundError(f'Song file is missing: {source}')
+                replacement, _ = QFileDialog.getOpenFileName(
+                    self, 'Locate missing song audio', str(source.parent) if source and source.parent.exists() else '',
+                    'Audio (*.wav *.mp3 *.flac *.m4a *.ogg)')
+                if not replacement:
+                    self.status_message('Opening cancelled: missing audio.')
+                    return
+                source = Path(replacement).resolve()
+                data['source_audio'] = str(source)
+            if (data.get('stem_folder') and folder is not None and
+                    data['stem_folder'] != str(json.loads(path.read_text(encoding='utf-8')).get('stem_folder'))) or (
+                    data.get('source_audio') and source is not None and
+                    data['source_audio'] != str(json.loads(path.read_text(encoding='utf-8')).get('source_audio'))):
+                # Atomic relink; preserve all annotations and original analysis.
+                tmp = path.with_suffix('.riff.relink.tmp')
+                tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+                tmp.replace(path)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             QMessageBox.warning(self, 'Open project', f'Cannot load project:\n{exc}')
             self.refresh_recent_projects()
