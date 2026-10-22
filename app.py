@@ -686,6 +686,8 @@ class Window(QMainWindow):
         self._waveform_source = None
         self._waveform_cache = {}
         self._waveform_pending = set()
+        self._last_song_switch_path = None
+        self._autosave_interval_ms = 90000
         self.song_metadata = {}
         self.speed_ratio = 1.0
         self.detected_bpm = 130.0
@@ -2115,6 +2117,10 @@ class Window(QMainWindow):
           QCheckBox::indicator:disabled{{border-color:#324657;background:transparent}}
         """)
         self.setup_developer_menus()
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setInterval(self._autosave_interval_ms)
+        self.autosave_timer.timeout.connect(self.autosave_song_snapshot)
+        self.autosave_timer.start()
         saved_geometry = self.layout_settings.value('ui_window_geometry')
         if saved_geometry:
             self.restoreGeometry(saved_geometry)
@@ -2471,6 +2477,27 @@ class Window(QMainWindow):
         remove_button.clicked.connect(delete_selected)
         dialog.exec()
 
+    def autosave_song_snapshot(self):
+        """Non-destructive recovery snapshot, never modify the source song."""
+        if (self.processing or self.analysis_running or not self.project_file
+                or not Path(self.project_file).is_file()
+                or not self._has_unsaved_project_changes()):
+            return
+        try:
+            folder = ROOT / 'recovery'
+            folder.mkdir(parents=True, exist_ok=True)
+            source = Path(self.project_file)
+            backup = folder / (source.stem + '.riff.bak')
+            snapshot = json.loads(source.read_text(encoding='utf-8'))
+            snapshot['_recovery_source'] = str(source)
+            snapshot['_recovery_saved_at'] = datetime.now().isoformat()
+            tmp = backup.with_suffix('.tmp')
+            tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
+            tmp.replace(backup)
+        except (OSError, ValueError, TypeError):
+            # Recovery must never interrupt playback.
+            return
+
     def save_project_as_menu(self):
         original = self.project_file
         self.project_file = None
@@ -2821,6 +2848,13 @@ class Window(QMainWindow):
             playlist_actions[action] = ident
         if not playlist_actions:
             playlist_menu.addAction('No playlists yet').setEnabled(False)
+        scope = self.library_scope.currentData()
+        remove_playlist_action = None
+        if scope is not None:
+            kind = next((kind for ident, _name, kind in project_catalog.list_collections(self.library_db)
+                         if ident == scope), None)
+            if kind == 'playlist':
+                remove_playlist_action = menu.addAction('Remove from this Playlist')
         menu.addSeparator()
         copy_action = menu.addAction('Copy project path')
         menu.addSeparator()
@@ -2834,6 +2868,9 @@ class Window(QMainWindow):
             self.edit_library_song()
         elif selected == favorite_action:
             self.toggle_library_favorite()
+        elif remove_playlist_action is not None and selected == remove_playlist_action:
+            project_catalog.remove_song(self.library_db, scope, path)
+            self.refresh_library()
         elif selected == copy_action:
             QApplication.clipboard().setText(path)
             self.status_message('Project path copied.')
