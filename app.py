@@ -2296,6 +2296,7 @@ class Window(QMainWindow):
         QTimer.singleShot(0, self.attach_song_tabs_to_menu)
         file_menu = bar.addMenu('&File')
         file_menu.addAction('Project Manager…', self.show_project_manager)
+        file_menu.addAction('Open Recovery Snapshot…', self.open_recovery_snapshot)
         file_menu.addAction('Open Song (.riff)…', self.open_project)
         file_menu.addAction('Save Project', self.save_project)
         file_menu.addAction('Save Project As…', self.save_project_as_menu)
@@ -2476,6 +2477,28 @@ class Window(QMainWindow):
         add_button.clicked.connect(add_current)
         remove_button.clicked.connect(delete_selected)
         dialog.exec()
+
+    def open_recovery_snapshot(self):
+        folder = ROOT / 'recovery'
+        if not folder.exists():
+            QMessageBox.information(self, 'Recovery', 'No recovery snapshots found.')
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Open Recovery Snapshot', str(folder),
+            'RiffLab Recovery (*.riff.bak)')
+        if not path:
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+            if data.get('format') != 'RiffLab Project':
+                raise ValueError('Invalid recovery snapshot.')
+            # Load a transient legacy .riff manifest without overwriting the original.
+            temp = folder / (Path(path).stem + '-recovered.riff')
+            temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            self.load_project(temp)
+            self.status_message('Recovery opened. Use Save Song As to keep your recovered state.')
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, 'Recovery', str(exc))
 
     def autosave_song_snapshot(self):
         """Non-destructive recovery snapshot, never modify the source song."""
