@@ -149,3 +149,20 @@ def move_song(db_path, collection_id, song_path, direction):
             db.execute('UPDATE collection_songs SET position=? WHERE collection_id=? AND song_path=?',
                        (idx, collection_id, item))
     return True
+
+
+def reorder_song(db_path, collection_id, song_path, target_index):
+    """Move a song to an exact playlist position, preserving other ordering."""
+    path = str(Path(song_path).resolve())
+    with closing(sqlite3.connect(db_path)) as db, db:
+        items = [row[0] for row in db.execute(
+            'SELECT song_path FROM collection_songs WHERE collection_id=? ORDER BY position, song_path',
+            (collection_id,))]
+        if path not in items:
+            return False
+        items.remove(path)
+        items.insert(max(0, min(int(target_index), len(items))), path)
+        for i, item in enumerate(items):
+            db.execute('UPDATE collection_songs SET position=? WHERE collection_id=? AND song_path=?',
+                       (i, collection_id, item))
+    return True
