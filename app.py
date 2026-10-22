@@ -18,7 +18,7 @@ import math
 import time
 from pathlib import Path
 from urllib.parse import urlparse
-from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush, QDrag
+from PySide6.QtGui import QKeySequence, QShortcut, QIcon, QPixmap, QPainter, QPen, QColor, QBrush, QDrag, QFontDatabase
 
 from PySide6.QtCore import QSize, QObject, Qt, QUrl, Signal, QTimer, QSettings, QRectF, QMimeData
 import qtawesome as qta
@@ -671,6 +671,9 @@ class Window(QMainWindow):
         self.setWindowTitle(f"StevieBlitz's RiffLab — Alpha v0.2.0-dev.{BUILD_NUMBER}")
         self.assets_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
         self.brand_asset = self.assets_dir / 'rifflab-logo.svg'
+        font_file = self.assets_dir / 'Audiowide-Regular.ttf'
+        if font_file.is_file():
+            QFontDatabase.addApplicationFont(str(font_file))
         self.new_brand_asset = self.assets_dir / 'rifflab-brand.png'
         # Windows titlebar icon is the supplied RL mark. The .exe / desktop
         # icon is intentionally different: the standalone Erlenmeyer flask.
@@ -810,7 +813,7 @@ class Window(QMainWindow):
         self.time_label.setToolTip('Current playback position / track duration')
         self.header_time_label = QLabel('00:00 / 00:00')
         self.header_time_label.setObjectName('headerTimeLabel')
-        self.header_time_label.setFixedWidth(210)
+        self.header_time_label.setFixedWidth(290)
         self.header_time_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.header_time_label.setToolTip('Playback time (also shown in transport)')
         project_row.addWidget(self.header_time_label)
@@ -2019,8 +2022,8 @@ class Window(QMainWindow):
           QLabel#gridHint{color:#8fa9bb;font-size:11px}
           QLabel#gridTitle{color:#c2d4e2;font-size:12px;font-weight:600;background:transparent}
           QWidget#analysisToolbar QLabel{background:transparent}
-          QLabel#headerTimeLabel{color:#7bd6ff;background:transparent;border:0;font-family:'Cascadia Code','Consolas',monospace;font-size:21px;font-weight:700;padding:0}
-          QLabel#timeLabel{background:transparent;color:#7bd6ff;border:0;font-family:'Cascadia Code','Consolas',monospace;font-size:20px;font-weight:700;padding:0px 2px}
+          QLabel#headerTimeLabel{color:#7bd6ff;background:transparent;border:0;font-family:'Audiowide','Cascadia Code',monospace;font-size:24px;font-weight:400;padding:0}
+          QLabel#timeLabel{background:transparent;color:#7bd6ff;border:0;font-family:'Audiowide','Cascadia Code',monospace;font-size:20px;font-weight:400;padding:0px 2px}
           QLabel#loopInfo{background:transparent}
           QLabel#menuAppTitle{color:#a5e5ff;font-family:'Bahnschrift','Segoe UI';font-weight:700;font-size:15px}
           QTabWidget#mainTabs::pane{border:1px solid #293f52;border-radius:4px;background:#111923}
