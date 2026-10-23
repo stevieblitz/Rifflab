@@ -479,7 +479,7 @@ def ffmpeg_path():
         # Separate PATH directories are supported by yt-dlp; do not point
         # ffmpeg_location at one incomplete directory.
         return None
-    raise RuntimeError('FFmpeg en FFprobe ontbreken. Controleer met: Get-Command ffmpeg, ffprobe')
+    raise RuntimeError('FFmpeg and FFprobe are missing. Check with: Get-Command ffmpeg, ffprobe')
 
 
 class AnalysisCancelled(Exception):
