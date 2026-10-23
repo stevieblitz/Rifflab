@@ -16,39 +16,15 @@ jobs:
           python-version: '3.11'
       - name: Syntax validation
         shell: pwsh
-        run: python -m py_compile app.py realtime_audio.py ai_worker.py
+        run: python -m py_compile app.py realtime_audio.py ai_worker.py tests/test_recovery_smoke.py
       - name: Install lightweight Qt dependencies
         run: python -m pip install -r requirements-preview.txt
-      - name: Launch actual Qt Window and capture screenshot
+      - name: Qt startup, note, transpose and stem timing regression checks
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          @'
-          import sys
-          from pathlib import Path
-          from PySide6.QtWidgets import QApplication
-          from PySide6.QtCore import QTimer
-          from app import Window
-          app = QApplication(sys.argv)
-          window = Window()
-          window.resize(1440, 900)
-          window.show()
-          def verify():
-              app.processEvents()
-              assert window.tabs.count() >= 4, "Missing TUNER tab"
-              assert window.tabs.tabText(window.tabs.count()-1) == "TUNER"
-              assert window.menuBar().actions(), "Missing menus"
-              assert window.grid_row_height.orientation().name == "Vertical"
-              assert window.grid_zoom.orientation().name == "Horizontal"
-              path = Path("recovery-ui.png")
-              assert window.grab().save(str(path)), "Screenshot failed"
-              print("REAL QT WINDOW PASSED:", path)
-              app.quit()
-          QTimer.singleShot(2500, verify)
-          sys.exit(app.exec())
-          '@ | Set-Content -Encoding UTF8 check_ui.py
-          python check_ui.py
+          QT_LOGGING_RULES: '*.debug=false'
+        run: python tests/test_recovery_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
