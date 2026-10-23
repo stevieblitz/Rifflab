@@ -2876,7 +2876,10 @@ class Window(QMainWindow):
             if abs(ratio - 1.0) < 0.0001:
                 paths = dict(self.stems)
             else:
-                exe = shutil.which('ffmpeg')
+                # Portable Windows builds bundle FFmpeg beside RiffLab.exe,
+                # not necessarily on PATH. Prefer that tested binary.
+                bundled = Path(sys.executable).resolve().parent / 'bin' / 'ffmpeg.exe'
+                exe = str(bundled) if bundled.is_file() else shutil.which('ffmpeg')
                 if not exe:
                     raise RuntimeError('FFmpeg is required for pitch-preserving speed control.')
                 folder = self.folder / 'tempo_cache' / f'{ratio:.5f}'
