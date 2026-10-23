@@ -26,7 +26,10 @@ def dominant_hz(signal, sample_rate):
 
 def main():
     ffmpeg = shutil.which("ffmpeg")
-    assert ffmpeg, "FFmpeg is required to verify pitch-preserving BPM"
+    if not ffmpeg:
+        import imageio_ffmpeg
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    assert Path(ffmpeg).is_file(), "FFmpeg is required to verify pitch-preserving BPM"
     rate = 16000
     seconds = 4
     time = np.arange(rate * seconds, dtype=np.float64) / rate
