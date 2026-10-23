@@ -11,7 +11,7 @@ class LiveStemPlayer:
         rates = {f.samplerate for f in self.files.values()}
         if len(rates) != 1:
             self.close()
-            raise ValueError('Stems hebben verschillende sample rates')
+            raise ValueError('Stems have different sample rates')
         self.rate = rates.pop()
         self.time_scale = float(time_scale)
         self.channels = 2
@@ -52,8 +52,12 @@ class LiveStemPlayer:
     def set_loop(self, enabled, start_ms=None, end_ms=None):
         with self.lock:
             self.loop_enabled = bool(enabled)
-            self.loop_a = max(0, min(self.frames, int(start_ms * self.rate / 1000))) if start_ms is not None else 0
-            self.loop_b = max(self.loop_a + 1, min(self.frames, int(end_ms * self.rate / 1000))) if end_ms is not None else self.frames
+            # UI timestamps refer to original-song time. FFmpeg tempo-stretched
+            # files have fewer/more frames, so use the same mapping as seek().
+            def to_frame(ms):
+                return int(ms * self.rate / (1000 * self.time_scale))
+            self.loop_a = max(0, min(max(0, self.frames - 1), to_frame(start_ms))) if start_ms is not None else 0
+            self.loop_b = max(self.loop_a + 1, min(self.frames, to_frame(end_ms))) if end_ms is not None else self.frames
 
     def _callback(self, outdata, frames, time_info, status):
         # Lightweight pitch-preserving? No: linear interpolation changes pitch.
