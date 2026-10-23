@@ -3,7 +3,7 @@ name: Bass Root Accuracy Regression
 on:
   workflow_dispatch:
   push:
-    branches: [experiment/real-ui-screenshot]
+    branches: [experiment/real-ui-screenshot, restore-from-dev69]
     paths:
       - 'ai_worker.py'
       - 'tests/test_bass_root_regression.py'
