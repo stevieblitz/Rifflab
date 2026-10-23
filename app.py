@@ -1614,7 +1614,7 @@ class Window(QMainWindow):
         self.mix_debounce.timeout.connect(self.request_mix)
         self.live_timer = QTimer(self)
         self.live_timer.timeout.connect(self.live_tick)
-        self.live_timer.start(80)
+        self.live_timer.start(33)  # ~30 fps for continuous note-fill and waveform position
         self.player.playbackStateChanged.connect(self.on_playback_state)
         self.player.positionChanged.connect(self.check_qt_loop)
         self.player.errorOccurred.connect(lambda error, msg: self.status_message(f'Audiofout: {msg}') if msg else None)
@@ -2785,6 +2785,10 @@ class Window(QMainWindow):
         if not self.stems and self.source_audio is None:
             self.status_message('Open a song before re-analyzing.')
             return
+        if not self.stems and self.source_audio is not None:
+            self.status_message('Separating stems before note analysis…')
+            self.start_split(Path(self.source_audio))
+            return
         self._start_analysis_ui()
         self.set_chord_loading(True, 'Re-analyzing notes…')
         self.reanalyze_button.setEnabled(False)
@@ -2792,8 +2796,6 @@ class Window(QMainWindow):
         self.status_message('Re-analyzing audio with ' + self.accuracy.currentText() + ' accuracy…')
         if self.stems and self.folder:
             threading.Thread(target=self._reanalyze_stems, daemon=True).start()
-        else:
-            threading.Thread(target=self._analyze_source, args=(self.source_audio, True), daemon=True).start()
 
     def _reanalyze_stems(self):
         try:
@@ -2813,33 +2815,9 @@ class Window(QMainWindow):
     def analyze_current(self):
         if self.source_audio is None or self.analysis_running:
             return
-        self._start_analysis_ui()
-        self.set_chord_loading(True)
-        self.analyze_local.setEnabled(False)
-        self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
-        threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
-
-    def _analyze_source(self, path, force=False):
-        try:
-            cache = ROOT / 'analysis' / (path.stem + '_' + str(path.stat().st_size))
-            cache.mkdir(parents=True, exist_ok=True)
-            beats_file = cache / 'beats.json'
-            bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes_v4' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
-            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
-            if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
-            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
-            if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
-            if not self.analysis_cancel.is_set():
-                self.signals.beats.emit(beats)
-                self.signals.chords.emit(chords)
-        except AnalysisCancelled:
-            pass
-        except Exception as exc:
-            self.signals.error.emit(f'Analysis failed: {exc}\nDetails: {ROOT / "rifflab-errors.log"}')
-            self._log_exception()
-        finally:
-            self.signals.analysis_done.emit()
+        # No full-mix pitch/chord analysis: vocals and transients cause false notes.
+        self.status_message('Separating stems before note analysis…')
+        self.start_split(Path(self.source_audio))
 
     def on_analysis_done(self):
         was_cancelled = self.analysis_cancel.is_set()
@@ -2914,7 +2892,9 @@ class Window(QMainWindow):
         position = old.position_ms if old else 0
         playing = old.playing if old else False
         try:
-            replacement = LiveStemPlayer(paths, time_scale=1.0/ratio)
+            # FFmpeg atempo shortens/lengthens WAV frames. Map frames back to
+            # original-song time so waveform, note grid, seek and A/B loop align.
+            replacement = LiveStemPlayer(paths, time_scale=ratio)
             replacement.set_levels(self.get_levels())
             replacement.seek(position)
             self.live = replacement
@@ -3058,15 +3038,14 @@ class Window(QMainWindow):
         if not self.stems and not self.source_audio:
             self.rebuild_chords()
             return
+        if not self.stems and self.source_audio and self.source_audio.is_file():
+            self.status_message('Separating stems before analyzing selected mode…')
+            self.start_split(self.source_audio)
+            return
         self._start_analysis_ui()
         self.set_chord_loading(True, 'Analyzing selected mode…')
         if self.stems and self.folder:
             threading.Thread(target=self._switch_analysis_mode_worker, daemon=True).start()
-        elif self.source_audio and self.source_audio.is_file():
-            self.set_chord_loading(False)
-            self.analysis_running = False
-            self.status_message('Generate stems before analyzing notes.')
-            self.start_split(self.source_audio)
 
     def _switch_analysis_mode_worker(self):
         try:
@@ -4173,7 +4152,7 @@ class Window(QMainWindow):
         try:
             self.player.stop()
             self.player.setSource(QUrl())
-            self.live = LiveStemPlayer(self.stems, time_scale=1.0 / self.speed_ratio)
+            self.live = LiveStemPlayer(self.stems, time_scale=1.0)  # Unstretched original stems
             self.live.set_levels(self.get_levels())
             self._sync_loop()
             self._duration = self.live.duration_ms
