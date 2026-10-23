@@ -2843,7 +2843,17 @@ class Window(QMainWindow):
         self.status_message(f'BPM reset to {original} (original tempo).')
 
     def bpm_changed(self, bpm):
-        """BPM changes the actual audio rate, never just the grid."""
+        """Change tempo only when pitch-preserving stem playback is available."""
+        if (self.source_audio is not None or self.stems) and not (self.live and self.stems):
+            # Qt backends without pitch compensation change pitch with playbackRate.
+            # Refuse that fallback rather than silently retune the user's music.
+            original = max(self.grid_bpm.minimum(),
+                           min(self.grid_bpm.maximum(), round(self.detected_bpm)))
+            self.grid_bpm.blockSignals(True)
+            self.grid_bpm.setValue(original)
+            self.grid_bpm.blockSignals(False)
+            self.status_message('Pitch-preserving BPM requires the realtime stem mixer.')
+            return
         self.speed_ratio = max(0.5, min(1.5, float(bpm) / max(1.0, self.detected_bpm)))
         if self.live and self.stems:
             self.speed_generation += 1
