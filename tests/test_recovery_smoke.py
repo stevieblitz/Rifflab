@@ -72,6 +72,16 @@ def main():
         finally:
             live.close()
 
+        # An unsplit/offline track must NEVER fall back to pitch-shifting Qt rate.
+        window.source_audio = stems["bass"]
+        window.stems = {}
+        window.live = None
+        window.detected_bpm = 120.0
+        original_rate = window.player.playbackRate()
+        window.grid_bpm.setValue(90)
+        assert window.grid_bpm.value() == 120, "Unsafe BPM fallback was not rejected"
+        assert window.player.playbackRate() == original_rate, "BPM changed unsplit audio pitch"
+
         # Bass Mode must invoke bass_notes on the isolated bass file ONLY.
         window.folder = folder
         window.stems = stems
