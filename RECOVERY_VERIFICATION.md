@@ -8,9 +8,9 @@
 - Windows offscreen real Qt screenshot: successful run [39925446127](https://github.com/stevieblitz/Rifflab/actions/runs/39925446127), commit `1dba809e` (not final HEAD).
 - Recovery UI smoke: successful run [39925507373](https://github.com/stevieblitz/Rifflab/actions/runs/39925507373), commit `4b998a19`. Checks Qt startup, icon-only Tuner tab, menus, slider orientation, mixer overlay/LED, notation-only transpose, gradient fill, stem-only Bass Mode, analysis entry gates, and synthetic stretched-stem seek/loop mapping.
 - Seven synthetic bass-root cases: successful run [39925360715](https://github.com/stevieblitz/Rifflab/actions/runs/39925360715), commit `002014eb`.
-- Additional synthetic FFmpeg atempo pitch/duration test is in `tests/test_tempo_pitch.py`; **its CI result must be verified** before treating it as passed.
+- Latest combined light verification at code commit `918176d9`: [Qt/UI regression run 39925721806](https://github.com/stevieblitz/Rifflab/actions/runs/39925721806) **success** and [bass-root + FFmpeg atempo pitch/duration run 39925721814](https://github.com/stevieblitz/Rifflab/actions/runs/39925721814) **success**. These are synthetic and offscreen checks, not proof of actual Windows speaker playback or real-music Demucs results.
 - Source fixes: mandatory stems for analysis/re-analysis/mode changes, no vocals/full-mix Bass Mode fallback; 33ms playback UI tick; correct tempo-stretched original-song timeline and A/B loop mapping; packaged FFmpeg path; reject unsafe Qt pitch-shifting BPM fallback.
-- The latest branch commit and its CI must be checked again; passing older commits does not prove HEAD.
+- Code commit `918176d9` passed the lightweight Qt and synthetic audio suites. Subsequent documentation-only commits do not modify tested application code.
 
 ## Remaining acceptance blockers
 
