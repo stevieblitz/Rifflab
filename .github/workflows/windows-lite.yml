@@ -6,7 +6,7 @@ name: Build RiffLab Complete for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups, experiment/tuner-stability-layout-2026-10-21]
+    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups, experiment/tuner-stability-layout-2026-10-21, experiment/concert-length-support-2026-10-24]
     paths:
       - 'app.py'
       - 'project_catalog.py'
