@@ -1735,6 +1735,7 @@ class Window(QMainWindow):
           QProgressBar::chunk{background:#7bd6ff}
         ''')
         self.setup_developer_menus()
+        QTimer.singleShot(0, self.restore_last_workspace)
         QTimer.singleShot(0, self.size_tuner_to_tabs)
 
     def setup_developer_menus(self):
@@ -1759,26 +1760,29 @@ class Window(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction('Exit', self.close)
         view = bar.addMenu('&View')
-        self.view_mixer_action = view.addAction('Stem Mixer')
+        panels = view.addMenu('Panels')
+        self.view_mixer_action = panels.addAction('Mixer')
         self.view_mixer_action.setCheckable(True)
         self.view_mixer_action.setChecked(True)
-        self.view_mixer_action.toggled.connect(self.play_splitter.widget(0).setVisible)
-        self.view_tuner_action = view.addAction('Tuner')
-        self.view_tuner_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.tuner_dialog))
+        self.view_mixer_action.toggled.connect(self.set_mixer_panel_visible)
+        self.view_timeline_action = panels.addAction('Timeline')
+        self.view_timeline_action.setCheckable(True)
+        self.view_timeline_action.setChecked(True)
+        self.view_timeline_action.toggled.connect(self.chord_scroll.setVisible)
+        self.view_indicator_action = panels.addAction('Main Indicator')
+        self.view_indicator_action.setCheckable(True)
+        self.view_indicator_action.setChecked(True)
+        self.view_indicator_action.toggled.connect(self.chord.setVisible)
+        self.view_tuner_action = panels.addAction('Tuner')
+        self.view_tuner_action.setCheckable(True)
+        self.view_tuner_action.setChecked(True)
+        self.view_tuner_action.toggled.connect(self.set_tuner_panel_visible)
         view.addSeparator()
         workspace = view.addMenu('Workspace')
         workspace.addAction('Save Workspace…', self.save_workspace_as)
         workspace.addAction('Load Workspace…', self.load_workspace_from)
         workspace.addAction('Reset Workspace', self.reset_workspace)
         view.addSeparator()
-        self.view_timeline_action = view.addAction('Timeline')
-        self.view_timeline_action.setCheckable(True)
-        self.view_timeline_action.setChecked(True)
-        self.view_timeline_action.toggled.connect(self.chord_scroll.setVisible)
-        self.view_indicator_action = view.addAction('Main Indicator')
-        self.view_indicator_action.setCheckable(True)
-        self.view_indicator_action.setChecked(True)
-        self.view_indicator_action.toggled.connect(self.chord.setVisible)
         view.addAction('Reset Mixer Layout', self.reset_mixer_layout)
         view.addAction('Show PLAY', lambda: self.tabs.setCurrentIndex(0))
         view.addAction('Show Library', lambda: self.tabs.setCurrentIndex(1))
@@ -1801,14 +1805,45 @@ class Window(QMainWindow):
             action = menu.addAction('No recent projects')
             action.setEnabled(False)
 
+    def set_mixer_panel_visible(self, visible):
+        mixer = self.play_splitter.widget(0)
+        if not visible:
+            self._last_mixer_width = max(165, self.play_splitter.sizes()[0])
+            mixer.hide()
+        else:
+            mixer.show()
+            width = getattr(self, '_last_mixer_width', 270)
+            self.play_splitter.setSizes([width, max(400, self.play_splitter.width() - width)])
+
+    def set_tuner_panel_visible(self, visible):
+        index = self.tabs.indexOf(self.tuner_dialog)
+        if index < 0:
+            return
+        if not visible and self.tabs.currentIndex() == index:
+            self.tabs.setCurrentIndex(0)
+        self.tabs.setTabVisible(index, visible)
+
+    def restore_last_workspace(self):
+        saved = self.layout_settings.value('workspace_v1')
+        if not saved:
+            return
+        try:
+            self.apply_workspace_state(json.loads(str(saved)))
+        except (ValueError, TypeError, KeyError, AttributeError):
+            self.status_message('Saved workspace could not be restored.')
+
     def workspace_state(self):
+        sizes = list(self.play_splitter.sizes())
+        if not self.view_mixer_action.isChecked():
+            sizes[0] = getattr(self, '_last_mixer_width', 270)
         return {
-            'splitter': list(self.play_splitter.sizes()),
+            'splitter': sizes,
             'grid_zoom': self.grid_zoom.value(),
             'grid_height': self.grid_row_height.value(),
-            'mixer_visible': self.play_splitter.widget(0).isVisible(),
-            'timeline_visible': self.chord_scroll.isVisible(),
-            'indicator_visible': self.chord.isVisible(),
+            'mixer_visible': self.view_mixer_action.isChecked(),
+            'timeline_visible': self.view_timeline_action.isChecked(),
+            'indicator_visible': self.view_indicator_action.isChecked(),
+            'tuner_visible': self.view_tuner_action.isChecked(),
             'active_tab': self.tabs.currentIndex(),
         }
 
@@ -1820,15 +1855,19 @@ class Window(QMainWindow):
                 slider.setValue(max(slider.minimum(),min(slider.maximum(),int(state[key]))))
         sizes = state.get('splitter')
         if isinstance(sizes, list) and len(sizes) == self.play_splitter.count():
-            self.play_splitter.setSizes([max(1,int(n)) for n in sizes])
-        for key, action in [('mixer_visible',self.view_mixer_action),
-                            ('timeline_visible',self.view_timeline_action),
-                            ('indicator_visible',self.view_indicator_action)]:
+            self._last_mixer_width = max(165, int(sizes[0]))
+            self.play_splitter.setSizes([max(1, int(n)) for n in sizes])
+        for key, action in [('mixer_visible', self.view_mixer_action),
+                            ('timeline_visible', self.view_timeline_action),
+                            ('indicator_visible', self.view_indicator_action),
+                            ('tuner_visible', self.view_tuner_action)]:
             if key in state:
                 action.setChecked(bool(state[key]))
-        tab = int(state.get('active_tab',0))
-        if 0 <= tab < self.tabs.count():
+        tab = int(state.get('active_tab', 0))
+        if 0 <= tab < self.tabs.count() and self.tabs.isTabVisible(tab):
             self.tabs.setCurrentIndex(tab)
+        else:
+            self.tabs.setCurrentIndex(0)
 
     def save_workspace_as(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -1851,7 +1890,7 @@ class Window(QMainWindow):
         self.apply_workspace_state({'grid_zoom':100,'grid_height':38,
                                     'splitter':[270,780],'mixer_visible':True,
                                     'timeline_visible':True,'indicator_visible':True,
-                                    'active_tab':0})
+                                    'tuner_visible':True,'active_tab':0})
         self.status_message('Workspace reset.')
 
     def reset_mixer_layout(self):
@@ -4268,6 +4307,7 @@ class Window(QMainWindow):
             event.ignore()
             return
 
+        self.layout_settings.setValue('workspace_v1', json.dumps(self.workspace_state()))
         self.layout_settings.setValue('grid_zoom', self.grid_zoom.value())
         self.layout_settings.setValue('grid_row_height', self.grid_row_height.value())
         self.layout_settings.setValue('play_splitter_grid_v3', self.play_splitter.saveState())
