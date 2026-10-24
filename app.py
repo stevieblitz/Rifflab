@@ -5429,7 +5429,7 @@ class Window(QMainWindow):
         position = (self.live.position_ms if self.live else self.player.position()) / 1000.0
         global_beat = (bisect.bisect_right(self.beat_times, position) - 1
                        if self.beat_times else int(position / beat_length))
-        page = max(0, global_beat // 800)
+        page = max(0, min(total_beats - 1, global_beat) // 800)
         self.grid_page_start = page * 800
         beats = min(800, total_beats - self.grid_page_start)
         beat_seconds = [self.beat_times[self.grid_page_start + i]
@@ -5548,6 +5548,9 @@ class Window(QMainWindow):
             return
         global_index = max(0, (bisect.bisect_right(self.beat_times, seconds)-1
                               if self.beat_times else int(seconds*self.grid_bpm.value()/60.0)))
+        max_index = max(15, len(self.beat_times) - 1 if self.beat_times
+                        else math.ceil(max(45, self._duration / 1000) * self.grid_bpm.value() / 60.0) - 1)
+        global_index = min(global_index, max_index)
         if global_index // 800 != self.grid_page_start // 800:
             self.render_grid()
             return
