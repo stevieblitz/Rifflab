@@ -35,6 +35,33 @@ def main():
     assert window.progress.isHidden(), "Duplicate idle progress/READY footer"
     assert window.mixer_overlay.isVisible(), "Generate Stems overlay missing"
 
+    # View > Panels must control four actual UI surfaces, and workspace
+    # round-trips their visibility without losing the current tab.
+    view_menu = next(a.menu() for a in window.menuBar().actions()
+                     if a.text().replace("&", "") == "View")
+    panels = next(a.menu() for a in view_menu.actions()
+                  if a.menu() and a.text() == "Panels")
+    assert {a.text() for a in panels.actions()} == {
+        "Mixer", "Timeline", "Main Indicator", "Tuner"}
+    state = window.workspace_state()
+    window.view_mixer_action.setChecked(False)
+    assert window.play_splitter.widget(0).isHidden()
+    window.view_timeline_action.setChecked(False)
+    assert window.chord_scroll.isHidden()
+    window.view_indicator_action.setChecked(False)
+    assert window.chord.isHidden()
+    window.tabs.setCurrentIndex(tuner)
+    window.view_tuner_action.setChecked(False)
+    assert not window.tabs.isTabVisible(tuner)
+    assert window.tabs.currentIndex() == 0
+    window.apply_workspace_state(state)
+    application.processEvents()
+    assert window.view_mixer_action.isChecked()
+    assert window.view_timeline_action.isChecked()
+    assert window.view_indicator_action.isChecked()
+    assert window.tabs.isTabVisible(tuner)
+    assert window.workspace_state()["tuner_visible"]
+
     # Notation transpose must not change playback rate, audio source or stem gains.
     original_rate = window.player.playbackRate()
     original_source = window.player.source()
