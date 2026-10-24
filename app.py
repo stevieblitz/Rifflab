@@ -5423,8 +5423,18 @@ class Window(QMainWindow):
         bpm = self.grid_bpm.value()
         beat_length = 60.0 / bpm
         total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
-        beats = min(800, max(16, len(self.beat_times) if self.beat_times else math.ceil(total / beat_length)))
-        beat_seconds = [self.beat_times[i] if self.beat_times else i * beat_length for i in range(beats)]
+        # Concert mode: render at most 800 beats at a time, but keep the
+        # entire recording addressable by the transport and analysis.
+        total_beats = max(16, len(self.beat_times) if self.beat_times else math.ceil(total / beat_length))
+        position = (self.live.position_ms if self.live else self.player.position()) / 1000.0
+        global_beat = (bisect.bisect_right(self.beat_times, position) - 1
+                       if self.beat_times else int(position / beat_length))
+        page = max(0, global_beat // 800)
+        self.grid_page_start = page * 800
+        beats = min(800, total_beats - self.grid_page_start)
+        beat_seconds = [self.beat_times[self.grid_page_start + i]
+                        if self.beat_times else (self.grid_page_start + i) * beat_length
+                        for i in range(beats)]
         patterns = {}  # Pattern assistance happens during audio analysis, not in the grid
         occurrences = Counter()
         pattern_labels = {}
@@ -5441,7 +5451,8 @@ class Window(QMainWindow):
             if section_label:
                 current_section = (current_section + 1) % len(section_colors)
             accent = section_colors[current_section]
-            label = section_label or f'{section_row * 4 + 1}–{section_row * 4 + 4}'
+            label = section_label or (f'{(self.grid_page_start // 4) + section_row * 4 + 1}'
+                                      f'–{(self.grid_page_start // 4) + section_row * 4 + 4}')
             section = QPushButton(label)
             section.setToolTip('Click to name this section (Intro, Verse, Chorus, etc.)')
             section.setFixedWidth(90)
@@ -5450,7 +5461,9 @@ class Window(QMainWindow):
                 f'border:0;border-left:{"4px" if section_label else "2px"} solid {accent};'
                 f'font-size:11px;font-weight:{"700" if section_label else "400"};'
                 'text-align:left;padding:3px 6px;')
-            section.clicked.connect(lambda checked=False, row=section_row: self.edit_section_label(row))
+            section.clicked.connect(
+                lambda checked=False, row=section_row + self.grid_page_start // 16:
+                self.edit_section_label(row))
             self.chord_grid.addWidget(section, section_row * 2, 0, 2, 1)
             self.grid_section_buttons.append(section)
         # Independent bar ruler: measure boundaries stay visible even when
@@ -5458,7 +5471,7 @@ class Window(QMainWindow):
         for row_start in range(0, beats, 16):
             header_row = (row_start//16)*2
             for offset in range(0, min(16, beats-row_start), 4):
-                measure = QLabel(f'{(row_start+offset)//4 + 1:02d}')
+                measure = QLabel(f'{(self.grid_page_start+row_start+offset)//4 + 1:02d}')
                 measure.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 measure.setFixedHeight(28)
                 measure.setStyleSheet(
@@ -5470,11 +5483,11 @@ class Window(QMainWindow):
         # beat buttons. Retain beat-index mapping for existing transport logic.
         labels = []
         for beat_index in range(beats):
-            t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
+            t = beat_seconds[beat_index]
             idx = bisect.bisect_right(self.display_times, t) - 1
             labels.append(self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—')
         self.grid_chord_names = labels
-        self.grid_cells = [(self.beat_times[i] if self.beat_times else i * beat_length, i % 4)
+        self.grid_cells = [(beat_seconds[i], (self.grid_page_start + i) % 4)
                            for i in range(beats)]
         self.grid_buttons = [None] * beats
         self.grid_segments = {}
@@ -5533,9 +5546,12 @@ class Window(QMainWindow):
     def update_grid_position(self, seconds):
         if not self.grid_buttons:
             return
-        idx = max(0, min(len(self.grid_buttons)-1,
-            bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times
-            else int(seconds*self.grid_bpm.value()/60.0)))
+        global_index = max(0, (bisect.bisect_right(self.beat_times, seconds)-1
+                              if self.beat_times else int(seconds*self.grid_bpm.value()/60.0)))
+        if global_index // 800 != self.grid_page_start // 800:
+            self.render_grid()
+            return
+        idx = max(0, min(len(self.grid_buttons)-1, global_index - self.grid_page_start))
         old_idx = self.grid_active
         current = self.grid_buttons[idx]
         old = self.grid_buttons[old_idx] if 0 <= old_idx < len(self.grid_buttons) else None
