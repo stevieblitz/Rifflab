@@ -1,4 +1,4 @@
-# Recovery verification status — 2026-10-24
+# Recovery verification status — 2026-10-25
 
 **NOT READY / NOT ACCEPTED.** Do not send a completion notice. Source of truth remains `USER_REQUESTS_RECOVERY.md`. Do not modify `main`, remove branches, or start heavyweight Windows builds before all lightweight/UI/audio checks pass.
 
@@ -13,14 +13,16 @@
 - Code commit `918176d9` passed the lightweight Qt and synthetic audio suites.
 - Added **View > Panels** checkable Mixer, Timeline, Main Indicator and Tuner toggles, plus workspace save/load/reset visibility and persistence to QSettings. The HEAD UI smoke run [40078770127](https://github.com/stevieblitz/Rifflab/actions/runs/40078770127) at commit `4113f3ec` passed, including toggling all four panels and workspace state round-trip. The actual Qt screenshot run [40078758793](https://github.com/stevieblitz/Rifflab/actions/runs/40078758793) passed for application-code commit `45280ab7` (the subsequent commit only added tests). These checks do not validate all restored dimensions or Windows audio hardware.
 
+- **2026-10-25:** Added a real Qt close/reopen regression for workspace QSettings persistence: splitter width, zoom sliders, and panel visibility survive a new Window instance. [Smoke run 40180965832](https://github.com/stevieblitz/Rifflab/actions/runs/40180965832) passed, but its logs exposed a queued resize callback referencing a deleted, obsolete tuner footer button. Removed that dead widget and callback (code commit `7150cabe`). [HEAD smoke run 40181060577](https://github.com/stevieblitz/Rifflab/actions/runs/40181060577) **passed with no Qt RuntimeError/traceback**; [real Qt screenshot run 40181060570](https://github.com/stevieblitz/Rifflab/actions/runs/40181060570) **passed**. This remains an offscreen test, not physical Windows audio verification.
+
 ## Remaining acceptance blockers
 
 - No end-to-end Windows playback recording/hardware test proving audible pitch stability and waveform/grid sync after changing BPM, steps/zoom and notation transpose.
 - No validated Demucs import → separation → Bass Mode → export test on real music.
 - Confidence View and confidence indicators under/on waveform are not implemented/verified.
-- View > Panels visibility toggles and workspace-state round-trip pass in offscreen Qt tests; **full panel geometry and layout persistence after an actual restart remain unverified**.
+- View > Panels visibility and representative splitter width/zoom/indicator state **now pass a real Qt close/reopen test**. Complete per-panel geometry restoration (especially hidden mixer, tuner and independently docked layouts) and user-visible layout comparison remain unverified.
 - Grouped note settings / Input Settings, complete File menu semantics, saved workspace layout, and all requested visual details need manual/automated acceptance checks.
 - The original official assets are present, but logo/EXE/window/Qt Designer prototype parity is not fully visually compared.
-- The **HEAD** light UI test and screenshot of identical application code are successful; full end-to-end audio/UI acceptance and user approval are still required before any heavy Windows build.
+- The **HEAD** light UI test and real screenshot of identical application code are successful (commit `7150cabe`); full end-to-end audio/UI acceptance and user approval are still required before any heavy Windows build.
 
 Do not mark `USER_REQUESTS_RECOVERY.md` complete until every requested item has evidence.
