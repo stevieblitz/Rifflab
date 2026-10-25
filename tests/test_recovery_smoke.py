@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 import soundfile as sf
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -17,6 +17,10 @@ from realtime_audio import LiveStemPlayer
 
 
 def main():
+    # Isolate settings so a real close/reopen test cannot reuse runner/user state.
+    settings_dir = tempfile.mkdtemp(prefix='rifflab-recovery-settings-')
+    QSettings.setDefaultFormat(QSettings.IniFormat)
+    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, settings_dir)
     application = QApplication.instance() or QApplication(sys.argv)
     window = rifflab.Window()
     window.resize(1440, 900)
@@ -142,7 +146,35 @@ def main():
     application.processEvents()
     target = Path("recovery-ui.png")
     assert window.grab().save(str(target)), "Qt screenshot capture failed"
-    window.close()
+    # Exercise actual QSettings persistence across closing and reopening the
+    # application window, not just in-memory workspace_state round-trips.
+    window.source_audio = None
+    window.stems = {}
+    window.project_file = None
+    window.grid_zoom.setValue(117)
+    window.grid_row_height.setValue(46)
+    window.view_indicator_action.setChecked(False)
+    window.view_mixer_action.setChecked(True)
+    window.view_timeline_action.setChecked(True)
+    window.view_tuner_action.setChecked(True)
+    window.tabs.setCurrentIndex(0)
+    window.play_splitter.setSizes([340, 1000])
+    application.processEvents()
+    saved = window.workspace_state()
+    assert window.close(), "Original window refused to close"
+    reopened = rifflab.Window()
+    reopened.resize(1440, 900)
+    reopened.show()
+    application.processEvents()  # Executes QTimer.singleShot(0, restore_last_workspace)
+    restored = reopened.workspace_state()
+    assert restored["grid_zoom"] == saved["grid_zoom"], (saved, restored)
+    assert restored["grid_height"] == saved["grid_height"], (saved, restored)
+    assert restored["indicator_visible"] is False, restored
+    assert restored["mixer_visible"] and restored["timeline_visible"], restored
+    assert restored["tuner_visible"], restored
+    assert abs(restored["splitter"][0] - saved["splitter"][0]) <= 30, (saved, restored)
+    reopened.close()
+    print("PASS: persisted workspace layout/zoom/panels after actual Qt window restart")
     print("PASS: Qt startup, tuner icon, layout, transpose isolation, note fill,")
     print("      stem-only Bass Mode, source import gates, stretched-time seek/A-B loop")
     print("SCREENSHOT:", target)
