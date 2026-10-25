@@ -1636,23 +1636,7 @@ class Window(QMainWindow):
         self.maker_credit.setToolTip('RiffLab on GitHub')
         self.maker_credit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         footer.addWidget(self.maker_credit, 0)
-        self.tuner_quick_button = QPushButton()
-        self.tuner_quick_button.setObjectName('tunerQuickButton')
-        self.tuner_quick_button.setIcon(self.tuning_fork_icon())
-        self.tuner_quick_button.setIconSize(QSize(21, 21))
-        # Match the main tab height and keep the tuner button perfectly square.
-        self.tuner_quick_button.setFixedSize(44, 44)
-        self.tuner_quick_button.setToolTip('Chromatic Tuner')
-        self.tuner_quick_button.setAccessibleName('Open Chromatic Tuner')
-        self.tuner_quick_button.clicked.connect(self.toggle_tuner_panel)
-        # Put the tuning fork on the tab row, aligned to the far right.
-        tuner_corner = QWidget()
-        tuner_corner_layout = QHBoxLayout(tuner_corner)
-        tuner_corner_layout.setContentsMargins(0, 0, 3, 0)
-        tuner_corner_layout.setSpacing(0)
-        tuner_corner_layout.addWidget(self.tuner_quick_button)
-        # The tuner now lives on its own tab; keep the original icon assets.
-        self.tuner_quick_button.hide()
+        # Tuner navigation is the icon-only tab; no duplicate footer button.
         outer.addLayout(footer)
         outer.addWidget(self.progress)
         self.progress.hide()  # Show only while a task is running; avoid duplicate READY footer.
@@ -1736,7 +1720,6 @@ class Window(QMainWindow):
         ''')
         self.setup_developer_menus()
         QTimer.singleShot(0, self.restore_last_workspace)
-        QTimer.singleShot(0, self.size_tuner_to_tabs)
 
     def setup_developer_menus(self):
         bar = self.menuBar()
@@ -1932,13 +1915,6 @@ class Window(QMainWindow):
         for path in candidates:
             if path.is_file():
                 self.index_library_project(path)
-
-    def size_tuner_to_tabs(self):
-        # The tab height depends on the platform, font and stylesheet.
-        tab_bar = self.tabs.tabBar()
-        height = tab_bar.tabRect(0).height() if tab_bar.count() else 44
-        height = max(36, height)
-        self.tuner_quick_button.setFixedSize(height, height)
 
     @staticmethod
     def tuning_fork_icon():
