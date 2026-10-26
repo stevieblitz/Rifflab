@@ -142,6 +142,11 @@ def main():
             assert not any(str(stems[n]) in args for n in ("vocals", "other", "drums"))
             assert window.confidence_timeline.segments == [[0.0, 0.8, 0.32]]
             assert window.waveform.confidence_segments == [[0.0, 0.8, 0.32]]
+            window.confidence_timeline.set_duration(800)
+            application.processEvents()
+            confidence_image = window.confidence_timeline.grab().toImage()
+            orange = confidence_image.pixelColor(confidence_image.width() // 2, 22)
+            assert orange.red() > orange.blue(), "Low-confidence segment not painted orange"
 
         # Every manual analysis entry point must split first when stems are absent.
         window.stems = {}
