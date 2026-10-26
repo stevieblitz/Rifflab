@@ -129,6 +129,7 @@ class WaveformTimeline(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.peaks = []
+        self.confidence_segments = []
         self.duration_ms = 0
         self.position_ms = 0
         self.dragging = False
@@ -143,6 +144,10 @@ class WaveformTimeline(QWidget):
 
     def set_waveform(self, peaks):
         self.peaks = list(peaks)
+        self.update()
+
+    def set_confidence(self, segments):
+        self.confidence_segments = list(segments)
         self.update()
 
     def set_duration(self, ms):
@@ -236,6 +241,17 @@ class WaveformTimeline(QWidget):
                 painter.drawLine(x, 17, x, h-2)
                 painter.setPen(QColor('#9bb6c8'))
                 painter.drawText(x+3, 12, f'{t//60}:{t%60:02d}')
+        # Low spectral support highlights the corresponding waveform interval.
+        # This is an uncalibrated visual estimate, not a claimed AI probability.
+        if self.duration_ms:
+            for start, end, support in self.confidence_segments:
+                if support >= 0.50:
+                    continue
+                left = int(max(0, start * 1000) / self.duration_ms * (w-1))
+                right = int(min(self.duration_ms, end * 1000) / self.duration_ms * (w-1))
+                if right > left:
+                    painter.fillRect(left, 18, right-left, max(0, h-20),
+                                     QColor(235, 161, 85, 42))
         if self.peaks:
             mid = (h+18)//2
             half = max(2, (h-23)//2)
@@ -273,6 +289,41 @@ class WaveformTimeline(QWidget):
             painter.drawLine(x, 17, x, h-2)
             painter.setBrush(QBrush(QColor('#7bd6ff')))
             painter.drawEllipse(x-4, 14, 8, 8)
+        painter.end()
+
+
+class ConfidenceTimeline(QWidget):
+    """Spectral-support overview aligned with the waveform; no fake confidence."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.duration_ms = 0
+        self.segments = []
+        self.setFixedHeight(29)
+        self.setToolTip('Relative bass spectral support (uncalibrated). Orange marks uncertain notes.')
+
+    def set_duration(self, ms):
+        self.duration_ms = max(0, int(ms))
+        self.update()
+
+    def set_segments(self, segments):
+        self.segments = list(segments)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        w = max(1, self.width())
+        painter.fillRect(self.rect(), QColor('#142231'))
+        painter.setPen(QColor('#9bb7cb'))
+        painter.drawText(4, 11, 'CONFIDENCE  ·  SPECTRAL SUPPORT')
+        painter.fillRect(0, 17, w, 10, QColor('#2c4153'))
+        if self.duration_ms:
+            for start, end, support in self.segments:
+                left = int(max(0, start * 1000) / self.duration_ms * (w-1))
+                right = int(min(self.duration_ms, end * 1000) / self.duration_ms * (w-1))
+                color = ('#e7a55b' if support < 0.50 else
+                         '#85b5c7' if support < 0.75 else '#69c6aa')
+                if right > left:
+                    painter.fillRect(left, 17, right-left, 10, QColor(color))
         painter.end()
 
 
@@ -600,6 +651,7 @@ class Signals(QObject):
     stage = Signal(str)
     separated = Signal(str)
     chords = Signal(object)
+    confidence_ready = Signal(object)
     mixed = Signal(str, int, bool)
     error = Signal(str)
     beats = Signal(object)
@@ -635,6 +687,7 @@ class Window(QMainWindow):
         self.signals.stage.connect(self.set_stage)
         self.signals.separated.connect(self.on_separated)
         self.signals.chords.connect(self.on_chords)
+        self.signals.confidence_ready.connect(self.on_confidence)
         self.signals.mixed.connect(self.on_mixed)
         self.signals.error.connect(self.on_error)
         self.signals.beats.connect(self.on_beats)
@@ -1067,7 +1120,13 @@ class Window(QMainWindow):
         self.waveform = WaveformTimeline(self)
         self.waveform.seekRequested.connect(self.seek_waveform)
         self.waveform.markerMoved.connect(self.move_loop_marker)
-        waveform_row.addWidget(self.waveform, 1)
+        waveform_column = QVBoxLayout()
+        waveform_column.setContentsMargins(0, 0, 0, 0)
+        waveform_column.setSpacing(2)
+        waveform_column.addWidget(self.waveform)
+        self.confidence_timeline = ConfidenceTimeline(self)
+        waveform_column.addWidget(self.confidence_timeline)
+        waveform_row.addLayout(waveform_column, 1)
         layout.addLayout(waveform_row)
         self.next_chords = QLabel('NEXT: —')
         self.next_chords.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -3089,8 +3148,8 @@ class Window(QMainWindow):
     def _analyze_mode(self, force=False):
         try:
             if self.analysis_mode.currentIndex() == 0:
-                cache = self.folder / f'bass_stem_only_v1_{self._accuracy_key()}.json'
-                task, paths = 'bass_notes', [str(self.stems['bass']), self._accuracy_key()]
+                cache = self.folder / f'bass_spectral_support_v1_{self._accuracy_key()}.json'
+                task, paths = 'bass_notes_confidence', [str(self.stems['bass']), self._accuracy_key()]
             else:
                 cache = self.folder / f'chords_instruments_v5_{self._accuracy_key()}.json'
                 task, paths = 'chords_instruments', [str(self.stems['other']), str(self.stems['bass']), self._accuracy_key()]
@@ -3100,7 +3159,12 @@ class Window(QMainWindow):
                 result = json.loads(worker_command(task, *paths, cancel_event=self.analysis_cancel))
                 cache.write_text(json.dumps(result), encoding='utf-8')
             if not self.analysis_cancel.is_set():
-                self.signals.chords.emit(result)
+                if isinstance(result, dict):
+                    self.signals.confidence_ready.emit(result.get('confidence', []))
+                    self.signals.chords.emit(result.get('notes', []))
+                else:
+                    self.signals.confidence_ready.emit([])
+                    self.signals.chords.emit(result)
         except AnalysisCancelled:
             pass
         except Exception as exc:
@@ -3172,6 +3236,12 @@ class Window(QMainWindow):
             self.remember_project(project_path)
         except OSError as exc:
             self.status_message(f'Could not add song to Library: {exc}')
+
+    def on_confidence(self, segments):
+        if self.analysis_cancel.is_set():
+            return
+        self.waveform.set_confidence(segments)
+        self.confidence_timeline.set_segments(segments)
 
     def on_chords(self, chords):
         self.set_chord_loading(False)
@@ -3585,6 +3655,7 @@ class Window(QMainWindow):
         self._duration = duration
         self.timeline.setRange(0, duration)
         self.waveform.set_duration(duration)
+        self.confidence_timeline.set_duration(duration)
         if abs(duration - self._last_render_duration) > 1000:
             self._last_render_duration = duration
             self.render_grid()
@@ -3741,6 +3812,8 @@ class Window(QMainWindow):
             key = source
         self._waveform_source = key
         self.waveform.set_waveform([])
+        self.waveform.set_confidence([])
+        self.confidence_timeline.set_segments([])
         self.waveform.set_position(0)
         def task():
             try:
