@@ -117,7 +117,7 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
 
 
 
-def bass_notes(path, accuracy="balanced"):
+def bass_notes(path, accuracy="balanced", with_confidence=False):
     """Pitch-first bass transcription with continuity-aware decoding.
 
     Root changes are inferred from time-local spectral evidence rather than
@@ -132,7 +132,7 @@ def bass_notes(path, accuracy="balanced"):
     hop = {"fast": 512, "balanced": 256, "detailed": 256}.get(accuracy, 256)
     y, _ = librosa.load(path, sr=sr, mono=True)
     if len(y) < sr // 2:
-        return []
+        return {'notes': [], 'confidence': []} if with_confidence else []
     # Start BELOW the open E so edge-bin spectral leakage does not bias
     # E toward D#. Extend through B4 to preserve near-octave-boundary changes.
     mag = np.abs(librosa.cqt(
@@ -140,7 +140,7 @@ def bass_notes(path, accuracy="balanced"):
         n_bins=48, bins_per_octave=12))
     n = mag.shape[1]
     if not n:
-        return []
+        return {'notes': [], 'confidence': []} if with_confidence else []
     evidence = np.zeros((12, n), dtype=np.float32)
     for k in range(48):
         weight = (.75 if k < 12 else 1.0 if k < 24
@@ -183,7 +183,29 @@ def bass_notes(path, accuracy="balanced"):
         if note != previous:
             changes.append((round(float(frame * hop / sr), 3), note))
             previous = note
-    return changes
+    if not with_confidence:
+        return changes
+
+    # Spectral support is relative, *uncalibrated* confidence; note timings
+    # and Viterbi pitch decisions remain completely unchanged.
+    confidence = []
+    duration = len(y) / sr
+    for i, (start, note) in enumerate(changes):
+        end = changes[i + 1][0] if i + 1 < len(changes) else duration
+        first = max(0, min(n - 1, round(start * sr / hop)))
+        last = max(first + 1, min(n, round(end * sr / hop)))
+        root = NOTES.index(note)
+        active_frames = audible[first:last]
+        chosen = score[root, first:last][active_frames]
+        rivals = np.max(score[np.arange(12) != root, first:last], axis=0)[active_frames]
+        if len(chosen):
+            dominance = float(np.mean(chosen >= rivals))
+            margin = float(np.mean(np.clip(chosen - rivals, 0, 1)))
+            support = round(max(0.0, min(1.0, .7 * dominance + .3 * margin)), 3)
+        else:
+            support = 0.0
+        confidence.append((float(start), float(end), support))
+    return {'notes': changes, 'confidence': confidence}
 
 
 def pattern_assisted_notes(events, audio_path, accuracy="balanced"):
@@ -362,6 +384,8 @@ if __name__ == '__main__':
             print(json.dumps(chords_instruments(*sys.argv[2:])))
         elif task == 'bass_notes':
             print(json.dumps(bass_notes(*sys.argv[2:])))
+        elif task == 'bass_notes_confidence':
+            print(json.dumps(bass_notes(*sys.argv[2:], with_confidence=True)))
         elif task == 'bass_context':
             print(json.dumps(bass_context(*sys.argv[2:])))
         elif task == 'beats':
