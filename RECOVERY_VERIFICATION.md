@@ -15,14 +15,22 @@
 
 - **2026-10-25:** Added a real Qt close/reopen regression for workspace QSettings persistence: splitter width, zoom sliders, and panel visibility survive a new Window instance. [Smoke run 40180965832](https://github.com/stevieblitz/Rifflab/actions/runs/40180965832) passed, but its logs exposed a queued resize callback referencing a deleted, obsolete tuner footer button. Removed that dead widget and callback (code commit `7150cabe`). [HEAD smoke run 40181060577](https://github.com/stevieblitz/Rifflab/actions/runs/40181060577) **passed with no Qt RuntimeError/traceback**; [real Qt screenshot run 40181060570](https://github.com/stevieblitz/Rifflab/actions/runs/40181060570) **passed**. This remains an offscreen test, not physical Windows audio verification.
 
+## 2026-10-26 — additional recovery work (not final acceptance)
+
+- Grouped the existing advanced note controls under **Note Settings** and added an **Input Settings** button that opens/focuses the real tuner audio input selector. A targeted real-Qt smoke run [40298777750](https://github.com/stevieblitz/Rifflab/actions/runs/40298777750) passed.
+- Added a **Confidence View** aligned directly below the waveform, with orange overlays on corresponding low-support waveform intervals. Bass analysis now optionally returns relative **spectral-support estimates** alongside *unchanged* bass note events; no pitch/tempo engine or NoteGuard/Stability parameter was altered. These scores are **uncalibrated heuristics**, not verified probabilities or a guarantee of correct notes.
+- Eight synthetic bass-note regression cases, including an invariant that confidence annotations never change note events, passed in [40299127871](https://github.com/stevieblitz/Rifflab/actions/runs/40299127871). Real Qt smoke including a painted orange confidence segment passed in [40299317172](https://github.com/stevieblitz/Rifflab/actions/runs/40299317172). A real Qt screenshot of the new UI was captured in [40299066047](https://github.com/stevieblitz/Rifflab/actions/runs/40299066047); this screenshot has no loaded audio.
+- The four official asset blobs (app icon, brand image, SVG logo and window icon) have identical Git blob hashes to the approved dev.69 commit. This verifies source asset identity, **not** EXE embedding or Windows taskbar appearance.
+- Synced confidence timeline duration when source audio is loaded, live stems start and pitch-preserving BPM changes. The final code commit for this step is `e0986a1d`; CI status must be checked before treating that exact code revision as smoke-verified.
+
 ## Remaining acceptance blockers
 
 - No end-to-end Windows playback recording/hardware test proving audible pitch stability and waveform/grid sync after changing BPM, steps/zoom and notation transpose.
 - No validated Demucs import → separation → Bass Mode → export test on real music.
-- Confidence View and confidence indicators under/on waveform are not implemented/verified.
+- Confidence View and waveform highlighting are implemented and tested with synthetic note data, but spectral confidence calibration and real-music timing/accuracy remain unverified.
 - View > Panels visibility and representative splitter width/zoom/indicator state **now pass a real Qt close/reopen test**. Complete per-panel geometry restoration (especially hidden mixer, tuner and independently docked layouts) and user-visible layout comparison remain unverified.
-- Grouped note settings / Input Settings, complete File menu semantics, saved workspace layout, and all requested visual details need manual/automated acceptance checks.
+- Grouped Note Settings and Input Settings navigation pass a Qt smoke test. Complete File menu semantics, independently restored panel geometry, and all requested visual details still need manual/automated acceptance checks.
 - The original official assets are present, but logo/EXE/window/Qt Designer prototype parity is not fully visually compared.
-- The **HEAD** light UI test and real screenshot of identical application code are successful (commit `7150cabe`); full end-to-end audio/UI acceptance and user approval are still required before any heavy Windows build.
+- The newest UI and confidence code has passed synthetic Qt/screenshot checks; the **current branch HEAD must still be rechecked after each commit**. Full end-to-end audio/UI acceptance and user approval are still required before any heavy Windows build.
 
 Do not mark `USER_REQUESTS_RECOVERY.md` complete until every requested item has evidence.
