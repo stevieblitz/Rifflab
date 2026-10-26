@@ -38,6 +38,7 @@ def main():
     assert window.stems_led.text().endswith("STEMS OFF")
     assert window.progress.isHidden(), "Duplicate idle progress/READY footer"
     assert window.mixer_overlay.isVisible(), "Generate Stems overlay missing"
+    assert window.confidence_timeline.isVisible(), "Confidence View missing beneath waveform"
 
     # Note settings are grouped; Input Settings opens the real tuner input page.
     assert window.advanced_toggle.text().startswith("Note Settings")
@@ -133,11 +134,14 @@ def main():
         window.analysis_mode.blockSignals(True)
         window.analysis_mode.setCurrentIndex(0)
         window.analysis_mode.blockSignals(False)
-        with patch.object(rifflab, "worker_command", return_value='[[0.0, "E"]]') as worker:
+        response = '{"notes": [[0.0, "E"]], "confidence": [[0.0, 0.8, 0.32]]}'
+        with patch.object(rifflab, "worker_command", return_value=response) as worker:
             window._analyze_mode(force=True)
             args = worker.call_args.args
-            assert args[:3] == ("bass_notes", str(stems["bass"]), window._accuracy_key()), args
+            assert args[:3] == ("bass_notes_confidence", str(stems["bass"]), window._accuracy_key()), args
             assert not any(str(stems[n]) in args for n in ("vocals", "other", "drums"))
+            assert window.confidence_timeline.segments == [[0.0, 0.8, 0.32]]
+            assert window.waveform.confidence_segments == [[0.0, 0.8, 0.32]]
 
         # Every manual analysis entry point must split first when stems are absent.
         window.stems = {}
