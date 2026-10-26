@@ -560,7 +560,7 @@ class TunerMeter(QWidget):
         self.cents = 0.0
         self.signal_active = False
         self.setMinimumHeight(76)
-        self.setToolTip('Afwijking in cents: links te laag, rechts te hoog; midden is zuiver.')
+        self.setToolTip('Pitch deviation in cents: left is flat, right is sharp, center is in tune.')
 
     def set_reading(self, cents, active=True):
         self.cents = max(-50.0, min(50.0, float(cents)))
@@ -1188,13 +1188,13 @@ class Window(QMainWindow):
         # Keep the learning controls visible; advanced controls remain accessible.
         advanced_controls = QWidget()
         advanced_controls.setLayout(options)
-        self.advanced_toggle = QPushButton('Advanced settings  ▾')
+        self.advanced_toggle = QPushButton('Note Settings  ▾')
         self.advanced_toggle.setCheckable(True)
         self.advanced_toggle.setChecked(False)
         advanced_controls.setVisible(False)
         self.advanced_toggle.toggled.connect(advanced_controls.setVisible)
         self.advanced_toggle.toggled.connect(
-            lambda checked: self.advanced_toggle.setText('Advanced settings  ▴' if checked else 'Advanced settings  ▾'))
+            lambda checked: self.advanced_toggle.setText('Note Settings  ▴' if checked else 'Note Settings  ▾'))
         basic_row = QHBoxLayout()
         basic_row.setSpacing(9)
         basic_row.addWidget(QLabel('Complexity'))
@@ -1203,7 +1203,12 @@ class Window(QMainWindow):
         options.removeWidget(self.complexity_label)
         basic_row.addWidget(self.complexity, 1)
         basic_row.addWidget(self.complexity_label)
+        self.advanced_toggle.setToolTip('Show note detection, timing and display controls.')
         basic_row.addWidget(self.advanced_toggle)
+        self.input_settings_button = QPushButton('Input Settings')
+        self.input_settings_button.setToolTip('Choose the tuner audio input device.')
+        self.input_settings_button.clicked.connect(self.open_input_settings)
+        basic_row.addWidget(self.input_settings_button)
         toolbar_layout.addLayout(basic_row)
         toolbar_layout.addWidget(advanced_controls)
         layout.addWidget(toolbar_panel)
@@ -4028,6 +4033,15 @@ class Window(QMainWindow):
             self.tuning_advice.setText('Tuning guide  ↗')
             self.tuning_advice.setToolTip(
                 'Choose instrument tuning manually. Transpose affects notation only.')
+
+    def open_input_settings(self):
+        """Navigate to the existing tuner input selector; do not touch audio pitch."""
+        if not self.view_tuner_action.isChecked():
+            self.view_tuner_action.setChecked(True)
+        index = self.tabs.indexOf(self.tuner_dialog)
+        if index >= 0:
+            self.tabs.setCurrentIndex(index)
+            self.devices.setFocus(Qt.OtherFocusReason)
 
     def open_tuning_guide(self):
         """Explain the difference; never auto-transpose or auto-retune."""
