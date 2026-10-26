@@ -39,6 +39,19 @@ def main():
     assert window.progress.isHidden(), "Duplicate idle progress/READY footer"
     assert window.mixer_overlay.isVisible(), "Generate Stems overlay missing"
 
+    # Note settings are grouped; Input Settings opens the real tuner input page.
+    assert window.advanced_toggle.text().startswith("Note Settings")
+    window.advanced_toggle.click()
+    assert window.advanced_toggle.isChecked()
+    assert window.noteguard.isVisible(), "Note settings controls did not expand"
+    window.advanced_toggle.click()
+    assert not window.advanced_toggle.isChecked()
+    window.view_tuner_action.setChecked(False)
+    window.input_settings_button.click()
+    assert window.view_tuner_action.isChecked(), "Input Settings must restore hidden Tuner"
+    assert window.tabs.currentIndex() == tuner, "Input Settings did not open Tuner"
+    window.tabs.setCurrentIndex(0)
+
     # View > Panels must control four actual UI surfaces, and workspace
     # round-trips their visibility without losing the current tab.
     view_menu = next(a.menu() for a in window.menuBar().actions()
