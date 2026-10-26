@@ -2797,6 +2797,7 @@ class Window(QMainWindow):
         self.source_audio = Path(path)
         self.load_waveform(path)
         self.waveform.set_duration(0)
+        self.confidence_timeline.set_duration(0)
         # YouTube tags are supplied by yt-dlp; local files use embedded audio tags.
         downloaded = self.song_metadata if self.processing and self.url.text().strip() else None
         self.song_metadata = dict(downloaded or infer_song_metadata(path))
@@ -2994,6 +2995,7 @@ class Window(QMainWindow):
             self._duration = replacement.duration_ms
             self.timeline.setRange(0, self._duration)
             self.waveform.set_duration(self._duration)
+            self.confidence_timeline.set_duration(self._duration)
             if old:
                 old.close()
             if playing:
@@ -4273,6 +4275,7 @@ class Window(QMainWindow):
             self._duration = self.live.duration_ms
             self.timeline.setRange(0, self._duration)
             self.waveform.set_duration(self._duration)
+            self.confidence_timeline.set_duration(self._duration)
             self.render_grid()
             self.status_message('Realtime stems ready. Press Play.')
         except Exception as exc:
