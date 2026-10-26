@@ -52,6 +52,20 @@ class BassRootRegression(unittest.TestCase):
         self.assertEqual(roots, expected, f"Detected timeline: {detected}")
         return detected
 
+    def test_spectral_support_keeps_original_notes_and_valid_intervals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bass.wav"
+            sf.write(path, self.synth([40, 41, 40], [.80, .22, .80]), self.RATE)
+            plain = bass_notes(str(path), "balanced")
+            annotated = bass_notes(str(path), "balanced", with_confidence=True)
+        self.assertEqual(annotated["notes"], plain)
+        self.assertEqual(len(annotated["confidence"]), len(plain))
+        for (start, note), (begin, end, support) in zip(plain, annotated["confidence"]):
+            self.assertAlmostEqual(start, begin, places=3)
+            self.assertGreater(end, begin)
+            self.assertGreaterEqual(support, 0.0)
+            self.assertLessEqual(support, 1.0)
+
     def test_short_one_fret_step(self):
         self.assert_roots([40, 41, 40], [.80, .22, .80])
 
