@@ -23,6 +23,13 @@
 - The four official asset blobs (app icon, brand image, SVG logo and window icon) have identical Git blob hashes to the approved dev.69 commit. This verifies source asset identity, **not** EXE embedding or Windows taskbar appearance.
 - Synced confidence timeline duration when source audio is loaded, live stems start and pitch-preserving BPM changes. The final code commit for this step is `e0986a1d`; CI status must be checked before treating that exact code revision as smoke-verified.
 
+## 2026-10-27 — lightweight tempo/UI regression coverage (not final acceptance)
+
+- Added a real Qt UI handoff check that calls `on_speed_ready` with synthetic stretched stem files and verifies original-song-time position, waveform and Confidence View durations, timeline range, and A/B loop frame mapping. Code/test commit: `3db4afe6`.
+- Extended the FFmpeg pitch test to four separate synthetic stems at both 0.8× and 1.25×. It checks each fundamental, the expected duration and bounded cross-stem tail skew; WSOLA can naturally produce small tone-dependent tail variations. Test commits: `b3864455`, `efbba039`.
+- A local FFmpeg sample of four tones produced tail skews of 11 ms at 0.8× and 4.2 ms at 1.25×; the regression threshold is 25 ms. This is **not** real-music, Demucs, packaged-Windows or speaker-output verification.
+- CI success at the **new HEAD** has not yet been established from accessible Actions evidence. Do not mark these new checks as passed or the recovery as ready without confirming the workflow runs.
+
 ## Remaining acceptance blockers
 
 - No end-to-end Windows playback recording/hardware test proving audible pitch stability and waveform/grid sync after changing BPM, steps/zoom and notation transpose.
