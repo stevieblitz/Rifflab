@@ -117,6 +117,35 @@ def main():
         finally:
             live.close()
 
+        # Exercise the REAL UI handoff from an unstretched stem player to
+        # tempo-stretched stems without opening a sound device. The display,
+        # seek position and loop markers must remain in ORIGINAL song time.
+        window.stems = stems
+        window.live = LiveStemPlayer(stems, time_scale=1.0)
+        window.live.seek(400)
+        window.speed_generation += 1
+        window.speed_ratio = 1.25
+        window.loop_enabled = True
+        window.loop_a_ms = 250
+        window.loop_b_ms = 750
+        window.on_speed_ready(stems, 1.25, window.speed_generation)
+        assert window.live is not None
+        assert abs(window.live.duration_ms - 1000) <= 1
+        assert window._duration == window.live.duration_ms
+        assert window.timeline.maximum() == window._duration
+        assert window.waveform.duration_ms == window._duration
+        assert window.confidence_timeline.duration_ms == window._duration
+        assert abs(window.live.position_ms - 400) <= 1
+        assert window.waveform.position_ms == 400
+        assert window.live.loop_enabled
+        assert window.live.loop_a == 1600, window.live.loop_a
+        assert window.live.loop_b == 4800, window.live.loop_b
+        assert window.waveform.in_ms == 250 and window.waveform.out_ms == 750
+        window.live.close()
+        window.live = None
+        window.loop_enabled = False
+        window.clear_loop()
+
         # An unsplit/offline track must NEVER fall back to pitch-shifting Qt rate.
         window.source_audio = stems["bass"]
         window.stems = {}
