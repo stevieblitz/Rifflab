@@ -52,6 +52,32 @@ def main():
             assert abs(pitch - 220.0) < 2.0, (tempo, pitch)
             print(f"PASS: {tempo:.2f}x, duration {duration:.3f}s, pitch {pitch:.2f}Hz")
 
+        # Four-stem regression: the same atempo pipeline must preserve each
+        # stem's own pitch and keep stems mutually aligned for the live mixer.
+        # This tests rendered audio files, not Windows speakers or Demucs.
+        frequencies = {"bass": 110.0, "drums": 196.0,
+                       "other": 146.83, "vocals": 261.63}
+        for name, hz in frequencies.items():
+            samples = (0.25 * np.sin(2 * np.pi * hz * time)).astype(np.float32)
+            sf.write(Path(tmp) / f"{name}.wav", samples, rate)
+        for tempo in (0.8, 1.25):
+            lengths = []
+            for name, hz in frequencies.items():
+                output = Path(tmp) / f"{name}-{tempo:.2f}.wav"
+                subprocess.run(
+                    [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
+                     "-y", "-i", str(Path(tmp) / f"{name}.wav"),
+                     "-af", f"atempo={tempo:.6f}",
+                     "-c:a", "pcm_f32le", str(output)],
+                    check=True, capture_output=True, text=True,
+                )
+                samples, sr = sf.read(output, dtype="float32")
+                lengths.append(len(samples))
+                assert abs(dominant_hz(samples, sr) - hz) < 2.0, (name, tempo)
+                assert abs(len(samples) / sr - seconds / tempo) < 0.16, (name, tempo)
+            assert (max(lengths) - min(lengths)) / rate < 0.005, (tempo, lengths)
+            print(f"PASS: four synchronized stems at {tempo:.2f}x, pitch unchanged")
+
 
 if __name__ == "__main__":
     main()
