@@ -3950,7 +3950,14 @@ class Window(QMainWindow):
         beat_length = 60.0 / bpm
         total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
         beats = min(800, max(16, len(self.beat_times) if self.beat_times else math.ceil(total / beat_length)))
-        beat_seconds = [self.beat_times[i] if self.beat_times else i * beat_length for i in range(beats)]
+        # Short recordings may contain fewer than 16 detected beats. Extend
+        # only the display grid; never mutate the measured beat timestamps.
+        beat_seconds = list(self.beat_times[:beats]) if self.beat_times else []
+        if not beat_seconds:
+            beat_seconds = [0.0]
+        while len(beat_seconds) < beats:
+            beat_seconds.append(beat_seconds[-1] + beat_length)
+        self.grid_beat_seconds = beat_seconds
         patterns = {}  # Pattern assistance happens during audio analysis, not in the grid
         occurrences = Counter()
         pattern_labels = {}
@@ -3996,12 +4003,11 @@ class Window(QMainWindow):
         # beat buttons. Retain beat-index mapping for existing transport logic.
         labels = []
         for beat_index in range(beats):
-            t = self.beat_times[beat_index] if self.beat_times else beat_index * beat_length
+            t = beat_seconds[beat_index]
             idx = bisect.bisect_right(self.display_times, t) - 1
             labels.append(self.transpose_chord(self.display_chords[idx][1]) if idx >= 0 else '—')
         self.grid_chord_names = labels
-        self.grid_cells = [(self.beat_times[i] if self.beat_times else i * beat_length, i % 4)
-                           for i in range(beats)]
+        self.grid_cells = [(beat_seconds[i], i % 4) for i in range(beats)]
         self.grid_buttons = [None] * beats
         self.grid_segments = {}
         for start in range(0, beats, 16):
@@ -4042,8 +4048,7 @@ class Window(QMainWindow):
         if not self.grid_buttons:
             return
         idx = max(0, min(len(self.grid_buttons)-1,
-            bisect.bisect_right(self.beat_times, seconds)-1 if self.beat_times
-            else int(seconds*self.grid_bpm.value()/60.0)))
+            bisect.bisect_right(self.grid_beat_seconds, seconds)-1))
         old_idx = self.grid_active
         current = self.grid_buttons[idx]
         old = self.grid_buttons[old_idx] if 0 <= old_idx < len(self.grid_buttons) else None
