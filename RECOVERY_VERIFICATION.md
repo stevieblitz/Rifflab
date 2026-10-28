@@ -30,6 +30,14 @@
 - A local FFmpeg sample of four tones produced tail skews of 11 ms at 0.8× and 4.2 ms at 1.25×; the regression threshold is 25 ms. This is **not** real-music, Demucs, packaged-Windows or speaker-output verification.
 - CI success at the **new HEAD** has not yet been established from accessible Actions evidence. Do not mark these new checks as passed or the recovery as ready without confirming the workflow runs.
 
+## 2026-10-28 — short-song grid and import-path regression (not final acceptance)
+
+- Compared the branch to dev.69 again: recovery HEAD was 53 commits ahead of base `9f2865fa`, with no commits behind it, before this change. `main` was not modified.
+- Found a concrete short-song bug: `render_grid()` always created at least 16 beat cells but indexed the raw detected-beat array, which could contain fewer than 16 entries. This raised `IndexError` on short recordings.
+- Fixed display-only beat ruler extension without changing measured beats, audio speed, detection or transpose; the playback position now indexes the same extended beat timestamps shown by the grid. Code commit: `58dc283c`.
+- Added lightweight Qt regression cases for a five-beat track, transient-safe main-note selection, progress after the final measured beat, and the real local-file entry gate that must request stems before any analysis. Test commit: `f7197361`.
+- **New HEAD CI has not yet been confirmed successful**. The connected GitHub commit-status endpoint returned no statuses for `f7197361`; this is not proof that the Actions smoke workflow passed. No heavyweight Windows build was requested.
+
 ## Remaining acceptance blockers
 
 - No end-to-end Windows playback recording/hardware test proving audible pitch stability and waveform/grid sync after changing BPM, steps/zoom and notation transpose.
