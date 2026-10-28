@@ -105,6 +105,40 @@ def main():
             path = folder / (name + ".wav")
             sf.write(path, samples, 8000)
             stems[name] = path
+
+        # Real local-file entry must request Demucs BEFORE any note analysis.
+        # Mock only the expensive separation and asynchronous waveform decode.
+        with patch.object(window, "start_split") as split, \
+             patch.object(window, "load_waveform"), \
+             patch.object(rifflab, "worker_command", side_effect=AssertionError("full-mix analysis")):
+            window.load_local(stems["bass"], check_unsaved=False)
+            split.assert_called_once_with(stems["bass"])
+            assert window.source_audio == stems["bass"]
+            assert not window.stems and not window.analysis_running
+
+        # A short recording may have fewer than 16 detected beats. The ruler
+        # must extend safely, while keeping measured beats unchanged and the
+        # active-note indicator free from passing transient notes.
+        window.display_chords = [(0.0, "E"), (0.10, "F"), (0.20, "E"), (1.5, "G")]
+        window.display_times = [t for t, _ in window.display_chords]
+        window.beat_times = [0.0, 0.5, 1.0, 1.5, 2.0]
+        window._duration = 2500
+        window.chord_lookahead.setValue(0)
+        window.render_grid()
+        assert len(window.beat_times) == 5, "Measured beat data was mutated"
+        assert len(window.grid_beat_seconds) >= 16, "Short-song ruler not extended"
+        window.update_chord_indicator(150)
+        assert window.chord.text() == "E", "Passing transient became main note"
+        window.update_chord_indicator(1600)
+        assert window.chord.text() == "G", "Main note failed to follow beat ruler"
+        window.update_grid_position(2600)
+        assert window.grid_active >= 5, "Playhead stopped at last measured beat"
+        window.beat_times = []
+        window.display_chords = []
+        window.display_times = []
+        window._duration = 0
+        window.render_grid()
+
         live = LiveStemPlayer(stems, time_scale=1.25)
         try:
             assert live.duration_ms == 1000, live.duration_ms
@@ -225,6 +259,7 @@ def main():
     assert restored["tuner_visible"], restored
     assert abs(restored["splitter"][0] - saved["splitter"][0]) <= 30, (saved, restored)
     reopened.close()
+    print("PASS: local import separation gate, short-song beat ruler and transient-safe main note")
     print("PASS: persisted workspace layout/zoom/panels after actual Qt window restart")
     print("PASS: Qt startup, tuner icon, layout, transpose isolation, note fill,")
     print("      stem-only Bass Mode, source import gates, stretched-time seek/A-B loop")
