@@ -176,6 +176,14 @@ def main():
         window._duration = 0
         window.render_grid()
 
+        # Notation transpose is never passed to the audio mix/export worker,
+        # even if a nonzero transpose is requested by legacy callers.
+        with patch.object(rifflab, "worker_command") as mix_worker:
+            rifflab.mix_to_file(stems, {name: 100 for name in rifflab.STEMS},
+                                7, folder / "transpose-must-not-shift.wav")
+            assert mix_worker.call_args.args[0] == "mix"
+            assert mix_worker.call_args.args[-1] == "0", "Audio export received pitch transpose"
+
         live = LiveStemPlayer(stems, time_scale=1.25)
         try:
             assert live.duration_ms == 1000, live.duration_ms
