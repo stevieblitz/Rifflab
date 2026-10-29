@@ -3728,7 +3728,12 @@ class Window(QMainWindow):
         chord = self.grid_chord_names[index] if index < len(self.grid_chord_names) else '—'
         accent = self._note_accent(chord)
         beginning = index == 0 or index % 16 == 0 or chord != self.grid_chord_names[index - 1]
-        ending = index == len(self.grid_chord_names) - 1 or index % 16 == 15 or chord != self.grid_chord_names[index + 1]
+        # A merged note spans multiple beats. Its right end is the END of
+        # the widget, not the beat immediately following its first beat.
+        segment_end = getattr(self, 'grid_segments', {}).get(index, (index + 1, None))[0]
+        ending = (segment_end >= len(self.grid_chord_names)
+                  or segment_end % 16 == 0
+                  or chord != self.grid_chord_names[segment_end])
         # Alpha is deliberately low: let the actual app background show through.
         progress = (getattr(self, '_note_progress', {}).get(index, 0.0) if active else 0.0)
         # Fill smoothly from left to right; avoid stepwise flashes between beats.
