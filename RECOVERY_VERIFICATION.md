@@ -38,6 +38,17 @@
 - Added lightweight Qt regression cases for a five-beat track, transient-safe main-note selection, progress after the final measured beat, and the real local-file entry gate that must request stems before any analysis. Test commit: `f7197361`.
 - **New HEAD CI has not yet been confirmed successful**. The connected GitHub commit-status endpoint returned no statuses for `f7197361`; this is not proof that the Actions smoke workflow passed. No heavyweight Windows build was requested.
 
+## 2026-10-29 — additional UI/audio invariants (not final acceptance)
+
+- Confirmed the recovery branch was **56 commits ahead of** the approved dev.69 base and **0 behind** at the start of this run; no changes to `main` or dev.69.
+- Added lightweight Qt regression assertions for the complete **STEMS OFF → CREATING → STEMS READY** LED/overlay state transitions; Generate Stems must be disabled while processing and removed once all four stem files exist.
+- Added a 16-beat/four-measure sustained-note regression: a single note widget must span measure boundaries; measure numbers 01–04 must remain present, and progress must increase across the measure-1/2 boundary rather than restart.
+- Added live-mixer invariants: changing notation transpose and horizontal/vertical grid zoom must not replace the live audio player, change its playback position, alter Qt playback rate, or change stem gains.
+- Added a legacy mix/export worker guard: a nonzero notation transpose request must still pass **zero audio pitch transpose** to the worker.
+- Test-only commits: `bbdf35bd` and `4f2dafcd`. **The new assertions have not yet been confirmed green in GitHub Actions**; the GitHub commit-status API exposes no checks for the prior documentation HEAD. Do not count the tests as passed until their actual run/job evidence is available.
+- Static review confirms that note widgets currently quantize transitions to beat timestamps and split at 16-beat row boundaries; exact free-timed note durations and row-crossing sustain still require acceptance testing. No speculative audio/detection changes were made.
+- No heavyweight Windows build was started.
+
 ## Remaining acceptance blockers
 
 - No end-to-end Windows playback recording/hardware test proving audible pitch stability and waveform/grid sync after changing BPM, steps/zoom and notation transpose.
