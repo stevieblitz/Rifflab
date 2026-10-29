@@ -47,6 +47,7 @@
 - Added a legacy mix/export worker guard: a nonzero notation transpose request must still pass **zero audio pitch transpose** to the worker.
 - Test-only commits: `bbdf35bd` and `4f2dafcd`. **The new assertions have not yet been confirmed green in GitHub Actions**; the GitHub commit-status API exposes no checks for the prior documentation HEAD. Do not count the tests as passed until their actual run/job evidence is available.
 - Static review confirms that note widgets currently quantize transitions to beat timestamps and split at 16-beat row boundaries; exact free-timed note durations and row-crossing sustain still require acceptance testing. No speculative audio/detection changes were made.
+- Fixed a concrete merged-note UI regression: when playback left the middle of a sustained note, the previous widget was repainted using an interior beat index and lost its left endcap; the right endcap also incorrectly used the first beat rather than the merged segment's true end. UI-only code commits `796e1c2c`, `7243f3be`; regression test commit `3486214c`. The new test must pass CI before this is accepted.
 - No heavyweight Windows build was started.
 
 ## Remaining acceptance blockers
