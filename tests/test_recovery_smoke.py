@@ -170,6 +170,20 @@ def main():
         assert 0.20 < before_measure < after_measure < 0.40, (before_measure, after_measure)
         assert "qlineargradient" in window.grid_buttons[0].styleSheet()
 
+        # Two merged note widgets must retain BOTH rounded endcaps when
+        # playback crosses from the middle of one sustained note to another.
+        window.display_chords = [(0.0, "E"), (4.0, "G")]
+        window.display_times = [0.0, 4.0]
+        window.render_grid()
+        first_note = window.grid_buttons[0]
+        assert first_note is window.grid_buttons[7]
+        assert first_note is not window.grid_buttons[8]
+        window.update_grid_position(2.25)
+        window.update_grid_position(4.25)
+        old_style = first_note.styleSheet()
+        assert "border-top-left-radius:5px" in old_style, old_style
+        assert "border-top-right-radius:5px" in old_style, old_style
+
         window.beat_times = []
         window.display_chords = []
         window.display_times = []
