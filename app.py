@@ -4053,8 +4053,15 @@ class Window(QMainWindow):
         current = self.grid_buttons[idx]
         old = self.grid_buttons[old_idx] if 0 <= old_idx < len(self.grid_buttons) else None
         if old is not None and old is not current:
+            # The old index can be inside a sustained widget. Repaint using
+            # the widget's actual first beat; otherwise rounded ends and
+            # note-boundary styling disappear after the playhead leaves it.
+            old_start = old_idx
+            while (old_start > (old_idx // 16) * 16
+                   and self.grid_buttons[old_start - 1] is old):
+                old_start -= 1
             self._note_progress = {}
-            old.setStyleSheet(self._chord_segment_style(old_idx, False))
+            old.setStyleSheet(self._chord_segment_style(old_start, False))
         self.grid_active = idx
         # Find beginning/end of the merged note widget in this row.
         run_start = idx
