@@ -116,6 +116,20 @@ def main():
             assert window.source_audio == stems["bass"]
             assert not window.stems and not window.analysis_running
 
+        # Generation state must be visible, non-clickable and must not claim
+        # stems are ready until all four files exist.
+        window._generating_stems = True
+        window.processing = True
+        window.refresh_stems_led()
+        assert window.stems_led.text().endswith("CREATING")
+        assert window.generate_stems_button.text() == "Generating Stems…"
+        assert not window.generate_stems_button.isEnabled()
+        assert window.mixer_overlay.isVisible()
+        window.processing = False
+        window._generating_stems = False
+        window.refresh_stems_led()
+        assert window.stems_led.text().endswith("STEMS OFF")
+
         # A short recording may have fewer than 16 detected beats. The ruler
         # must extend safely, while keeping measured beats unchanged and the
         # active-note indicator free from passing transient notes.
@@ -133,6 +147,29 @@ def main():
         assert window.chord.text() == "G", "Main note failed to follow beat ruler"
         window.update_grid_position(2600)
         assert window.grid_active >= 5, "Playhead stopped at last measured beat"
+
+        # One sustained note spanning FOUR measures must remain a single
+        # widget. Playback fill advances continuously across measure 1 -> 2
+        # instead of restarting at the boundary (2.0s at 120 BPM).
+        window.display_chords = [(0.0, "E")]
+        window.display_times = [0.0]
+        window.beat_times = [i * 0.5 for i in range(16)]
+        window._duration = 8000
+        window.grid_bpm.blockSignals(True)
+        window.grid_bpm.setValue(120)
+        window.grid_bpm.blockSignals(False)
+        window.render_grid()
+        assert window.grid_buttons[0] is window.grid_buttons[4]
+        assert window.grid_buttons[4] is window.grid_buttons[15]
+        assert [window.chord_grid.itemAtPosition(0, col).widget().text()
+                for col in (1, 5, 9, 13)] == ["01", "02", "03", "04"]
+        window.update_grid_position(1.75)
+        before_measure = window._note_progress[0]
+        window.update_grid_position(2.25)
+        after_measure = window._note_progress[0]
+        assert 0.20 < before_measure < after_measure < 0.40, (before_measure, after_measure)
+        assert "qlineargradient" in window.grid_buttons[0].styleSheet()
+
         window.beat_times = []
         window.display_chords = []
         window.display_times = []
@@ -155,8 +192,26 @@ def main():
         # tempo-stretched stems without opening a sound device. The display,
         # seek position and loop markers must remain in ORIGINAL song time.
         window.stems = stems
+        window.refresh_stems_led()
+        assert window.stems_led.text().endswith("STEMS READY")
+        assert window.mixer_overlay.isHidden(), "Stem overlay stayed over ready mixer"
         window.live = LiveStemPlayer(stems, time_scale=1.0)
         window.live.seek(400)
+        # Notation transpose and display zoom must not alter the live audio
+        # object, seek position, Qt playback rate or stem gain settings.
+        original_live = window.live
+        original_live_position = original_live.position_ms
+        original_qt_rate = window.player.playbackRate()
+        original_levels = window.get_levels()
+        window.transpose.setValue(3)
+        assert window.transpose_chord("E") == "G"
+        window.grid_zoom.setValue(122)
+        window.grid_row_height.setValue(44)
+        assert window.live is original_live
+        assert window.live.position_ms == original_live_position
+        assert window.player.playbackRate() == original_qt_rate
+        assert window.get_levels() == original_levels
+        window.transpose.setValue(0)
         window.speed_generation += 1
         window.speed_ratio = 1.25
         window.loop_enabled = True
