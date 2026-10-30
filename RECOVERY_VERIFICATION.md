@@ -50,6 +50,13 @@
 - Fixed a concrete merged-note UI regression: when playback left the middle of a sustained note, the previous widget was repainted using an interior beat index and lost its left endcap; the right endcap also incorrectly used the first beat rather than the merged segment's true end. UI-only code commits `796e1c2c`, `7243f3be`; regression test commit `3486214c`. The new test must pass CI before this is accepted.
 - No heavyweight Windows build was started.
 
+## 2026-10-30 — Windows Qt smoke regression restored (not final acceptance)
+
+- Investigated the actual GitHub Actions failures at branch HEAD `2cb5c83f`: [run 40847883191](https://github.com/stevieblitz/Rifflab/actions/runs/40847883191) failed with `PermissionError: [WinError 32]` when `TemporaryDirectory` attempted to delete `bass.wav`. The Qt multimedia player had retained a Windows file handle to the synthetic import used in the smoke test; this was not evidence of an assertion failure in the new UI regressions.
+- Fixed **test resource cleanup only**: stop QMediaPlayer, clear its source with `QUrl()`, release `source_audio` and process Qt events before the temporary audio directory is removed. Test commit `800fcd93`. No production audio engine, pitch detection, UI rendering, branch base or `main` was modified.
+- Confirmed the **exact test-code commit** passed Windows offscreen Qt startup/UI/transpose/stems/short-song/timeline/tempo-mapping smoke: [run 41035711742](https://github.com/stevieblitz/Rifflab/actions/runs/41035711742), conclusion **success**; syntax and smoke steps both passed, and `riff-recovery-screenshot` was uploaded. This is a screenshot artifact from a running offscreen Qt window, not a manually reviewed Windows desktop screenshot.
+- This confirms the previously blocked lightweight regression assertions now run to completion. It does **not** prove real speaker audio, packaged Windows playback, full Demucs separation of real music, confidence accuracy, all UI visual requirements, or user acceptance. Do not mark recovery complete and do not start a heavy Windows build yet.
+
 ## Remaining acceptance blockers
 
 - No end-to-end Windows playback recording/hardware test proving audible pitch stability and waveform/grid sync after changing BPM, steps/zoom and notation transpose.
