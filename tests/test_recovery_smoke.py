@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 import soundfile as sf
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QUrl
 from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -303,6 +303,14 @@ def main():
         with patch.object(window, "start_split") as split:
             window.switch_analysis_mode()
             split.assert_called_once_with(window.source_audio)
+
+        # QMediaPlayer holds an OS-level handle to the imported WAV on Windows.
+        # Release the source BEFORE TemporaryDirectory deletes the test stems;
+        # otherwise the test fails with WinError 32 even when assertions pass.
+        window.player.stop()
+        window.player.setSource(QUrl())
+        window.source_audio = None
+        application.processEvents()
 
     window.tabs.setCurrentIndex(tuner)
     application.processEvents()
