@@ -62,7 +62,8 @@
 - Rechecked the recovery checklist and source on `restore-from-dev69`: it remains 65 commits ahead of the approved dev.69 base and 0 behind **before** the new test commit. `main` and the original base were not modified.
 - Added a **real BPM spinbox signal** regression: setting 120 → 90 BPM with live stems must queue the pitch-preserving FFmpeg preparation at 0.75× and must not alter Qt playback rate; stale tempo worker results must not replace the current live player.
 - Added a **hidden workspace restart** regression: save with Mixer, Tuner and Main Indicator hidden; reopen; preserve horizontal/vertical zoom and restore the previous useful Mixer width when the panel is shown again.
-- These are test-only changes in `tests/test_recovery_smoke.py`, commit `acae76a4c9a59ca6727dd73c6d6d791c97665a5c`. The new assertions have **not** yet been confirmed successful in Windows Actions; a successful prior run does not validate this revision.
+- The new assertions were added in `tests/test_recovery_smoke.py`, commit `acae76a4c9a59ca6727dd73c6d6d791c97665a5c`. Review also identified a real hidden-Mixer persistence issue: QSplitter reports a zero-width hidden child and a full-width sibling; saving this inconsistent size pair can shrink the restored Mixer. Fixed the saved splitter pair and preserved the saved width after visibility toggles in UI-only code commit `199f9a74985f454af63916ee827d2d94eff61cd6`.
+- These new assertions and the UI fix have **not** yet been confirmed successful in Windows Actions; a successful prior run does not validate this revision.
 - No heavy Windows packaging/build was requested. Hardware audio, real-music Demucs, complete visual parity, and full user acceptance remain outstanding.
 
 ## Remaining acceptance blockers
