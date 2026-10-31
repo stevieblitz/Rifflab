@@ -1882,7 +1882,12 @@ class Window(QMainWindow):
     def workspace_state(self):
         sizes = list(self.play_splitter.sizes())
         if not self.view_mixer_action.isChecked():
+            # A hidden QSplitter child reports zero width and the visible
+            # sibling reports the FULL width. Persist a coherent pair instead
+            # so reopening the Mixer does not shrink its previous width.
             sizes[0] = getattr(self, '_last_mixer_width', 270)
+            sizes[1] = max(1, self.play_splitter.width()
+                           - sizes[0] - self.play_splitter.handleWidth())
         return {
             'splitter': sizes,
             'grid_zoom': self.grid_zoom.value(),
@@ -1910,6 +1915,11 @@ class Window(QMainWindow):
                             ('tuner_visible', self.view_tuner_action)]:
             if key in state:
                 action.setChecked(bool(state[key]))
+        if (isinstance(sizes, list) and len(sizes) == self.play_splitter.count()
+                and not self.view_mixer_action.isChecked()):
+            # setChecked(False) invokes set_mixer_panel_visible(), which can
+            # overwrite the saved width with the transient splitter width.
+            self._last_mixer_width = max(165, int(sizes[0]))
         tab = int(state.get('active_tab', 0))
         if 0 <= tab < self.tabs.count() and self.tabs.isTabVisible(tab):
             self.tabs.setCurrentIndex(tab)
