@@ -252,6 +252,30 @@ def main():
         assert window.live.loop_a == 1600, window.live.loop_a
         assert window.live.loop_b == 4800, window.live.loop_b
         assert window.waveform.in_ms == 250 and window.waveform.out_ms == 750
+
+        # Exercise the actual BPM control/signal, not only on_speed_ready().
+        # Preparing a slower tempo must use the FFmpeg worker, never Qt's
+        # pitch-changing playbackRate fallback. A superseded worker result
+        # must not replace the live player after the user changes tempo again.
+        with patch.object(rifflab.threading, "Thread") as tempo_thread:
+            window.detected_bpm = 120.0
+            window.grid_bpm.blockSignals(True)
+            window.grid_bpm.setValue(120)
+            window.grid_bpm.blockSignals(False)
+            current_live = window.live
+            current_qt_rate = window.player.playbackRate()
+            window.grid_bpm.setValue(90)
+            assert abs(window.speed_ratio - 0.75) < 0.00001
+            tempo_thread.assert_called_once()
+            assert tempo_thread.call_args.kwargs["target"] == window._prepare_speed
+            assert tempo_thread.call_args.kwargs["args"] == (
+                window.speed_ratio, window.speed_generation)
+            assert window.player.playbackRate() == current_qt_rate
+            window.on_speed_ready(stems, 0.75, window.speed_generation - 1)
+            assert window.live is current_live, "Obsolete BPM worker replaced the mixer"
+        window.grid_bpm.blockSignals(True)
+        window.grid_bpm.setValue(120)
+        window.grid_bpm.blockSignals(False)
         window.live.close()
         window.live = None
         window.loop_enabled = False
@@ -344,6 +368,42 @@ def main():
     assert restored["tuner_visible"], restored
     assert abs(restored["splitter"][0] - saved["splitter"][0]) <= 30, (saved, restored)
     reopened.close()
+
+    # Restore a workspace saved with Mixer and Tuner HIDDEN, then reopen the
+    # Mixer. Its last useful width and both zoom settings must survive; a
+    # hidden splitter pane must not be restored as zero pixels wide.
+    hidden = rifflab.Window()
+    hidden.resize(1440, 900)
+    hidden.show()
+    application.processEvents()
+    hidden.play_splitter.setSizes([360, 1000])
+    application.processEvents()
+    hidden.view_mixer_action.setChecked(False)
+    hidden.view_tuner_action.setChecked(False)
+    hidden.view_indicator_action.setChecked(False)
+    hidden.grid_zoom.setValue(136)
+    hidden.grid_row_height.setValue(52)
+    expected_hidden = hidden.workspace_state()
+    assert expected_hidden["splitter"][0] >= 300, expected_hidden
+    assert hidden.close()
+    restored_hidden = rifflab.Window()
+    restored_hidden.resize(1440, 900)
+    restored_hidden.show()
+    application.processEvents()
+    assert not restored_hidden.view_mixer_action.isChecked()
+    assert not restored_hidden.view_tuner_action.isChecked()
+    assert not restored_hidden.view_indicator_action.isChecked()
+    assert restored_hidden.grid_zoom.value() == 136
+    assert restored_hidden.grid_row_height.value() == 52
+    restored_hidden.view_mixer_action.setChecked(True)
+    application.processEvents()
+    restored_width = restored_hidden.play_splitter.sizes()[0]
+    assert abs(restored_width - expected_hidden["splitter"][0]) <= 40, (
+        expected_hidden["splitter"], restored_hidden.play_splitter.sizes())
+    restored_hidden.close()
+
+    print("PASS: BPM signal queues pitch-preserving processing and rejects stale workers")
+    print("PASS: hidden Mixer/Tuner workspace and last Mixer width survive Qt restart")
     print("PASS: local import separation gate, short-song beat ruler and transient-safe main note")
     print("PASS: persisted workspace layout/zoom/panels after actual Qt window restart")
     print("PASS: Qt startup, tuner icon, layout, transpose isolation, note fill,")
