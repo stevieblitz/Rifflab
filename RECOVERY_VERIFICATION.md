@@ -1,4 +1,4 @@
-# Recovery verification status — 2026-10-25
+# Recovery verification status — through 2026-11-01
 
 **NOT READY / NOT ACCEPTED.** Do not send a completion notice. Source of truth remains `USER_REQUESTS_RECOVERY.md`. Do not modify `main`, remove branches, or start heavyweight Windows builds before all lightweight/UI/audio checks pass.
 
@@ -65,6 +65,14 @@
 - The new assertions were added in `tests/test_recovery_smoke.py`, commit `acae76a4c9a59ca6727dd73c6d6d791c97665a5c`. Review also identified a real hidden-Mixer persistence issue: QSplitter reports a zero-width hidden child and a full-width sibling; saving this inconsistent size pair can shrink the restored Mixer. Fixed the saved splitter pair and preserved the saved width after visibility toggles in UI-only code commit `199f9a74985f454af63916ee827d2d94eff61cd6`.
 - These new assertions and the UI fix have **not** yet been confirmed successful in Windows Actions; a successful prior run does not validate this revision.
 - No heavy Windows packaging/build was requested. Hardware audio, real-music Demucs, complete visual parity, and full user acceptance remain outstanding.
+
+## 2026-11-01 — confirmed current Windows smoke and offline mixer callback (not final acceptance)
+
+- Rechecked `restore-from-dev69` against `USER_REQUESTS_RECOVERY.md`: before today's test-only commit it was **69 commits ahead of dev.69 and 0 behind**. The original dev.69 and `main` were not modified.
+- Resolved the previous day's CI uncertainty: the 2026-10-31 **exact HEAD** `fe05a770` passed Windows [Recovery UI Smoke Test run 41189007451](https://github.com/stevieblitz/Rifflab/actions/runs/41189007451). Syntax, Qt startup, the newly added BPM spinbox signal and hidden-panel workspace regression, and screenshot artifact upload all completed successfully. The running Qt screenshot workflow also passed for production UI commit `199f9a74` in [run 41188999508](https://github.com/stevieblitz/Rifflab/actions/runs/41188999508).
+- Added a new **sample-level offline PortAudio callback** regression in `tests/test_recovery_smoke.py`, commit `38d76f38`: four generated WAV stems are mixed with distinct exact sample values; vocals remain silent when muted, bass mute changes the actual output samples, and the callback wraps correctly at the A/B loop boundary. This exercises `LiveStemPlayer._callback` directly without opening a speaker or changing production audio code.
+- The **exact new test-code commit `38d76f38` passed** Windows [Recovery UI Smoke Test run 41295702446](https://github.com/stevieblitz/Rifflab/actions/runs/41295702446), including syntax, full offscreen Qt regression suite and screenshot artifact upload. This proves the offline sample-mixing assertions ran successfully, **not** actual audible playback through a Windows output device.
+- No heavyweight Windows build was requested; `restore-from-dev69` remains excluded from the automatic heavyweight Windows-build workflow. `USER_REQUESTS_RECOVERY.md` acceptance checkboxes remain unchecked because real-music separation, hardware audio, full visual parity and user acceptance are still missing.
 
 ## Remaining acceptance blockers
 
