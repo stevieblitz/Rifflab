@@ -210,6 +210,43 @@ def main():
         finally:
             live.close()
 
+        # Verify the actual PortAudio callback's sample mixing WITHOUT a
+        # sound device. This catches silent/misaligned stems and muted-vocal
+        # leakage that UI-only tests cannot detect. It is still not a
+        # physical Windows speaker-output test.
+        mix_paths = {}
+        values = {"bass": 0.125, "drums": 0.0625,
+                  "other": 0.03125, "vocals": 0.25}
+        for name, value in values.items():
+            path = folder / f"callback-{name}.wav"
+            sf.write(path, np.full((8000, 2), value, dtype=np.float32),
+                     8000, subtype="FLOAT")
+            mix_paths[name] = path
+        callback_player = LiveStemPlayer(mix_paths)
+        try:
+            callback_player.set_levels({"bass": 1.0, "drums": 0.5,
+                                        "other": 0.5, "vocals": 0.0})
+            callback_player.playing = True  # Do not open an audio device.
+            out = np.empty((256, 2), dtype=np.float32)
+            callback_player._callback(out, 256, None, None)
+            assert np.allclose(out, 0.171875, atol=1e-6), (
+                "Unexpected mixed samples or muted vocals leaked", out[:3])
+            assert callback_player.position == 256
+            callback_player.set_levels({"bass": 0.0})
+            callback_player._callback(out, 256, None, None)
+            assert np.allclose(out, 0.046875, atol=1e-6), (
+                "Muting bass did not update the rendered mix", out[:3])
+            callback_player.set_loop(True, 50, 100)
+            callback_player.seek(90)
+            loop_out = np.empty((160, 2), dtype=np.float32)
+            callback_player._callback(loop_out, 160, None, None)
+            assert np.allclose(loop_out, 0.046875, atol=1e-6)
+            assert callback_player.position_ms == 60, (
+                "Callback did not wrap at A/B loop boundary",
+                callback_player.position_ms)
+        finally:
+            callback_player.close()
+
         # Exercise the REAL UI handoff from an unstretched stem player to
         # tempo-stretched stems without opening a sound device. The display,
         # seek position and loop markers must remain in ORIGINAL song time.
@@ -402,6 +439,7 @@ def main():
         expected_hidden["splitter"], restored_hidden.play_splitter.sizes())
     restored_hidden.close()
 
+    print("PASS: offline PortAudio callback mixes/mutes four stems and wraps A/B loop")
     print("PASS: BPM signal queues pitch-preserving processing and rejects stale workers")
     print("PASS: hidden Mixer/Tuner workspace and last Mixer width survive Qt restart")
     print("PASS: local import separation gate, short-song beat ruler and transient-safe main note")
