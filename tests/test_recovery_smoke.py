@@ -106,6 +106,33 @@ def main():
             sf.write(path, samples, 8000)
             stems[name] = path
 
+        # A malformed import must release *all* already-open WAV handles.
+        # Previously a sample-rate mismatch called close() before stream was
+        # initialized, raising AttributeError and leaking files on Windows.
+        bad_rate = folder / "bad-samplerate.wav"
+        sf.write(bad_rate, np.zeros((400, 2), dtype=np.float32), 11025)
+        for bad_paths, bad_scale, message in (
+            ({**stems, "vocals": bad_rate}, 1.0, "sample rates"),
+            (stems, 0.0, "time scale"),
+            ({}, 1.0, "No audio stems"),
+        ):
+            try:
+                LiveStemPlayer(bad_paths, time_scale=bad_scale)
+            except ValueError as exc:
+                assert message in str(exc), (message, exc)
+            else:
+                raise AssertionError(f"Invalid audio input was accepted: {message}")
+        try:
+            LiveStemPlayer({"bass": stems["bass"],
+                            "other": folder / "missing-stem.wav"})
+        except (OSError, RuntimeError):
+            pass
+        else:
+            raise AssertionError("Missing stem unexpectedly opened")
+        # Windows refuses deletion of WAV files left open by libsndfile.
+        bad_rate.unlink()
+        assert not bad_rate.exists()
+
         # Real local-file entry must request Demucs BEFORE any note analysis.
         # Mock only the expensive separation and asynchronous waveform decode.
         with patch.object(window, "start_split") as split, \
@@ -439,6 +466,7 @@ def main():
         expected_hidden["splitter"], restored_hidden.play_splitter.sizes())
     restored_hidden.close()
 
+    print("PASS: invalid/missing stems release Windows file handles cleanly")
     print("PASS: offline PortAudio callback mixes/mutes four stems and wraps A/B loop")
     print("PASS: BPM signal queues pitch-preserving processing and rejects stale workers")
     print("PASS: hidden Mixer/Tuner workspace and last Mixer width survive Qt restart")
