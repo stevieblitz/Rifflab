@@ -1,4 +1,4 @@
-# Recovery verification status — through 2026-11-01
+# Recovery verification status — through 2026-11-02
 
 **NOT READY / NOT ACCEPTED.** Do not send a completion notice. Source of truth remains `USER_REQUESTS_RECOVERY.md`. Do not modify `main`, remove branches, or start heavyweight Windows builds before all lightweight/UI/audio checks pass.
 
@@ -73,6 +73,15 @@
 - Added a new **sample-level offline PortAudio callback** regression in `tests/test_recovery_smoke.py`, commit `38d76f38`: four generated WAV stems are mixed with distinct exact sample values; vocals remain silent when muted, bass mute changes the actual output samples, and the callback wraps correctly at the A/B loop boundary. This exercises `LiveStemPlayer._callback` directly without opening a speaker or changing production audio code.
 - The **exact new test-code commit `38d76f38` passed** Windows [Recovery UI Smoke Test run 41295702446](https://github.com/stevieblitz/Rifflab/actions/runs/41295702446), including syntax, full offscreen Qt regression suite and screenshot artifact upload. This proves the offline sample-mixing assertions ran successfully, **not** actual audible playback through a Windows output device.
 - No heavyweight Windows build was requested; `restore-from-dev69` remains excluded from the automatic heavyweight Windows-build workflow. `USER_REQUESTS_RECOVERY.md` acceptance checkboxes remain unchecked because real-music separation, hardware audio, full visual parity and user acceptance are still missing.
+
+## 2026-11-02 — malformed-stem cleanup regression (not final acceptance)
+
+- Checked the exact branch against `USER_REQUESTS_RECOVERY.md` and the prior verification notes. Before this run, recovery HEAD `f5a11a61` was **71 commits ahead of dev.69 and 0 behind**; `main` and dev.69 were untouched.
+- Found a real Windows resource-handling defect in `LiveStemPlayer.__init__`: a mismatched stem sample rate called `close()` before `stream` had been initialized, raising `AttributeError` instead of the intended `ValueError` and leaving WAV handles open. A missing stem after earlier files were opened could likewise strand handles. Invalid time scales and an empty stem set were not rejected early.
+- Corrected only initialization/cleanup validation in `realtime_audio.py`, commit `e4d46e4`: initialize cleanup state first, close all partially opened WAVs on errors, reject empty stems and non-positive/non-finite time scales. **No audio DSP, note detection, pitch, tempo or transpose algorithms were changed.**
+- Added Windows Qt smoke regression assertions for mismatched sample rates, missing stem files, zero time scale, empty input and actual deletion of the malformed WAV, commit `399f45bd`.
+- The **exact new test-code commit `399f45bd` passed** the lightweight Windows [Recovery UI Smoke Test run 41423837764](https://github.com/stevieblitz/Rifflab/actions/runs/41423837764), including syntax, Qt startup/UI/audio regressions and screenshot upload. The earlier code-only commit also passed [run 41423822191](https://github.com/stevieblitz/Rifflab/actions/runs/41423822191).
+- No heavy Windows packaging build was requested. Source remains on `restore-from-dev69` only. All end-to-end acceptance blockers below remain open.
 
 ## Remaining acceptance blockers
 
