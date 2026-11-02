@@ -7,15 +7,28 @@ import soundfile as sf
 class LiveStemPlayer:
     def __init__(self, paths, time_scale=1.0):
         self.lock = threading.RLock()
-        self.files = {name: sf.SoundFile(str(path)) for name, path in paths.items()}
-        rates = {f.samplerate for f in self.files.values()}
-        if len(rates) != 1:
+        # Initialize cleanup state before opening files: a missing WAV or
+        # mismatched sample rate must never strand open handles on Windows.
+        self.files = {}
+        self.stream = None
+        self.playing = False
+        try:
+            for name, path in paths.items():
+                self.files[name] = sf.SoundFile(str(path))
+            if not self.files:
+                raise ValueError('No audio stems supplied')
+            rates = {f.samplerate for f in self.files.values()}
+            if len(rates) != 1:
+                raise ValueError('Stems have different sample rates')
+            self.rate = rates.pop()
+            self.time_scale = float(time_scale)
+            if not np.isfinite(self.time_scale) or self.time_scale <= 0:
+                raise ValueError('Invalid stem time scale')
+            self.channels = 2
+            self.frames = min(f.frames for f in self.files.values())
+        except Exception:
             self.close()
-            raise ValueError('Stems have different sample rates')
-        self.rate = rates.pop()
-        self.time_scale = float(time_scale)
-        self.channels = 2
-        self.frames = min(f.frames for f in self.files.values())
+            raise
         self.position = 0
         self.levels = {name: 1.0 for name in self.files}
         self.playing = False
