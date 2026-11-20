@@ -4280,7 +4280,7 @@ class Window(QMainWindow):
         self._start_analysis_ui()
         self.set_chord_loading(True)
         self.analyze_local.setEnabled(False)
-        self.status_message('Analyzing original mix (including vocals). Split first for instrument-only chords.')
+        self.status_message('Analyzing the full mix in background. Stems are optional.')
         threading.Thread(target=self._analyze_source, args=(self.source_audio,), daemon=True).start()
 
     def _analyze_source(self, path, force=False):
@@ -4289,14 +4289,27 @@ class Window(QMainWindow):
             cache.mkdir(parents=True, exist_ok=True)
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
-            chords_file = cache / f"{'bass_notes_v4' if bass_mode else 'chords_v2'}_{self._accuracy_key()}.json"
-            beats = json.loads(beats_file.read_text()) if beats_file.exists() and not force else json.loads(worker_command('beats', str(path), cancel_event=self.analysis_cancel))
-            if force or not beats_file.exists(): beats_file.write_text(json.dumps(beats))
-            chords = json.loads(chords_file.read_text()) if chords_file.exists() and not force else json.loads(worker_command('bass_notes' if bass_mode else 'chords', str(path), self._accuracy_key(), cancel_event=self.analysis_cancel))
-            if force or not chords_file.exists(): chords_file.write_text(json.dumps(chords))
+            # Bump cache version so existing noisy estimates are never reused.
+            chords_file = cache / f"{'bass_notes_v5' if bass_mode else 'chords_v3_temporal'}_{self._accuracy_key()}.json"
+            chords = (json.loads(chords_file.read_text(encoding='utf-8'))
+                      if chords_file.exists() and not force
+                      else json.loads(worker_command(
+                          'bass_notes' if bass_mode else 'chords',
+                          str(path), self._accuracy_key(), cancel_event=self.analysis_cancel)))
+            if force or not chords_file.exists():
+                chords_file.write_text(json.dumps(chords), encoding='utf-8')
+            # Show notes as soon as available; slower beat analysis comes second.
+            if self.analysis_cancel.is_set():
+                return
+            self.signals.chords.emit(chords)
+            beats = (json.loads(beats_file.read_text(encoding='utf-8'))
+                     if beats_file.exists() and not force
+                     else json.loads(worker_command('beats', str(path),
+                                                   cancel_event=self.analysis_cancel)))
+            if force or not beats_file.exists():
+                beats_file.write_text(json.dumps(beats), encoding='utf-8')
             if not self.analysis_cancel.is_set():
                 self.signals.beats.emit(beats)
-                self.signals.chords.emit(chords)
         except AnalysisCancelled:
             pass
         except Exception as exc:
@@ -4587,7 +4600,13 @@ class Window(QMainWindow):
         """Add analyzed songs as saved projects, without opening a save dialog."""
         if self.project_file or (not self.stems and not self.source_audio):
             return
-        song_name = self.folder.name if self.folder else self.source_audio.stem
+        meta = dict(self.song_metadata or {})
+        artist = str(meta.get('artist') or '').strip()
+        title = str(meta.get('title') or '').strip()
+        # ID-based download filenames are not music metadata. Use reviewed
+        # artist/title instead, falling back only for unnamed local files.
+        song_name = (f'{artist} - {title}' if artist and title else
+                     title or (self.folder.name if self.folder else self.source_audio.stem))
         safe_name = re.sub(r'[^a-zA-Z0-9._ -]+', '_', song_name).strip(' .') or 'Untitled'
         folder = ROOT / 'projects'
         folder.mkdir(parents=True, exist_ok=True)
@@ -4598,9 +4617,9 @@ class Window(QMainWindow):
             try:
                 previous = json.loads(project_path.read_text(encoding='utf-8'))
                 if previous.get('source_audio') != source_path or previous.get('stem_folder') != stem_path:
-                    # Avoid overwriting another song with the same title.
+                    # Never overwrite a different track, even with identical title.
                     import hashlib
-                    suffix = hashlib.sha256(str(stem_path or source_path).encode()).hexdigest()[:8]
+                    suffix = hashlib.sha256(str(stem_path or source_path).encode()).hexdigest()[:10]
                     project_path = folder / f'{safe_name}-{suffix}.riff'
             except (OSError, ValueError):
                 return
@@ -4879,25 +4898,11 @@ class Window(QMainWindow):
                 if not root_changes or note != root_changes[-1][1]:
                     root_changes.append((t, note))
             raw = root_changes
-        # Show a *minimum-duration segment*, not an arbitrary skip of its
-        # starting event. Remove short runs in reverse so A-B-A returns to A.
-        # This is a display-only edit: original AI events stay untouched.
-        output = list(raw)
-        if seconds > 0 and len(output) > 1:
-            for _ in range(3):
-                changed = False
-                filtered = [output[0]]
-                for i in range(1, len(output)):
-                    t, note = output[i]
-                    end = output[i + 1][0] if i + 1 < len(output) else float('inf')
-                    if end - t < seconds and filtered:
-                        changed = True
-                        continue
-                    if note != filtered[-1][1]:
-                        filtered.append((t, note))
-                output = filtered
-                if not changed:
-                    break
+        # Never discard every short note merely because of its duration.
+        # Only remove implausibly brief A-B-A flickers; strong short phrases
+        # with genuinely different pitches remain in the display.
+        from note_stability import stabilize_events
+        output = stabilize_events(raw, flicker_seconds=min(seconds, 0.30)) if seconds else list(raw)
         # In Bass Mode a repeated attack on the current root is not a change.
         if bass_mode:
             collapsed = []
