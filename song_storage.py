@@ -31,11 +31,13 @@ def manifest_for_song(folder, metadata, source_audio, stem_folder, fallback):
             existing = json.loads(candidate.read_text(encoding='utf-8'))
             previous_meta = existing.get('metadata') or {}
             previous_id = str(previous_meta.get('source_id') or '').strip()
-            if source_id and previous_id == source_id:
-                return candidate
-            if (not source_id and
-                    ((source_audio and existing.get('source_audio') == source_audio) or
-                     (stem_folder and existing.get('stem_folder') == stem_folder))):
+            matched_path = (
+                (source_audio and existing.get('source_audio') == source_audio) or
+                (stem_folder and existing.get('stem_folder') == stem_folder))
+            if (source_id and previous_id == source_id) or (
+                    matched_path and (not source_id or not previous_id)):
+                # Pre-metadata legacy manifests can still be recognised by
+                # their actual source paths, never by name alone.
                 return candidate
         except (OSError, ValueError, TypeError):
             pass
