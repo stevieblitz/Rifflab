@@ -24,10 +24,25 @@ def chords(path, accuracy="balanced"):
         for shift in range(12):
             v = np.roll(np.array(base, dtype=float), shift)
             templates.append(v / np.linalg.norm(v))
-    c = chroma / np.maximum(np.linalg.norm(chroma, axis=0), 1e-9)
-    ids = np.argmax(np.stack(templates) @ c, axis=0)
-    return [(round(float(i * hop / sr), 3), NOTES[int(k) % 12] + ('m' if k >= 12 else ''))
-            for i, k in enumerate(ids)]
+    from scipy.ndimage import gaussian_filter1d
+    from note_stability import decode_chord_scores, stabilize_events
+    # A direct full-mix pass: reduce spectral flutter without stem separation.
+    smooth = gaussian_filter1d(chroma, sigma=0.85, axis=1)
+    c = smooth / np.maximum(np.linalg.norm(smooth, axis=0), 1e-9)
+    scores = (np.stack(templates) @ c).T
+    difference = np.linalg.norm(np.diff(c, axis=1), axis=0)
+    change = np.r_[0., gaussian_filter1d(difference, 1.0)]
+    change /= max(float(np.percentile(change, 85)), 1e-6)
+    states = decode_chord_scores(scores.tolist(), np.clip(change, 0., 1.).tolist(),
+                                 transition_penalty=0.20)
+    events = []
+    last = None
+    for index, state in enumerate(states):
+        name = NOTES[int(state) % 12] + ('m' if state >= 12 else '')
+        if name != last:
+            events.append((round(float(index * hop / sr), 3), name))
+            last = name
+    return stabilize_events(events, flicker_seconds=0.13)
 
 
 
@@ -231,7 +246,9 @@ def bass_notes(path, accuracy="balanced"):
     frames = np.arange(0, n, stride)
     emission = score[:, frames].T
     active = audible[frames]
-    penalty = .14 if accuracy == "fast" else .09
+    # Enough persistence to reject unstable harmonic jumps, without
+    # imposing a minimum duration on a strongly supported bass-note change.
+    penalty = .22 if accuracy == "fast" else .17
     back = np.zeros((len(frames), 12), dtype=np.int8)
     dp = emission[0].copy()
     for t in range(1, len(frames)):
