@@ -34,8 +34,8 @@ def manifest_for_song(folder, metadata, source_audio, stem_folder, fallback):
             if source_id and previous_id == source_id:
                 return candidate
             if (not source_id and
-                    (existing.get('source_audio') == source_audio or
-                     existing.get('stem_folder') == stem_folder)):
+                    ((source_audio and existing.get('source_audio') == source_audio) or
+                     (stem_folder and existing.get('stem_folder') == stem_folder)))::
                 return candidate
         except (OSError, ValueError, TypeError):
             pass
