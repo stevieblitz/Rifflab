@@ -703,6 +703,8 @@ class Window(QMainWindow):
         self._last_song_switch_path = None
         self._autosave_interval_ms = 90000
         self.song_metadata = {}
+        # Isolated metadata per YouTube ID; never reuse previous song's tags.
+        self._pending_import_metadata = {}
         self.speed_ratio = 1.0
         self.detected_bpm = 130.0
         self.speed_generation = 0
@@ -1100,14 +1102,14 @@ class Window(QMainWindow):
         self.url = QLineEdit()
         self.url.setPlaceholderText('Paste YouTube URL…')
         url_row.addWidget(self.url, 1)
-        self.load_url = QPushButton('Download + Create Stems')
-        self.load_url.clicked.connect(lambda: self.download_url(True))
-        self.url.returnPressed.connect(lambda: self.download_url(True))
+        self.load_url = QPushButton('Download + Play Along')
+        self.load_url.clicked.connect(lambda: self.download_url(False))
+        self.url.returnPressed.connect(lambda: self.download_url(False))
         url_row.addWidget(self.load_url)
         import_layout.addLayout(url_row)
-        self.download_play = QPushButton('Download + Play Along')
-        self.download_play.setToolTip('Download audio and start playing without stems or AI separation.')
-        self.download_play.clicked.connect(lambda: self.download_url(False))
+        self.download_play = QPushButton('Download + Create Stems')
+        self.download_play.setToolTip('Optional: download audio, then separate four stems. This may take several minutes.')
+        self.download_play.clicked.connect(lambda: self.download_url(True))
         import_layout.addWidget(self.download_play)
         local_row = QHBoxLayout()
         self.load_file = QPushButton('Open Audio')
@@ -1385,16 +1387,16 @@ class Window(QMainWindow):
         self.complexity = QSlider(Qt.Horizontal)
         self.complexity.setRange(0, 100)
         self.complexity.setFixedWidth(88)
-        self.complexity.setValue(25)
+        self.complexity.setValue(88)
         self.complexity.setToolTip('How much short-note detail to display. Lower = simpler. Higher = more detail. Does not change NoteGuard or audio pitch.')
-        self.complexity_label = QLabel('25%')
+        self.complexity_label = QLabel('88%')
         def apply_complexity(value):
             self.complexity_label.setText(f'{value}%')
             # Complexity only adjusts minimum segment duration (Stability);
             # changing it must not silently override the user's NoteGuard choice.
-            self.sensitivity.setValue(round((100 - value) * 0.16))
+            self.sensitivity.setValue(round((100 - value) * 0.12))
         self.complexity.valueChanged.connect(apply_complexity)
-        self.sensitivity.setValue(round((100 - self.complexity.value()) * 0.16))
+        self.sensitivity.setValue(round((100 - self.complexity.value()) * 0.12))
         options.addWidget(self.complexity)
         options.addWidget(self.complexity_label)
         # Tuning belongs inline with the main analysis actions at the top.
@@ -4082,14 +4084,16 @@ class Window(QMainWindow):
             logfile.write(traceback.format_exc() + '\n')
 
     def on_download_only_ready(self, path):
-        # Signal runs on the GUI thread; do not call widgets from yt-dlp's worker.
+        # Match source ID to the exact download, never use the previous song.
         self.set_busy(False)
-        self.status_message(f'Download complete, without stems: {Path(path).name}')
-        self.load_local(Path(path), check_unsaved=False, analyze=False)
+        metadata = self._pending_import_metadata.pop(Path(path).stem, None)
+        self.status_message(f'Download complete — audio is ready: {Path(path).name}')
+        self.load_local(Path(path), check_unsaved=False, analyze=True,
+                        metadata_override=metadata)
 
     def on_downloaded_metadata(self, metadata):
         """Review inferred fields on the UI thread before persisting."""
-        self.song_metadata = dict(metadata)
+        reviewed = dict(metadata)
         dialog = QDialog(self)
         dialog.setWindowTitle('Smart Import · Review Song Details')
         dialog.setMinimumWidth(460)
@@ -4123,12 +4127,14 @@ class Window(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
         if dialog.exec() == QDialog.Accepted:
-            self.song_metadata.update({key: widget.text().strip()
-                                       for key, widget in fields.items()})
-        self.update_now_playing()
+            reviewed.update({key: widget.text().strip()
+                             for key, widget in fields.items()})
+        source_id = str(reviewed.get('source_id') or '').strip()
+        if source_id:
+            self._pending_import_metadata[source_id] = reviewed
 
-    def load_local(self, path, check_unsaved=True, analyze=True):
-        """Play immediately and automatically analyze a newly imported audio file."""
+    def load_local(self, path, check_unsaved=True, analyze=True, metadata_override=None):
+        """Load audio immediately; run full-mix analysis without requiring stems."""
         if self.processing or self.analysis_running:
             return
         if check_unsaved and not self._confirm_unsaved_changes():
@@ -4140,8 +4146,8 @@ class Window(QMainWindow):
         self.load_waveform(path)
         self.waveform.set_duration(0)
         # YouTube tags are supplied by yt-dlp; local files use embedded audio tags.
-        downloaded = self.song_metadata if self.processing and self.url.text().strip() else None
-        self.song_metadata = dict(downloaded or infer_song_metadata(path))
+        self.song_metadata = dict(metadata_override if metadata_override is not None
+                                  else infer_song_metadata(path))
         self.update_now_playing()
         self.project_file = None
         self.stems = {}
@@ -4175,11 +4181,11 @@ class Window(QMainWindow):
         self.split_local.setEnabled(True)
         self.analyze_local.setEnabled(True)
         if analyze:
-            # Stem-based analysis remains the default for full import.
-            self.set_stage('1/3 · Preparing stem separation…')
-            self.start_split(self.source_audio)
+            # Playback is already ready; run lightweight recognition off the GUI thread.
+            self.status_message('Audio ready — detecting notes in the background (no stems).')
+            QTimer.singleShot(0, self.analyze_current)
         else:
-            self.status_message('Audio ready to play. Use Analyze to generate stems later.')
+            self.status_message('Audio ready. Analyze and Create Stems are optional.')
 
     def update_analysis_action(self):
         """One stable toolbar action for Analyze / Stop / stopping."""
@@ -4470,6 +4476,10 @@ class Window(QMainWindow):
         # Newly generated stems start with Bass (and every other stem) audible.
         self.reset_mixer()
         self.project_file = None
+        incoming_id = Path(folder).name
+        imported = self._pending_import_metadata.pop(incoming_id, None)
+        if imported is not None:
+            self.song_metadata = dict(imported)
         self.folder = Path(folder)
         self.source_audio = None
         self.beat_times = []
@@ -4524,10 +4534,8 @@ class Window(QMainWindow):
         if self.stems and self.folder:
             threading.Thread(target=self._switch_analysis_mode_worker, daemon=True).start()
         elif self.source_audio and self.source_audio.is_file():
-            self.set_chord_loading(False)
-            self.analysis_running = False
-            self.status_message('Generate stems before analyzing notes.')
-            self.start_split(self.source_audio)
+            threading.Thread(target=self._analyze_source,
+                             args=(self.source_audio,), daemon=True).start()
 
     def _switch_analysis_mode_worker(self):
         try:
