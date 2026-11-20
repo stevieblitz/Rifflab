@@ -35,10 +35,16 @@ def chords(path, accuracy="balanced"):
     change /= max(float(np.percentile(change, 85)), 1e-6)
     states = decode_chord_scores(scores.tolist(), np.clip(change, 0., 1.).tolist(),
                                  transition_penalty=0.20)
+    # Silence is not a C chord. Gate on the actual recording level so gaps
+    # in a live concert or a quiet intro do not become invented note blocks.
+    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop)[0]
+    silence_floor = max(0.00005, float(np.percentile(rms, 90)) * 0.025)
     events = []
     last = None
     for index, state in enumerate(states):
-        name = NOTES[int(state) % 12] + ('m' if state >= 12 else '')
+        level = float(rms[min(index, len(rms) - 1)]) if len(rms) else 0.
+        name = ('—' if level < silence_floor else
+                NOTES[int(state) % 12] + ('m' if state >= 12 else ''))
         if name != last:
             events.append((round(float(index * hop / sr), 3), name))
             last = name
