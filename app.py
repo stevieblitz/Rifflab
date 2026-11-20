@@ -3447,8 +3447,13 @@ class Window(QMainWindow):
         path = Path(path)
         if path.suffix.lower() != '.riff' and autosave_path is None:
             path = path.with_suffix('.riff')
-        metadata = dict((self.get_library_metadata(self.project_file) if self.project_file else {})
-                        or self.song_metadata)
+        # Keep source ID/URL and version information from the actual song;
+        # Library edits should update only the editable display fields.
+        metadata = dict(self.song_metadata or {})
+        if self.project_file:
+            library_fields = self.get_library_metadata(self.project_file)
+            metadata.update({key: value for key, value in library_fields.items()
+                             if key in ('title', 'artist', 'album', 'tuning', 'musical_key')})
         if new_details:
             metadata.update({key: new_details[key] for key in ('artist', 'album', 'title')})
             metadata['project_name'] = new_details['project_name']
@@ -3458,7 +3463,8 @@ class Window(QMainWindow):
             'metadata': metadata,
             'source_audio': str(self.source_audio.resolve()) if self.source_audio else None,
             'stem_folder': str(self.folder.resolve()) if self.stems and self.folder else None,
-            'youtube_url': self.url.text().strip(),
+            'youtube_url': str(metadata.get('source_url') or (
+                self.url.text().strip() if self.project_file else '')),
             'position_ms': int(pos),
             'in_ms': self.loop_a_ms, 'out_ms': self.loop_b_ms,
             'loop': self.loop_enabled,
@@ -4635,7 +4641,7 @@ class Window(QMainWindow):
             'format': 'RiffLab Project', 'version': 1,
             'metadata': dict(self.song_metadata),
             'source_audio': source_path, 'stem_folder': stem_path,
-            'youtube_url': self.url.text().strip(), 'position_ms': 0,
+            'youtube_url': str(metadata.get('source_url') or ''), 'position_ms': 0,
             'in_ms': None, 'out_ms': None, 'loop': False,
             'bpm': self.grid_bpm.value(), 'detected_bpm': self.detected_bpm,
             'analysis_mode': self.analysis_mode.currentIndex(), 'accuracy': self.accuracy.currentIndex(),
