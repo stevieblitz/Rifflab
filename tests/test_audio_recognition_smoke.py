@@ -41,6 +41,10 @@ class AudioRecognitionSmokeTests(unittest.TestCase):
         self.assertGreaterEqual(len(events), 1)
         self.assertLessEqual(len(events), 5, events)
 
+    def test_silence_is_not_mislabeled_as_a_chord(self):
+        events = chords(str(self.write_audio(np.zeros(RATE * 2, dtype=np.float32))), 'fast')
+        self.assertEqual([name for _, name in events], ['—'])
+
     def test_bass_pitch_stays_stable_then_changes(self):
         sound = np.concatenate([tone([82.4069], 0.7), tone([110.0], 0.7),
                                 tone([98.0], 0.7)])
