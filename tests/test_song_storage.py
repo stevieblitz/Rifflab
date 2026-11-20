@@ -20,6 +20,16 @@ class SongIdentityTests(unittest.TestCase):
         again = manifest_for_song(self.folder, self.details, None, 'stems/YouTubeAAA', 'YouTubeAAA')
         self.assertEqual(target, again)
 
+    def test_old_manifest_without_source_id_is_reused_for_same_audio(self):
+        target = self.folder / 'Osees - The Dream.riff'
+        target.write_text(json.dumps({
+            'metadata': {'artist': 'Osees', 'title': 'The Dream'},
+            'source_audio': '/audio/existing.wav', 'stem_folder': None
+        }))
+        selected = manifest_for_song(
+            self.folder, self.details, '/audio/existing.wav', None, 'existing')
+        self.assertEqual(selected, target)
+
     def test_identical_song_titles_different_videos_do_not_overwrite(self):
         first = manifest_for_song(self.folder, self.details, '/audio/a.wav', None, 'a')
         first.write_text(json.dumps({'metadata': self.details, 'source_audio': '/audio/a.wav'}))
