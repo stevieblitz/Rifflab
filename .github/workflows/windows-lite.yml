@@ -12,6 +12,8 @@ on:
       - 'project_catalog.py'
       - 'smart_metadata.py'
       - 'note_stability.py'
+      - 'grid_paging.py'
+      - 'tests/test_grid_paging.py'
       - 'song_storage.py'
       - 'tests/test_song_storage.py'
       - 'tests/test_note_stability.py'
@@ -65,11 +67,12 @@ jobs:
       - name: Validate Python sources and project catalog
         shell: pwsh
         run: |
-          python -m py_compile app.py ai_worker.py project_catalog.py smart_metadata.py note_stability.py song_storage.py
+          python -m py_compile app.py ai_worker.py project_catalog.py smart_metadata.py note_stability.py song_storage.py grid_paging.py
           python -m unittest discover -s tests -p test_project_catalog.py -v
           python -m unittest discover -s tests -p test_smart_metadata.py -v
           python -m unittest discover -s tests -p test_note_stability.py -v
           python -m unittest discover -s tests -p test_song_storage.py -v
+          python -m unittest discover -s tests -p test_grid_paging.py -v
 
       - name: Install FFmpeg and FFprobe (direct download with mirrors)
         shell: pwsh
@@ -200,7 +203,7 @@ jobs:
               $assets += @('--add-data', "assets/$file;assets")
             }
           }
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison --hidden-import note_stability --hidden-import song_storage app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison --hidden-import note_stability --hidden-import song_storage --hidden-import grid_paging app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup (required)
