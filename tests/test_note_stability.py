@@ -5,9 +5,16 @@ from note_stability import decode_chord_scores, stabilize_events
 
 class StableNotesTests(unittest.TestCase):
     def test_one_frame_chord_flicker_keeps_surrounding_chord(self):
-        scores = [[1., 0.]] * 8 + [[0., 1.05]] + [[1., 0.]] * 8
+        # The alternate chord is only marginally favored for one frame.
+        scores = [[1., 0.]] * 8 + [[0.49, 0.51]] + [[1., 0.]] * 8
         states = decode_chord_scores(scores)
         self.assertEqual(set(states), {0})
+
+    def test_supported_brief_note_not_erased(self):
+        # A powerful two-frame change should survive smoothing.
+        scores = [[1., 0.]] * 8 + [[0., 1.2]] * 2 + [[1., 0.]] * 8
+        states = decode_chord_scores(scores)
+        self.assertIn(1, states[8:10])
 
     def test_sustained_change_is_detected(self):
         scores = [[1., 0.]] * 8 + [[0., 1.]] * 8
@@ -21,7 +28,7 @@ class StableNotesTests(unittest.TestCase):
 
     def test_short_aba_flicker_removed(self):
         events = [(0., 'A'), (.2, 'B'), (.28, 'A'), (.5, 'C')]
-        self.assertEqual(stabilize_events(events), [(0., 'A'), (.28, 'A'), (.5, 'C')][:1] + [(.5, 'C')])
+        self.assertEqual(stabilize_events(events), [(0., 'A'), (.5, 'C')])
 
     def test_empty_and_single(self):
         self.assertEqual(stabilize_events([]), [])
