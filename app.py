@@ -4092,6 +4092,7 @@ class Window(QMainWindow):
         # Match source ID to the exact download, never use the previous song.
         self.set_busy(False)
         metadata = self._pending_import_metadata.pop(Path(path).stem, None)
+        self.tabs.setCurrentIndex(0)
         self.status_message(f'Download complete — audio is ready: {Path(path).name}')
         self.load_local(Path(path), check_unsaved=False, analyze=True,
                         metadata_override=metadata)
@@ -4435,7 +4436,16 @@ class Window(QMainWindow):
                 with sqlite3.connect(self.library_db) as db:
                     db.execute('UPDATE songs SET original_bpm=?, practice_bpm=? WHERE project_path=?',
                                (self.detected_bpm, float(self.grid_bpm.value()), str(Path(self.project_file).resolve())))
-            except sqlite3.Error:
+                # Automatic song files also retain BPM discovered after notes.
+                manifest = Path(self.project_file)
+                if manifest.is_file():
+                    saved = json.loads(manifest.read_text(encoding='utf-8'))
+                    saved['bpm'] = self.grid_bpm.value()
+                    saved['detected_bpm'] = self.detected_bpm
+                    temporary = manifest.with_suffix('.riff.bpm.tmp')
+                    temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding='utf-8')
+                    temporary.replace(manifest)
+            except (sqlite3.Error, OSError, ValueError, TypeError):
                 pass
 
     def refresh_stems_led(self):
