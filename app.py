@@ -3919,6 +3919,7 @@ class Window(QMainWindow):
         self.update_analysis_action()
         self.set_chord_loading(False)
         self.set_busy(False)
+        self._pending_import_metadata.clear()
         self.mixing = False
         self.status_message('Error — see details and rifflab-errors.log')
         QMessageBox.warning(self, 'RiffLab', message)
@@ -4026,19 +4027,23 @@ class Window(QMainWindow):
         else:
             self.status_message('Ctrl+V: copy a local audio file or YouTube link.')
 
-    def download_url(self, generate_stems=True):
+    def download_url(self, generate_stems=False):
         """Import action is explicit; never ask a second stems confirmation."""
         url = self.url.text().strip()
         if not valid_youtube_url(url):
             self.on_error('Please paste a valid HTTPS YouTube URL.')
             return
-        if self.processing:
+        if self.processing or self.analysis_running:
+            self.status_message('Finish or stop the current task before importing another song.')
             return
+        if not self._confirm_unsaved_changes():
+            return
+        self._pending_import_metadata.clear()
         self.set_busy(True)
         threading.Thread(target=self._download, args=(url, bool(generate_stems)),
                          daemon=True).start()
 
-    def _download(self, url, generate_stems=True):
+    def _download(self, url, generate_stems=False):
         try:
             self.signals.stage.emit('1/3 · Downloading audio…')
             output = self.music_folder()
@@ -4140,8 +4145,7 @@ class Window(QMainWindow):
         if check_unsaved and not self._confirm_unsaved_changes():
             return
         self.stop_live()
-        # A fresh song never inherits mute/solo states from the previous song.
-        self.reset_mixer()
+        # Avoid remixing previous stems when opening a different song.
         self.source_audio = Path(path)
         self.load_waveform(path)
         self.waveform.set_duration(0)
@@ -4152,6 +4156,7 @@ class Window(QMainWindow):
         self.project_file = None
         self.stems = {}
         self.folder = None
+        self.reset_mixer(update_audio=False)
         self.refresh_stems_led()
         self.chord_data = []
         self.display_chords = []
@@ -4487,7 +4492,7 @@ class Window(QMainWindow):
     def on_separated(self, folder):
         self._generating_stems = False
         # Newly generated stems start with Bass (and every other stem) audible.
-        self.reset_mixer()
+        self.reset_mixer(update_audio=False)
         self.project_file = None
         incoming_id = Path(folder).name
         imported = self._pending_import_metadata.pop(incoming_id, None)
@@ -4753,8 +4758,8 @@ class Window(QMainWindow):
         else:
             self.request_mix()
 
-    def reset_mixer(self):
-        # Suppress four individual mix requests; update playback once at the end.
+    def reset_mixer(self, *_args, update_audio=True):
+        # Suppress individual mix requests; new songs must never remix old audio.
         for stem in STEMS:
             slider = self.volumes[stem]
             button = self.checks[stem]
@@ -4770,8 +4775,12 @@ class Window(QMainWindow):
             solo.setChecked(False)
             solo.blockSignals(False)
         self.sync_all_export_mixer()
-        self.volume_changed()
-        if not self.live and self.stems:
+        if update_audio:
+            self.volume_changed()
+        else:
+            for stem, slider in self.volumes.items():
+                self.volume_labels[stem].setText(f'{slider.value()}%')
+        if update_audio and not self.live and self.stems:
             self.request_mix()
 
     def solo_toggled(self, stem):
