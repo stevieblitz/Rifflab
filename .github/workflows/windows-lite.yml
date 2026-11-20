@@ -13,6 +13,7 @@ on:
       - 'smart_metadata.py'
       - 'note_stability.py'
       - 'tests/test_note_stability.py'
+      - 'tests/test_audio_recognition_smoke.py'
       - 'tests/test_smart_metadata.py'
       - 'tests/test_project_catalog.py'
       - '.github/workflows/windows-lite.yml'
@@ -155,6 +156,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Python source syntax check failed' }
           python -m unittest -v test_chord_patterns test_chord_comparison
           if ($LASTEXITCODE -ne 0) { throw 'Chord pattern regression tests failed' }
+          python -m unittest discover -s tests -p test_audio_recognition_smoke.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Audio stability smoke tests failed' }
 
       - name: Build AI worker
         shell: pwsh
