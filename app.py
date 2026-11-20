@@ -4149,6 +4149,9 @@ class Window(QMainWindow):
         # Avoid remixing previous stems when opening a different song.
         self.source_audio = Path(path)
         self.load_waveform(path)
+        self._duration = 0
+        self._last_render_duration = 0
+        self.timeline.setRange(0, 0)
         self.waveform.set_duration(0)
         # YouTube tags are supplied by yt-dlp; local files use embedded audio tags.
         self.song_metadata = dict(metadata_override if metadata_override is not None
@@ -5458,13 +5461,15 @@ class Window(QMainWindow):
         total = max(self._duration / 1000, self.display_times[-1] + 4 if self.display_times else 0, 45)
         # Concert mode: render at most 800 beats at a time, but keep the
         # entire recording addressable by the transport and analysis.
-        total_beats = max(16, len(self.beat_times) if self.beat_times else math.ceil(total / beat_length))
+        # Before analysis, avoid creating 800 empty QWidget note cells.
+        total_beats = (16 if not self.display_chords and not self.beat_times
+                       else max(16, len(self.beat_times)
+                                if self.beat_times else math.ceil(total / beat_length)))
         position = (self.live.position_ms if self.live else self.player.position()) / 1000.0
         global_beat = (bisect.bisect_right(self.beat_times, position) - 1
                        if self.beat_times else int(position / beat_length))
-        page = max(0, min(total_beats - 1, global_beat) // 800)
-        self.grid_page_start = page * 800
-        beats = min(800, total_beats - self.grid_page_start)
+        from grid_paging import visible_beat_window
+        self.grid_page_start, beats = visible_beat_window(total_beats, global_beat)
         beat_seconds = [self.beat_times[self.grid_page_start + i]
                         if self.beat_times else (self.grid_page_start + i) * beat_length
                         for i in range(beats)]
@@ -5577,7 +5582,7 @@ class Window(QMainWindow):
         hbar.setValue(max(0, local.x() - viewport.width() // 3))
 
     def update_grid_position(self, seconds):
-        if not self.grid_buttons:
+        if not self.grid_buttons or (not self.display_chords and not self.beat_times):
             return
         global_index = max(0, (bisect.bisect_right(self.beat_times, seconds)-1
                               if self.beat_times else int(seconds*self.grid_bpm.value()/60.0)))
