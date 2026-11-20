@@ -4615,29 +4615,19 @@ class Window(QMainWindow):
         """Add analyzed songs as saved projects, without opening a save dialog."""
         if self.project_file or (not self.stems and not self.source_audio):
             return
-        meta = dict(self.song_metadata or {})
-        artist = str(meta.get('artist') or '').strip()
-        title = str(meta.get('title') or '').strip()
-        # ID-based download filenames are not music metadata. Use reviewed
-        # artist/title instead, falling back only for unnamed local files.
-        song_name = (f'{artist} - {title}' if artist and title else
-                     title or (self.folder.name if self.folder else self.source_audio.stem))
-        safe_name = re.sub(r'[^a-zA-Z0-9._ -]+', '_', song_name).strip(' .') or 'Untitled'
+        import song_storage
+        metadata = dict(self.song_metadata or {})
         folder = ROOT / 'projects'
         folder.mkdir(parents=True, exist_ok=True)
-        project_path = folder / f'{safe_name}.riff'
         source_path = str(self.source_audio.resolve()) if self.source_audio else None
         stem_path = str(self.folder.resolve()) if self.stems and self.folder else None
-        if project_path.exists():
-            try:
-                previous = json.loads(project_path.read_text(encoding='utf-8'))
-                if previous.get('source_audio') != source_path or previous.get('stem_folder') != stem_path:
-                    # Never overwrite a different track, even with identical title.
-                    import hashlib
-                    suffix = hashlib.sha256(str(stem_path or source_path).encode()).hexdigest()[:10]
-                    project_path = folder / f'{safe_name}-{suffix}.riff'
-            except (OSError, ValueError):
-                return
+        fallback = self.folder.name if self.folder else self.source_audio.stem
+        try:
+            project_path = song_storage.manifest_for_song(
+                folder, metadata, source_path, stem_path, fallback)
+        except (OSError, ValueError) as exc:
+            self.status_message(f'Cannot choose a safe song file: {exc}')
+            return
         data = {
             'format': 'RiffLab Project', 'version': 1,
             'metadata': dict(self.song_metadata),
@@ -4655,10 +4645,21 @@ class Window(QMainWindow):
             'chord_data': self.chord_data, 'beat_times': self.beat_times,
         }
         try:
+            if project_path.is_file():
+                # Re-analyzing an existing song must not wipe saved practice
+                # settings, loop points, user metadata or mixer choices.
+                previous = json.loads(project_path.read_text(encoding='utf-8'))
+                previous.update({
+                    'chord_data': self.chord_data, 'beat_times': self.beat_times,
+                    'detected_bpm': self.detected_bpm})
+                data = previous
             temp = project_path.with_suffix('.riff.tmp')
             temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(project_path)
             self.project_file = str(project_path)
+            with sqlite3.connect(self.library_db) as db:
+                db.execute('DELETE FROM hidden_songs WHERE project_path=?',
+                           (str(project_path.resolve()),))
             self.index_library_project(project_path, data)
             self.remember_project(project_path)
         except OSError as exc:
