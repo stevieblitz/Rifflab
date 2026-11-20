@@ -12,6 +12,8 @@ on:
       - 'project_catalog.py'
       - 'smart_metadata.py'
       - 'note_stability.py'
+      - 'song_storage.py'
+      - 'tests/test_song_storage.py'
       - 'tests/test_note_stability.py'
       - 'tests/test_audio_recognition_smoke.py'
       - 'tests/test_smart_metadata.py'
@@ -63,10 +65,11 @@ jobs:
       - name: Validate Python sources and project catalog
         shell: pwsh
         run: |
-          python -m py_compile app.py project_catalog.py smart_metadata.py note_stability.py
+          python -m py_compile app.py ai_worker.py project_catalog.py smart_metadata.py note_stability.py song_storage.py
           python -m unittest discover -s tests -p test_project_catalog.py -v
           python -m unittest discover -s tests -p test_smart_metadata.py -v
           python -m unittest discover -s tests -p test_note_stability.py -v
+          python -m unittest discover -s tests -p test_song_storage.py -v
 
       - name: Install FFmpeg and FFprobe (direct download with mirrors)
         shell: pwsh
@@ -162,7 +165,7 @@ jobs:
       - name: Build AI worker
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLabAI --collect-all demucs --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all scipy --collect-all soundfile ai_worker.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLabAI --collect-all demucs --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all scipy --collect-all soundfile --hidden-import note_stability ai_worker.py
           if ($LASTEXITCODE -ne 0) { throw 'AI worker build failed' }
           if (!(Test-Path 'dist/RiffLabAI/RiffLabAI.exe')) { throw 'Missing AI executable' }
 
@@ -197,7 +200,7 @@ jobs:
               $assets += @('--add-data', "assets/$file;assets")
             }
           }
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison --hidden-import note_stability app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison --hidden-import note_stability --hidden-import song_storage app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup (required)
