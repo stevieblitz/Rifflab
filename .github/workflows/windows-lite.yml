@@ -6,13 +6,15 @@ name: Build RiffLab Complete for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups, experiment/tuner-stability-layout-2026-10-21, experiment/concert-length-support-2026-10-24, experiment/reliability-fast-import-notes-2026-11-20, experiment/static-god-note-stability-2026-11-25]
+    branches: [feature/dev85-rebuild, feature/ui-cyan-compact-visual-test, feature/adobe-clean-cyan-controls, feature/resizable-workspace-visual, feature/multisong-live-workspace, feature/stability-tuner-library-groups, experiment/tuner-stability-layout-2026-10-21, experiment/concert-length-support-2026-10-24, experiment/reliability-fast-import-notes-2026-11-20, experiment/static-god-note-stability-2026-11-25, experiment/accompaniment-grid-2026-11-25]
     paths:
       - 'app.py'
       - 'project_catalog.py'
       - 'smart_metadata.py'
       - 'note_stability.py'
       - 'bass_mix.py'
+      - 'accompaniment.py'
+      - 'tests/test_accompaniment.py'
       - 'tests/test_bass_mix.py'
       - 'grid_paging.py'
       - 'tests/test_grid_paging.py'
@@ -69,12 +71,13 @@ jobs:
       - name: Validate Python sources and project catalog
         shell: pwsh
         run: |
-          python -m py_compile app.py ai_worker.py project_catalog.py smart_metadata.py note_stability.py song_storage.py grid_paging.py bass_mix.py
+          python -m py_compile app.py ai_worker.py project_catalog.py smart_metadata.py note_stability.py song_storage.py grid_paging.py bass_mix.py accompaniment.py
           python -m unittest discover -s tests -p test_project_catalog.py -v
           python -m unittest discover -s tests -p test_smart_metadata.py -v
           python -m unittest discover -s tests -p test_note_stability.py -v
           python -m unittest discover -s tests -p test_song_storage.py -v
           python -m unittest discover -s tests -p test_grid_paging.py -v
+          python -m unittest discover -s tests -p test_accompaniment.py -v
 
       - name: Install FFmpeg and FFprobe (direct download with mirrors)
         shell: pwsh
@@ -206,7 +209,7 @@ jobs:
               $assets += @('--add-data', "assets/$file;assets")
             }
           }
-          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison --hidden-import note_stability --hidden-import song_storage --hidden-import grid_paging app.py
+          python -m PyInstaller --noconfirm --clean --console --onedir --name RiffLab --icon assets/rifflab-window-icon.ico @assets --collect-all qtawesome --collect-all yt_dlp --hidden-import chord_comparison --hidden-import note_stability --hidden-import song_storage --hidden-import grid_paging --hidden-import accompaniment app.py
           if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 
       - name: Smoke-test Windows application startup (required)
