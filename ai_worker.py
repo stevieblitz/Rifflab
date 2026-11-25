@@ -210,6 +210,26 @@ def chords_instruments(other_path, bass_path, accuracy="balanced"):
 
 
 
+def bass_notes_full_mix(path, accuracy="balanced"):
+    """Conservative low-register bass roots from a complete band mix."""
+    import librosa
+    import numpy as np
+    from scipy.ndimage import gaussian_filter1d
+    from bass_mix import bass_mix_pitch_scores, confident_pitch_segments
+
+    sr, hop = 11025, 512 if accuracy != 'detailed' else 256
+    audio, _ = librosa.load(path, sr=sr, mono=True)
+    if len(audio) < sr // 2:
+        return []
+    magnitude = np.abs(librosa.cqt(
+        audio, sr=sr, hop_length=hop,
+        fmin=librosa.note_to_hz('C1'), n_bins=48))
+    evidence = bass_mix_pitch_scores(magnitude)
+    evidence = gaussian_filter1d(evidence, sigma=max(1.0, .07*sr/hop), axis=1)
+    return confident_pitch_segments(
+        evidence, hop/sr, min_stable_seconds=.15, separation_ratio=1.12)
+
+
 def bass_notes(path, accuracy="balanced"):
     """Pitch-first bass transcription with continuity-aware decoding.
 
@@ -457,6 +477,8 @@ if __name__ == '__main__':
             print(json.dumps(chords_instruments(*sys.argv[2:])))
         elif task == 'bass_notes':
             print(json.dumps(bass_notes(*sys.argv[2:])))
+        elif task == 'bass_notes_full_mix':
+            print(json.dumps(bass_notes_full_mix(*sys.argv[2:])))
         elif task == 'bass_context':
             print(json.dumps(bass_context(*sys.argv[2:])))
         elif task == 'beats':

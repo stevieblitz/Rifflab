@@ -1483,7 +1483,7 @@ class Window(QMainWindow):
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.bass_mode_button.setFixedWidth(70)
         self.chord_mode_button.setFixedWidth(76)
-        self.bass_mode_button.setToolTip('Bass Mode: detect and display the bass-note roots')
+        self.bass_mode_button.setToolTip('Bass-note estimates; generate stems to isolate bass for more accurate notes')
         self.chord_mode_button.setToolTip('Detect and display chords')
         self.bass_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(0))
         self.chord_mode_button.clicked.connect(lambda: self.analysis_mode.setCurrentIndex(1))
@@ -4305,11 +4305,11 @@ class Window(QMainWindow):
             beats_file = cache / 'beats.json'
             bass_mode = self.analysis_mode.currentIndex() == 0
             # Bump cache version so existing noisy estimates are never reused.
-            chords_file = cache / f"{'bass_notes_v5' if bass_mode else 'chords_v3_temporal'}_{self._accuracy_key()}.json"
+            chords_file = cache / f"{'bass_mix_low_v1' if bass_mode else 'chords_v3_temporal'}_{self._accuracy_key()}.json"
             chords = (json.loads(chords_file.read_text(encoding='utf-8'))
                       if chords_file.exists() and not force
                       else json.loads(worker_command(
-                          'bass_notes' if bass_mode else 'chords',
+                          'bass_notes_full_mix' if bass_mode else 'chords',
                           str(path), self._accuracy_key(), cancel_event=self.analysis_cancel)))
             if force or not chords_file.exists():
                 chords_file.write_text(json.dumps(chords), encoding='utf-8')
