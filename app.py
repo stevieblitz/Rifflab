@@ -4437,7 +4437,11 @@ class Window(QMainWindow):
         self.detected_bpm = float(data.get('bpm', 130)) or 130.0
         self.speed_ratio = 1.0
         self.player.setPlaybackRate(1.0)
-        self.render_grid()
+        # Rebuild the simplified notes against detected beat positions.
+        if self.chord_data:
+            self.rebuild_chords()
+        else:
+            self.render_grid()
         self.grid_notice.setText(f'Auto BPM: {bpm}. Playback speed: 100%.')
         self.grid_bpm.setToolTip(self.grid_notice.text())
         if self.project_file:
@@ -5091,7 +5095,10 @@ class Window(QMainWindow):
         self.waveform.set_duration(duration)
         if abs(duration - self._last_render_duration) > 1000:
             self._last_render_duration = duration
-            self.render_grid()
+            if self.chord_data:
+                self.rebuild_chords()
+            else:
+                self.render_grid()
 
     def refresh_chord_indicator(self, *_):
         ms = self.live.position_ms if self.live else self.player.position()
