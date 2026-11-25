@@ -1387,9 +1387,9 @@ class Window(QMainWindow):
         self.complexity = QSlider(Qt.Horizontal)
         self.complexity.setRange(0, 100)
         self.complexity.setFixedWidth(88)
-        self.complexity.setValue(88)
-        self.complexity.setToolTip('How much short-note detail to display. Lower = simpler. Higher = more detail. Does not change NoteGuard or audio pitch.')
-        self.complexity_label = QLabel('88%')
+        self.complexity.setValue(35)
+        self.complexity.setToolTip('Play-along detail: lower = steadier main notes; higher = more short notes. 85%+ shows raw changes.')
+        self.complexity_label = QLabel('35%')
         def apply_complexity(value):
             self.complexity_label.setText(f'{value}%')
             # Complexity only adjusts minimum segment duration (Stability);
@@ -4927,11 +4927,14 @@ class Window(QMainWindow):
                 if not root_changes or note != root_changes[-1][1]:
                     root_changes.append((t, note))
             raw = root_changes
-        # Never discard every short note merely because of its duration.
-        # Only remove implausibly brief A-B-A flickers; strong short phrases
-        # with genuinely different pitches remain in the display.
-        from note_stability import stabilize_events
-        output = stabilize_events(raw, flicker_seconds=min(seconds, 0.30)) if seconds else list(raw)
+        # Stable play-along overview is a separate, beat-aware presentation
+        # of the original pitch estimates. Raw analysis remains untouched,
+        # so raising Complexity restores detail without re-analysis.
+        from accompaniment import simplify_for_accompaniment
+        output = simplify_for_accompaniment(
+            raw, beat_times=self.beat_times, bpm=self.grid_bpm.value(),
+            duration=(self._duration / 1000.0 if self._duration > 0 else None),
+            complexity=self.complexity.value())
         # In Bass Mode a repeated attack on the current root is not a change.
         if bass_mode:
             collapsed = []
