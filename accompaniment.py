@@ -57,6 +57,7 @@ def simplify_for_accompaniment(events, beat_times=None, bpm=120, duration=None,
     block_beats = 4 if level <= 15 else 2 if level < 50 else 1
     times = [t for t, _ in events]
     blocks = []
+    strengths = []
     for start_index in range(0, len(boundaries)-1, block_beats):
         left = boundaries[start_index]
         right = boundaries[min(len(boundaries)-1, start_index + block_beats)]
@@ -90,6 +91,7 @@ def simplify_for_accompaniment(events, beat_times=None, bpm=120, duration=None,
             elif weight < (right-left) * 0.35 and previous:
                 chosen = previous
         blocks.append((left, chosen))
+        strengths.append(totals.get(chosen, 0.0) / max(right - left, 1e-6))
     if not blocks:
         return events
     # Remove isolated one-window A-B-A excursions only in simplified modes.
@@ -98,7 +100,8 @@ def simplify_for_accompaniment(events, beat_times=None, bpm=120, duration=None,
         names = [name for _, name in blocks]
         original = names[:]
         for i in range(1, len(names)-1):
-            if original[i-1] == original[i+1] != original[i]:
+            if (original[i-1] == original[i+1] != original[i]
+                    and strengths[i] < 0.70):
                 names[i] = original[i-1]
         blocks = [(t, name) for (t, _), name in zip(blocks, names)]
     result = []
