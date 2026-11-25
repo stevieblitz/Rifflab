@@ -75,7 +75,6 @@ jobs:
           python -m unittest discover -s tests -p test_note_stability.py -v
           python -m unittest discover -s tests -p test_song_storage.py -v
           python -m unittest discover -s tests -p test_grid_paging.py -v
-          python -m unittest discover -s tests -p test_bass_mix.py -v
 
       - name: Install FFmpeg and FFprobe (direct download with mirrors)
         shell: pwsh
@@ -165,6 +164,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Python source syntax check failed' }
           python -m unittest -v test_chord_patterns test_chord_comparison
           if ($LASTEXITCODE -ne 0) { throw 'Chord pattern regression tests failed' }
+          python -m unittest discover -s tests -p test_bass_mix.py -v
           python -m unittest discover -s tests -p test_audio_recognition_smoke.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Audio stability smoke tests failed' }
 
